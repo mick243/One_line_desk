@@ -1,0 +1,27 @@
+{
+  "name": "one-line-desk",
+  "private": true,
+  "description": "한 줄 데스크: 회의실·공지 + 같이 채워요 + 담당자 내비를 합친 사내 안내 데스크",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c blue,green \"npm run dev -w @one-line-desk/server\" \"npm run dev -w @one-line-desk/web\"",
+    "build": "npm run build -w @one-line-desk/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:up": "docker compose up -d db",
+    "db:migrate": "npm run db:migrate -w @one-line-desk/server"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "concurrently": "^10.0.6",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
