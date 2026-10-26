@@ -12,6 +12,8 @@ export interface OpsSettings {
   /** 이번 2주는 고정이에요(M6). */
   noticeSummary: false;
   s5Mode: 'list-only';
+  /** "링크만"일 때 보내는 그룹웨어 화면 주소. 회사 그룹웨어가 정해지면 바꿔요(사용자 확인 1). */
+  links: Record<ModuleKind, string>;
   values: {
     /** 아래 값은 아직 정하지 않은 임시값이에요. 운영 설정에서 바꿔요. */
     defaultMeetingMinutes: number;
@@ -28,6 +30,12 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
   mcp: false,
   noticeSummary: false,
   s5Mode: 'list-only',
+  links: {
+    navi: 'https://groupware.example.com/helpdesk',
+    notices: 'https://groupware.example.com/board',
+    rooms: 'https://groupware.example.com/resources',
+    pantry: 'https://groupware.example.com/supplies',
+  },
   values: {
     defaultMeetingMinutes: 60,
     proposalTtlSeconds: 600,

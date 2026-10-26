@@ -24,7 +24,7 @@ export const TOOLS: ToolDef[] = [
     module: 'navi',
     access: 'read',
     mcpExposed: false,
-    description: '업무 분장표에서 후보 행을 찾아요. LLM은 후보 중 행 ID 하나 또는 없음만 골라요(ADR-09).',
+    description: '업무 분장표에서 후보 행을 찾아요. LLM은 후보 번호 하나 또는 없음만 골라요. 행 ID는 스키마에 넣지 않아요(ADR-09·10).',
     input: { query: { type: 'string', description: '공통 검사를 지난 질문', maxLength: 300 } },
   },
   {

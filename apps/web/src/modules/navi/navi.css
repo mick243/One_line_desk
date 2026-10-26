@@ -1,0 +1,93 @@
+/* S5 분장표 수정 제안함. 색·간격은 styles.css의 변수만 써요. */
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.chart-table-wrap {
+  overflow-x: auto;
+}
+.chart-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.chart-table caption {
+  text-align: left;
+  padding-bottom: 6px;
+}
+.chart-table th,
+.chart-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+.chart-table thead th {
+  color: var(--text-quiet);
+  font-weight: 600;
+}
+.chart-table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.chart-table tr.has-records th[scope='row'] {
+  color: var(--accent);
+}
+.row-id {
+  margin-left: 6px;
+  color: var(--text-quiet);
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+.chart-row-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.chart-file {
+  position: relative;
+  cursor: pointer;
+}
+.chart-file input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.chart-paste {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.chart-paste textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  padding: 8px;
+}
+.chart-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.chart-phone-only {
+  display: none;
+}
+/* 폰에서는 목록만 보고, 파일 올리기는 PC에서 해요(화면설계 S5). */
+@media (max-width: 600px) {
+  .chart-pc-only {
+    display: none;
+  }
+  .chart-phone-only {
+    display: block;
+  }
+}

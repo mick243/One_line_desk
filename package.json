@@ -15,12 +15,16 @@
     "build": "npm run build -w @one-line-desk/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run format:check && npm run typecheck && npm test",
     "db:up": "docker compose up -d db",
     "db:migrate": "npm run db:migrate -w @one-line-desk/server"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
     "concurrently": "^10.0.6",
+    "prettier": "^3.9.10",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"
   }

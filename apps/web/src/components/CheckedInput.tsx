@@ -36,31 +36,31 @@ export function CheckedInput({ scope, placeholder, submitLabel, disabledReason, 
   }
 
   return (
-    <form className="checked-input" onSubmit={submit}>
-      <div className="scope">{scope}</div>
-      <div className="row">
+    <form className='checked-input' onSubmit={submit}>
+      <div className='scope'>{scope}</div>
+      <div className='row'>
         <input
-          type="text"
+          type='text'
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={placeholder}
-          autoComplete="off"
-          autoCorrect="off"
+          autoComplete='off'
+          autoCorrect='off'
           spellCheck={false}
           maxLength={1000}
           aria-label={placeholder}
         />
-        <button type="submit" disabled={blocked}>
+        <button type='submit' disabled={blocked}>
           {sending ? '보내는 중' : submitLabel}
         </button>
       </div>
-      {line && <p className="mask-line">{line}</p>}
+      {line && <p className='mask-line'>{line}</p>}
       {result.locks.map((l) => (
-        <p key={l.kind} className="lock-line" role="alert">
+        <p key={l.kind} className='lock-line' role='alert'>
           {l.message}
         </p>
       ))}
-      {disabledReason && <p className="hint">{disabledReason}</p>}
+      {disabledReason && <p className='hint'>{disabledReason}</p>}
     </form>
   );
 }
