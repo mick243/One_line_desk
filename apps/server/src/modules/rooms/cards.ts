@@ -144,3 +144,32 @@ export function cancelledCard(r: ReservationRow, at: number): Card {
     tail: '취소한 기록은 남아요',
   });
 }
+
+/** 방 자세히에서 고른 시간이 이미 차 있을 때. 같은 방 가까운 시간 대안이 뒤따라요. */
+export function roomTakenCard(room: { name: string; floor: string }, start: number, end: number, alternatives: number, checkedAt: number): Card {
+  return makeCard({
+    id: 'rooms-taken',
+    kind: 'rooms',
+    label: '안내',
+    headline: '그 시간에는 이미 예약이 있어요',
+    fields: [
+      { name: '방·층', value: roomLine(room) },
+      { name: '고른 시간', value: whenText(start, end) },
+      { name: '대안', value: alternatives ? `같은 방 가까운 시간 ${alternatives}개` : '대안 없음' },
+    ],
+    evidence: { text: statusAt(checkedAt), aiSummarized: false },
+    tail: alternatives ? NOT_RESERVED : `${NOT_RESERVED} · 다른 시간을 골라 주세요`,
+  });
+}
+
+/** 방 자세히에서 고른 시간을 쓸 수 없을 때(지난 시간 등) */
+export function roomTimeCard(headline: string): Card {
+  return makeCard({
+    id: 'rooms-time',
+    kind: 'rooms',
+    label: '안내',
+    headline,
+    evidence: { text: '일정에서 빈 시간을 골라 주세요', aiSummarized: false },
+    tail: NOT_RESERVED,
+  });
+}

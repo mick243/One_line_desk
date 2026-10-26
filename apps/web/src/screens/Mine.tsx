@@ -35,11 +35,16 @@ export function Mine({
         <h1>내 것</h1>
       </header>
 
-      <section className='card'>
-        <h2>{me.displayName}</h2>
-        <p className='hint'>
-          {me.department} · {me.floor}
-        </p>
+      <section className='card profile'>
+        <span className='avatar' aria-hidden='true'>
+          {me.displayName.split(' ').at(-1)?.charAt(0)}
+        </span>
+        <div>
+          <h2>{me.displayName}</h2>
+          <p className='hint'>
+            {me.department} · {me.floor}
+          </p>
+        </div>
       </section>
 
       <MyReservations />
@@ -71,15 +76,15 @@ export function Mine({
           남기는 것: 예약 기록, 내가 올린 품목 이름과 표, "틀렸어요"에서 고른 결과(누가 골랐는지는 안 남아요), 감사 기록(가명 ID · 시각 · 동작 종류 · 결과, 내용
           없음).
         </p>
-        <p>남기지 않는 것: 묻기에 쓴 문장</p>
+        <p>남기지 않는 것: 담당 찾기·회의실·공지 입력 칸에 쓴 문장</p>
       </section>
 
       <div className='actions'>
-        <button type='button' className='secondary' onClick={() => setConfirmAll(true)}>
-          모든 기기 로그아웃
-        </button>
-        <button type='button' className='secondary' onClick={() => logout(false)}>
+        <button type='button' className='neutral' onClick={() => logout(false)}>
           로그아웃
+        </button>
+        <button type='button' className='link' onClick={() => setConfirmAll(true)}>
+          모든 기기에서 로그아웃
         </button>
       </div>
 

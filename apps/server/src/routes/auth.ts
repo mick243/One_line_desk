@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context';
 import { endEverything, SESSION_COOKIE } from '../core/guard';
 import { pseudonymize } from '../core/pseudonym';
+import { computeRoles } from '../core/roles';
 import { SESSION_MAX_AGE_MS } from '../core/session';
 
 export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
@@ -9,7 +10,15 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/auth/mock-users', async (_req, reply) => {
     const choices = ctx.config.mockLogin ? ctx.adapters.idp.loginChoices?.() : undefined;
     if (!choices) return reply.code(404).send({ error: 'not-mock', message: '모의 로그인이 꺼져 있어요' });
-    return choices.map(({ idpSubject, displayName, department, floor }) => ({ idpSubject, displayName, department, floor }));
+    // 처음 쓰는 사람이 누구를 고를지 알 수 있게 역할도 같이 알려 줘요(가상 직원 목록에서만).
+    const owners = ctx.services.navi ? await ctx.services.navi.ownerDepartments() : await ctx.adapters.directory.chartOwnerDepartments();
+    return choices.map((p) => ({
+      idpSubject: p.idpSubject,
+      displayName: p.displayName,
+      department: p.department,
+      floor: p.floor,
+      roles: computeRoles(p, owners),
+    }));
   });
 
   app.post<{ Body: { idpSubject: string } }>(

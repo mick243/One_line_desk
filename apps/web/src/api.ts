@@ -22,6 +22,8 @@ export interface MockUser {
   displayName: string;
   department: string;
   floor: string;
+  /** 처음 쓰는 사람이 누구를 고를지 알 수 있게 역할도 같이 와요(모의 로그인에서만). */
+  roles?: Role[];
 }
 
 /** 서버가 { error, message }로 돌려준 실패. message는 화면에 그대로 보여 줄 해요체 문구예요. */

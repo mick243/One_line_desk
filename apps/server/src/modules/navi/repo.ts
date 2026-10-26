@@ -117,3 +117,71 @@ export async function feedbackCounts(q: Queryable, rowIds: string[]): Promise<{ 
   );
   return rows.map((r) => ({ row: r.row, reason: r.reason, at: new Date(r.at).toISOString(), n: r.n }));
 }
+
+// ── 담당 팀 문의(ADR-16) ──────────────────────────────────────
+
+export interface InquiryRow {
+  id: string;
+  rowId: string | null;
+  task: string;
+  team: string;
+  department: string;
+  senderPseudonym: string;
+  senderName: string;
+  senderDepartment: string;
+  question: string;
+  reason: string;
+  state: 'new' | 'seen' | 'done';
+  created: number;
+  updated: number;
+}
+
+const INQUIRY_COLUMNS = `id::text as id, row_id as "rowId", task, team, department,
+  sender_pseudonym as "senderPseudonym", sender_name as "senderName", sender_department as "senderDepartment",
+  question, reason, state,
+  (extract(epoch from created_at) * 1000)::float8 as created,
+  (extract(epoch from updated_at) * 1000)::float8 as updated`;
+
+export async function insertInquiry(q: Queryable, i: Omit<InquiryRow, 'id' | 'state' | 'created' | 'updated'> & { at: number }): Promise<InquiryRow> {
+  const at = new Date(i.at).toISOString();
+  const { rows } = await q.query<InquiryRow>(
+    `insert into navi_inquiries (row_id, task, team, department, sender_pseudonym, sender_name, sender_department, question, reason, created_at, updated_at)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+     returning ${INQUIRY_COLUMNS}`,
+    [i.rowId, i.task, i.team, i.department, i.senderPseudonym, i.senderName, i.senderDepartment, i.question, i.reason, at],
+  );
+  return rows[0]!;
+}
+
+/** 보관 기간이 지난 문의를 지워요(90일). */
+export async function purgeInquiries(q: Queryable, before: number): Promise<void> {
+  await q.query('delete from navi_inquiries where created_at < $1', [new Date(before).toISOString()]);
+}
+
+export async function inquiriesOfDepartment(q: Queryable, department: string): Promise<InquiryRow[]> {
+  const { rows } = await q.query<InquiryRow>(
+    `select ${INQUIRY_COLUMNS} from navi_inquiries where department = $1 order by (state = 'done'), created_at desc, id desc limit 100`,
+    [department],
+  );
+  return rows;
+}
+
+export async function inquiriesOfSender(q: Queryable, pseudonymId: string): Promise<InquiryRow[]> {
+  const { rows } = await q.query<InquiryRow>(
+    `select ${INQUIRY_COLUMNS} from navi_inquiries where sender_pseudonym = $1 order by created_at desc, id desc limit 50`,
+    [pseudonymId],
+  );
+  return rows;
+}
+
+/** 받은 부서 사람만 상태를 바꿔요. 새 문의 → 확인함 → 처리함 순서로만 가요. 바뀌지 않으면 null이에요. */
+export async function moveInquiryState(q: Queryable, id: string, department: string, to: 'seen' | 'done', at: number): Promise<InquiryRow | null> {
+  const from = to === 'seen' ? ['new'] : ['new', 'seen'];
+  const { rows } = await q.query<InquiryRow>(
+    `update navi_inquiries set state = $3, updated_at = $5
+      where id = $1 and department = $2 and state = any($4::text[])
+      returning ${INQUIRY_COLUMNS}`,
+    [id, department, to, from, new Date(at).toISOString()],
+  );
+  return rows[0] ?? null;
+}

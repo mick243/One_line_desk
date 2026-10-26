@@ -268,8 +268,8 @@ export function LinkEntry({ token }: ScreenProps & { token: string }) {
   }, [token]);
 
   const toAsk = (
-    <button type='button' className='secondary' onClick={() => void actions.run({ type: 'navigate', text: '묻기에서 찾기', to: 'ask' })}>
-      묻기에서 찾기
+    <button type='button' className='secondary' onClick={() => void actions.run({ type: 'navigate', text: '회의실에서 찾기', to: 'rooms' })}>
+      회의실에서 찾기
     </button>
   );
 

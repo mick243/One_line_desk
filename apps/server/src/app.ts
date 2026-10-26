@@ -11,6 +11,7 @@ import { AuditLog } from './core/audit';
 import { applyMigrations, type Db, openDb } from './core/db';
 import { DeskError } from './core/errors';
 import { FixedActions } from './core/fixed-action';
+import { Notifier } from './core/notifications';
 import { createGuards } from './core/guard';
 import type { DeskModule } from './core/module';
 import { OpsSettingsStore } from './core/ops-settings';
@@ -23,6 +24,7 @@ import { createModules } from './modules';
 import { registerAskRoutes } from './routes/ask';
 import { registerAuthRoutes } from './routes/auth';
 import { registerConfigRoutes } from './routes/config';
+import { registerNotificationRoutes } from './routes/notifications';
 import { registerPlanRoutes } from './routes/plans';
 
 export interface BuildOptions {
@@ -65,6 +67,7 @@ export async function buildApp(opts: BuildOptions) {
     gateway: new AiGateway(provider, config.noRetentionContractConfirmed, db),
     plans: new PlanService(db, tokens, audit, settings, now),
     fixed: new FixedActions(db, audit, settings, now),
+    notify: new Notifier(db, now),
     services: {},
     now,
   };
@@ -97,6 +100,7 @@ export async function buildApp(opts: BuildOptions) {
   registerAuthRoutes(app, ctx);
   registerAskRoutes(app, ctx, router);
   registerPlanRoutes(app, ctx);
+  registerNotificationRoutes(app, ctx);
   for (const module of modules) module.register?.(app);
 
   if (opts.seed ?? config.seedDemo) {

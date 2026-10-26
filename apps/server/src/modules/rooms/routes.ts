@@ -1,4 +1,4 @@
-import { EQUIPMENT, type RoomCardsResponse, type RoomQuery } from '@one-line-desk/shared';
+import { EQUIPMENT, type RoomCardsResponse, type RoomDayResponse, type RoomListResponse, type RoomQuery, type RoomSlotRequest } from '@one-line-desk/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../../context';
 import { DeskError } from '../../core/errors';
@@ -62,6 +62,53 @@ export function registerRoomRoutes(app: FastifyInstance, ctx: AppContext, desk: 
   );
 
   app.get('/api/rooms/my-reservations', { preHandler: ctx.guards.user }, async (req) => desk.myReservations(req.deskUser!));
+
+  // 회의실 둘러보기(10/26). 읽기만 해요. 남의 예약은 "예약됨"만 보여요(ADR-06).
+  const DATE = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' } as const;
+  const ROOM_ID = { type: 'string', pattern: '^[a-z0-9-]{1,40}$' } as const;
+  const today = () => kstIso(ctx.now()).slice(0, 10);
+
+  app.get<{ Querystring: { date?: string } }>(
+    '/api/rooms/list',
+    { preHandler: ctx.guards.user, schema: { querystring: { type: 'object', additionalProperties: false, properties: { date: DATE } } } },
+    async (req): Promise<RoomListResponse> => desk.directory(req.query.date ?? today()),
+  );
+
+  app.get<{ Params: { id: string }; Querystring: { date?: string } }>(
+    '/api/rooms/:id/day',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        params: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: ROOM_ID } },
+        querystring: { type: 'object', additionalProperties: false, properties: { date: DATE } },
+      },
+    },
+    async (req): Promise<RoomDayResponse> => desk.day(req.deskUser!, req.params.id, req.query.date ?? today()),
+  );
+
+  app.post<{ Params: { id: string }; Body: RoomSlotRequest }>(
+    '/api/rooms/:id/slot',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        params: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: ROOM_ID } },
+        body: {
+          type: 'object',
+          required: ['date', 'start', 'minutes'],
+          additionalProperties: false,
+          properties: {
+            date: DATE,
+            start: { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d$' },
+            minutes: { type: 'integer', minimum: 10, maximum: 600 },
+          },
+        },
+      },
+    },
+    async (req): Promise<RoomCardsResponse> => {
+      if (!ctx.rateLimiter.hit(req.deskUser!.pseudonymId, 'rooms.search')) throw new DeskError('rate-limited', 429, '요청이 많아요. 잠시 뒤에 다시 해 주세요');
+      return desk.slotForRoom(req.deskUser!, req.params.id, req.body);
+    },
+  );
 
   app.delete<{ Params: { id: string } }>(
     '/api/rooms/reservations/:id',

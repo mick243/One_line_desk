@@ -5,9 +5,12 @@ import { useActions } from '../../components/ActionHost';
 import type { CardViewProps } from '../../components/CardView';
 import { RoomConditionsCard } from './RoomConditionsCard';
 
+export { RoomDirectory } from './RoomDirectory';
+
 // F2 회의실 화면 부품.
 // - MyReservations: S1(compact, 짧은 목록)·S6 "내 예약" 칸. [취소]는 확인 시트를 거쳐요(ADR-03).
 // - roomsCardRenderers: S2 조건 칩 줄(카드 variant 'rooms-conditions'). registry에 붙이는 건 리드가 해요.
+// - RoomDirectory: 회의실 페이지 "모든 회의실" 방 카드와 방 자세히(10/26).
 
 const COMPACT_LIMIT = 2;
 
@@ -54,15 +57,17 @@ export function MyReservations({ compact }: { compact?: boolean }) {
     <section className='card' aria-label='내 예약'>
       <h2>내 예약</h2>
       {items.length === 0 ? (
-        <p className='empty'>{compact ? '아직 예약이 없어요.' : '예약이 없어요.'}</p>
+        <p className='empty'>{compact ? '다가오는 예약이 없어요.' : '예약이 없어요. 회의실 탭에서 빈 방을 찾아보세요.'}</p>
       ) : (
         <ul className='plain my-reservations'>
           {items.map((r) => (
             <li key={r.id}>
-              <p>
-                <strong>{r.roomName}</strong> · {r.floor}
-              </p>
-              <p className='hint'>{r.when} · 내 예약</p>
+              <div>
+                <p>
+                  <strong>{r.roomName}</strong> · {r.floor}
+                </p>
+                <p className='hint'>{r.when} · 내 예약</p>
+              </div>
               <button type='button' className='secondary small' onClick={() => void run(r.cancel)}>
                 {r.cancel.text}
               </button>

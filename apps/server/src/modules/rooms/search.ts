@@ -9,8 +9,8 @@ const KST_MS = 9 * 60 * MINUTE;
 /** 대안은 30분 단위로 앞뒤 4시간 안, 07:00~22:00 사이에서만 찾아요. */
 const STEP_MINUTES = 30;
 const MAX_SHIFT_STEPS = 8;
-const DAY_OPEN = '07:00';
-const DAY_CLOSE = '22:00';
+export const DAY_OPEN = '07:00';
+export const DAY_CLOSE = '22:00';
 export const MAX_CANDIDATES = 3;
 export const MAX_ALTERNATIVES = 2;
 

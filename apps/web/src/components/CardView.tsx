@@ -7,6 +7,8 @@ export interface CardViewProps {
   card: Card;
   onAction: (action: CardAction, card: Card) => Promise<void> | void;
   onWrong?: (card: Card) => void;
+  /** 카드 안에서 새 결과가 나오면(회의실 조건 칩 다시 찾기) 페이지 결과를 바꿔요. 없으면 시트로 보여요. */
+  onResults?: (cards: Card[]) => void;
 }
 
 // 모든 결과를 같은 다섯 칸으로 그려요(화면설계 카드 문법). 모듈이 따로 그리는 카드는 variant로 맡겨요.

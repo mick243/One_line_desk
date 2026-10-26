@@ -5,7 +5,6 @@ import {
   type Card,
   checkItemName,
   type FloorSetting,
-  isPantryStandalone,
   type MergeRequest,
   type MergeResponse,
   type MergesResponse,
@@ -197,7 +196,7 @@ export function createBoardService(ctx: AppContext) {
   /** S3 요청 쓰기 칸(POST /api/pantry/draft). 글은 공통 검사를 지나 가린 뒤예요. 등급 1이라 무보관 계약 전에는 이름 규칙으로 뽑아요(H1). */
   async function draftFromText(user: DeskUser, text: string): Promise<Card[]> {
     const extracted = await extractDraft(ctx.gateway, text);
-    if (!extracted.pantryRequest) return [cards.moveToAskCard(isPantryStandalone(ctx.ops.get()), extracted.viaAi)];
+    if (!extracted.pantryRequest) return [cards.moveToNaviCard(ctx.ops.get().modules.navi !== 'on', extracted.viaAi)];
     if (!extracted.itemName) return [cards.noNameCard(false, extracted.viaAi)];
     return draftForName(user, extracted.itemName, extracted.viaAi);
   }

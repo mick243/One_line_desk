@@ -63,7 +63,8 @@ export function ActionHost({ children, onNavigate }: { children: ReactNode; onNa
             onNavigate(action.to);
             return;
           case 'reask':
-            // 다시 묻기는 원문을 가진 묻기 화면이 처리해요(CardView onAction에서 먼저 가로채요).
+          case 'inquire':
+            // 다시 찾기·문의 양식은 원문을 가진 기능 페이지가 처리해요(CardView onAction에서 먼저 가로채요).
             return;
           case 'propose': {
             const created = await api.createPlan(action.proposalToken);

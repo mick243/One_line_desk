@@ -17,6 +17,8 @@ export interface LedgerRoom {
   floor: string;
   capacity: number;
   equipment: Equipment[];
+  facilities: string[];
+  photoUrl: string | null;
 }
 
 /** 남의 예약. 예약자 이름·회의 제목 칸이 없어요. */
@@ -34,7 +36,15 @@ export class MockRoomLedger {
   constructor(private readonly source: { rooms: LedgerSourceRoom[]; bookings: LedgerSourceBooking[] } = { rooms: LEDGER_ROOMS, bookings: LEDGER_BOOKINGS }) {}
 
   rooms(): LedgerRoom[] {
-    return this.source.rooms.map((r) => ({ id: r.id, name: r.name, floor: r.floor, capacity: r.capacity, equipment: [...r.equipment] }));
+    return this.source.rooms.map((r) => ({
+      id: r.id,
+      name: r.name,
+      floor: r.floor,
+      capacity: r.capacity,
+      equipment: [...r.equipment],
+      facilities: [...r.facilities],
+      photoUrl: r.photoUrl,
+    }));
   }
 
   /** 가져오는 날(now) 기준으로 날짜를 맞춰요. 칸을 하나씩 골라 옮겨서 이름·제목이 따라 나가지 않아요. */

@@ -1,3 +1,4 @@
+import type { CardAction } from '../cards';
 import type { Kind } from '../kinds';
 
 // "틀렸어요" 선택지(R8). 세 문서가 같은 넷을 써요.
@@ -102,4 +103,44 @@ export interface ChartApplyResponse {
   /** YYYY-MM-DD */
   revisedOn: string;
   message: string;
+}
+
+// ── 담당 팀에 문의 보내기(10/26, ADR-16) ─────────────────────────
+// 받는 곳은 분장표 행의 주인 부서예요(담당자 이름은 없어요, D9). 확인 시트에서 [보내기]를 누른 글만 저장하고 90일 뒤 지워요.
+
+export const INQUIRY_QUESTION_MAX = 1000;
+export const INQUIRY_REASON_MAX = 500;
+export const INQUIRY_KEEP_DAYS = 90;
+export const INQUIRY_STATES = ['new', 'seen', 'done'] as const;
+export type InquiryState = (typeof INQUIRY_STATES)[number];
+export const INQUIRY_STATE_LABEL: Record<InquiryState, string> = { new: '새 문의', seen: '확인했어요', done: '처리했어요' };
+
+/** POST /api/navi/inquiries. requestId는 같은 문의를 두 번 보내지 않게 하는 값이에요(화면이 만들어요). */
+export interface InquiryRequest {
+  rowId: string | null;
+  question: string;
+  reason: string;
+  requestId: string;
+}
+
+export interface InquiryItem {
+  id: string;
+  task: string;
+  team: string;
+  question: string;
+  reason: string;
+  state: InquiryState;
+  /** ISO 시각(+09:00) */
+  createdAt: string;
+  updatedAt: string;
+  /** 받은 문의함에서만 와요. 답하려면 누구인지 알아야 해서요. */
+  sender?: { name: string; department: string };
+  /** 받은 문의함: [확인했어요]·[처리했어요] */
+  actions: CardAction[];
+}
+
+/** GET /api/navi/inquiries/inbox · /mine. 받은 문의함은 분장표에 행이 있는 부서만 열려요(enabled). */
+export interface InquiryListResponse {
+  enabled: boolean;
+  items: InquiryItem[];
 }

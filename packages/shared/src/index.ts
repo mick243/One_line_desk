@@ -10,6 +10,7 @@ export * from './api/slots';
 export * from './api/rooms';
 export * from './api/notices';
 export * from './api/navi';
+export * from './api/notifications';
 export * from './api/pantry';
 export * from './api/mcp';
 export * from './api/pantry-order';

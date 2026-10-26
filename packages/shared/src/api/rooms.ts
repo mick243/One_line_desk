@@ -117,3 +117,69 @@ export function parseRoomConditionFields(fields: { name: string; value: string }
   if (floor) query.floor = floor[1]!;
   return query;
 }
+
+// ── 회의실 둘러보기(10/26): 방 카드 목록 → 방 자세히(설비·지금 상태·하루 일정·이 시간 예약) ──
+
+/** 방 한 칸. 예약자·회의 제목 칸은 타입에 아예 없어요(ADR-06). */
+export interface RoomInfo {
+  id: string;
+  name: string;
+  floor: string;
+  /** 정원(명) */
+  capacity: number;
+  /** 찾기 조건으로 쓰는 장비(정해진 목록) */
+  equipment: Equipment[];
+  /** 방에 있는 설비 설명(빔프로젝터·화상회의 카메라 등). 장부가 주는 글이에요. */
+  facilities: string[];
+  /** 방 사진 주소. 시연에서는 그림이에요. 없으면 null이에요. */
+  photoUrl: string | null;
+}
+
+/** 고른 날의 방 상태. 오늘이면 지금 시각 기준이에요. 누가 잡았는지는 없어요. */
+export type RoomStatus =
+  | { kind: 'free-now'; /** 오늘 다음 예약 시작(HH:MM). 없으면 null */ nextBusyAt: string | null }
+  | { kind: 'busy-now'; /** 이어진 예약이 끝나 비는 시각(HH:MM, 자정이면 24:00) */ freeAt: string }
+  | { kind: 'day'; /** 그날 예약 수 */ bookings: number };
+
+export interface RoomListItem extends RoomInfo {
+  status: RoomStatus;
+}
+
+/** GET /api/rooms/list?date=YYYY-MM-DD. 회의실이 "링크만"이면 방 대신 그룹웨어 링크만 와요(R4). */
+export interface RoomListResponse {
+  /** 현황 조회 시각(ISO) */
+  checkedAt: string;
+  date: string;
+  mock: boolean;
+  linkOnly: boolean;
+  link?: string;
+  rooms: RoomListItem[];
+}
+
+/** 하루 일정 한 칸. 남의 예약은 "예약됨"으로만 보여요. 취소는 내 예약에만 붙어요. */
+export interface RoomDayBlock {
+  /** HH:MM */
+  start: string;
+  /** HH:MM(자정이면 24:00) */
+  end: string;
+  mine: boolean;
+  cancel?: CardAction;
+}
+
+/** GET /api/rooms/:id/day?date=YYYY-MM-DD */
+export interface RoomDayResponse {
+  checkedAt: string;
+  date: string;
+  /** 예약할 수 있는 시간대(HH:MM) */
+  open: string;
+  close: string;
+  room: RoomListItem;
+  blocks: RoomDayBlock[];
+}
+
+/** POST /api/rooms/:id/slot 본문. 그 방 그 시간이 비면 [이 시간으로 예약] 카드, 차 있으면 같은 방 가까운 시간 대안이에요. 아무것도 쓰지 않아요. */
+export interface RoomSlotRequest {
+  date: string;
+  start: string;
+  minutes: number;
+}

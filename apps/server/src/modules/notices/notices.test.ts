@@ -58,7 +58,7 @@ describe('[F1-7] 공지 찾기', () => {
     expect(rows[0]!.result).toBe('card');
   });
 
-  it('[F1-7] 못 찾으면 "공지에서 찾지 못했어요" 카드와 [담당 안내로 묻기]예요', async () => {
+  it('[F1-7] 못 찾으면 "공지에서 찾지 못했어요" 카드와 [담당 찾기에서 찾기]예요', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.staff);
     const body = (await me.call('POST', '/api/ask', { text: '강아지 분양 공지 있어?' })).body as AskResponse;
@@ -68,7 +68,7 @@ describe('[F1-7] 공지 찾기', () => {
         kind: 'notices',
         headline: '공지에서 찾지 못했어요',
         evidence: { text: '찾아본 범위: 전사 공지 · 총무 안내', aiSummarized: false },
-        actions: { primary: { type: 'reask', text: '담당 안내로 묻기', kind: 'navi' }, secondary: [] },
+        actions: { primary: { type: 'reask', text: '담당 찾기에서 찾기', kind: 'navi' }, secondary: [] },
       }),
     ]);
     const { rows } = await t.db.query<{ module: string; result: string }>('select module, result from audit_log order by id desc limit 1');

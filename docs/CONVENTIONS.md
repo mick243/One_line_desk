@@ -29,7 +29,7 @@ apps/server/src/
   routes/                   공통 경로(auth, ask, plans, config)
 apps/web/src/
   components/               공통 화면 부품(카드, 시트, 입력 칸)
-  screens/                  S1~S6 껍데기
+  screens/                  홈·기능 페이지(FeaturePage)·로그인·내 것
   modules/<kind>/           모듈 화면 부품(S3·S4·S5, S6 칸, 모듈 카드 그리기)
 db/migrations/              NNN_<영역>_<무엇>.sql
 ```
@@ -73,7 +73,9 @@ db/migrations/              NNN_<영역>_<무엇>.sql
 - 화면 문구는 해요체이고 `docs/화면설계.md`의 문구를 그대로 써요. 버튼은 `[예약하기]`처럼 동사로 끝내요.
 - 카드는 공통 `CardView`(다섯 칸)로 그려요. 머리 라벨은 글자로 보여 주고 색만으로 가르지 않아요.
 - 입력 원문은 컴포넌트 상태(페이지 메모리)에만 둬요. `localStorage`·`sessionStorage`·URL·IndexedDB에 넣지 않아요(R13).
-- 색·간격은 `styles.css`의 CSS 변수만 써요. 컴포넌트에 색 값을 직접 쓰지 않아요.
+- 색·간격·모서리는 `styles.css`의 CSS 변수(`--bg`·`--surface`·`--text`·`--accent`·`--radius` 등)만 써요. 컴포넌트에 색 값을 직접 쓰지 않아요. 기준은 `docs/화면설계.md` "디자인 기준(10/26)"이에요.
+- 버튼은 화면마다 주 버튼(`primary`) 하나, 보조는 `secondary`(연한 파랑), 닫기·로그아웃은 `neutral`(회색)이에요. 아이콘은 `components/Icon.tsx`만 써요.
+- 시트(`Sheet`)와 토스트는 body에 그려요(위 막대·아래 탭에 갇히지 않게). 새로 띄우는 겹 화면도 같은 방식이에요.
 - 폰 너비·한 손 기준이에요. 주 버튼과 입력창은 아래쪽에 둬요. S4·S5는 PC 우선이에요.
 
 ## 7. 시험

@@ -14,7 +14,7 @@ export type BlockedReason = (typeof BLOCKED_REASONS)[number];
  * - post: 공개 미리보기의 [올리기]. 이 카드 자체가 확인이에요(게시)
  * - fixed: 고정 버튼 쓰기(+1·표 거두기 등). 모듈 경로를 바로 불러요
  * - link: 바깥 링크(원문·그룹웨어·창구)
- * - reask: 같은 문장으로 다른 종류를 다시 불러요(칩 바꾸기, 담당 안내로 묻기)
+ * - reask: 같은 문장을 다른 기능 페이지로 옮겨 다시 찾아요("종류가 달라요", 담당 찾기에서 찾기)
  * - navigate: 앱 안 화면으로 가요
  */
 export type CardAction =
@@ -31,9 +31,12 @@ export type CardAction =
     }
   | { type: 'link'; text: string; href: string }
   | { type: 'reask'; text: string; kind: Kind }
-  | { type: 'navigate'; text: string; to: AppDestination };
+  | { type: 'navigate'; text: string; to: AppDestination }
+  /** 담당 팀에 문의 보내기 양식을 열어요(ADR-16). 양식은 페이지가 띄우고, 보내기는 확인 시트를 거쳐요. */
+  | { type: 'inquire'; text: string; rowId: string | null; team: string; task: string };
 
-export type AppDestination = 'ask' | 'board' | 'mine' | 'ops' | 'chart';
+/** 앱 안 페이지. 기능마다 페이지가 따로 있어요(10/26 화면 구조 변경, ADR-02 개정). */
+export type AppDestination = 'home' | 'navi' | 'rooms' | 'notices' | 'board' | 'mine' | 'ops' | 'chart';
 
 /** "틀렸어요" 시트에 필요한 것. 안내·제안 카드에만 붙어요(화면설계 카드 문법). */
 export interface WrongInfo {

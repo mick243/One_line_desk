@@ -10,7 +10,7 @@ import type { CardViewProps } from '../../components/CardView';
 
 const MISSING_CLASS = 'missing';
 
-export function RoomConditionsCard({ card, onWrong }: CardViewProps) {
+export function RoomConditionsCard({ card, onWrong, onResults }: CardViewProps) {
   const actions = useActions();
   const initial = parseRoomConditionFields(card.fields);
   const [date, setDate] = useState(initial.date ?? '');
@@ -38,7 +38,9 @@ export function RoomConditionsCard({ card, onWrong }: CardViewProps) {
     setError(null);
     try {
       const res = await apiRequest<RoomCardsResponse>('POST', '/api/rooms/search', { query: query() });
-      actions.show({ title: '회의실 후보', cards: res.cards });
+      // 회의실 페이지에서는 결과를 그 자리에서 바꾸고, 앱 확인 링크처럼 페이지가 없으면 시트로 보여요.
+      if (onResults) onResults(res.cards);
+      else actions.show({ title: '회의실 후보', cards: res.cards });
     } catch (e) {
       setError(e instanceof ApiFailure ? e.message : '지금 다시 찾지 못했어요');
     } finally {

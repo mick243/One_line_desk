@@ -194,14 +194,14 @@ describe('게시: 묻기·초안은 판에 쓰지 못해요(ADR-04)', () => {
     expect(b.items.every((i) => i.similarTo.length === 1)).toBe(true);
   });
 
-  it('[F3-4] 판에 담당 질문을 쓰면 [묻기로 옮기기]이고, 같이 채워요 단독 모드에서는 "여기에는 탕비실 요청만 올려요"예요', async () => {
+  it('[F3-4] 판에 담당 질문을 쓰면 [담당 찾기로 옮기기]이고, 같이 채워요 단독 모드에서는 "여기에는 탕비실 요청만 올려요"예요', async () => {
     const { t } = await setup();
     const me = await t.loginAs(MOCK.staff);
     const [card] = await draft(me, '법인카드 잃어버렸어요');
     expect(card).toMatchObject({
       label: '안내',
       headline: PANTRY_TEXT.moveToAsk,
-      actions: { primary: { type: 'navigate', to: 'ask', text: '묻기로 옮기기' } },
+      actions: { primary: { type: 'navigate', to: 'navi', text: '담당 찾기로 옮기기' } },
     });
 
     for (const m of ['navi', 'notices', 'rooms'] as const) await t.ctx.ops.setModule('p_operator', m, 'off');

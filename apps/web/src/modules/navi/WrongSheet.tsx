@@ -7,7 +7,7 @@ import { Sheet } from '../../components/Sheet';
 import type { WrongSheetProps } from '../types';
 
 // "틀렸어요" 시트(R8, 화면설계 카드 문법). 선택지는 넷이고, 남는 건 고른 결과뿐이에요.
-// 기록은 묻기와 다른 피드백 경로로 보내요. 질문 원문은 보내지 않아요(묻기 화면 메모리에만 있어요).
+// 기록은 질문과 다른 피드백 경로로 보내요. 질문 원문은 보내지 않아요(기능 페이지 메모리에만 있어요).
 
 type Step = 'choose' | 'pick-row' | 'pick-kind' | 'saved' | 'replaced';
 
