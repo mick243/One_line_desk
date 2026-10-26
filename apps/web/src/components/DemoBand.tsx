@@ -5,8 +5,8 @@ export function DemoBand({ items }: { items: string[] }) {
   const [open, setOpen] = useState(false);
   if (items.length === 0) return null;
   return (
-    <div className="demo-band">
-      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+    <div className='demo-band'>
+      <button type='button' onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         시연 데이터로 돌아가요
       </button>
       {open && (

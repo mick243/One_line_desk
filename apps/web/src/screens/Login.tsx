@@ -17,16 +17,16 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
   }
 
   return (
-    <main className="screen login">
+    <main className='screen login'>
       <h1>한 줄 데스크</h1>
-      <p className="lead">회의실 잡기, 탕비실 채우기, 누구한테 물을지. 한 줄 쓰면 확인 카드로 돌려줘요.</p>
-      <section className="card">
+      <p className='lead'>회의실 잡기, 탕비실 채우기, 누구한테 물을지. 한 줄 쓰면 확인 카드로 돌려줘요.</p>
+      <section className='card'>
         <h2>회사 계정으로 로그인</h2>
-        <p className="hint">모의 로그인이에요. 실제 사내 로그인은 IdP 앱 등록이 끝나면 바꿔요.</p>
-        <ul className="choices">
+        <p className='hint'>모의 로그인이에요. 실제 사내 로그인은 IdP 앱 등록이 끝나면 바꿔요.</p>
+        <ul className='choices'>
           {users.map((u) => (
             <li key={u.idpSubject}>
-              <button type="button" onClick={() => choose(u.idpSubject)}>
+              <button type='button' onClick={() => choose(u.idpSubject)}>
                 <strong>{u.displayName}</strong>
                 <span>
                   {u.department} · {u.floor}
@@ -35,7 +35,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
             </li>
           ))}
         </ul>
-        {error && <p className="lock-line">{error}</p>}
+        {error && <p className='lock-line'>{error}</p>}
       </section>
     </main>
   );

@@ -10,7 +10,7 @@
 - `/ask`·`/pantry/draft` 경로는 판 표에 쓰지 못해요(ADR-04). 공개 판에는 사용자가 확인한 품목 이름만 올라가요.
 - 입력 검사 규칙은 `packages/shared/src/input-check/rules.ts` 하나를 브라우저와 서버가 같이 써요. 바꾸면 `RULES_VERSION`을 올려요.
 - 사람 이름(남의 예약자, 분장표 담당자), 투표자는 화면·API·LLM 입력에 내보내지 않아요.
-- LLM은 `core/ai-gateway.ts` 하나로만 불러요. 등급 2 이상은 거부하고, 무보관 계약 확인 전에는 등급 0만 보내요.
+- LLM은 `core/ai/gateway.ts`(`ctx.gateway.structured()`) 하나로만 불러요. 등급 2 이상은 거부하고, 무보관 계약 확인 전에는 등급 0만 보내요. 사람이 쓴 글(묻기·판 요청 글·품목 이름)이 들어가면 자료가 가상이어도 등급 1이에요. 카드의 "AI 정리"는 모델이 실제로 판단했을 때만 붙여요(`ctx.gateway.modelBacked`).
 - 새 모듈은 자기 표와 쓰기 경로만 가져요. 다른 모듈 표를 읽지 않아요. 도구는 `core/tool-registry.ts`에 먼저 적어요.
 
 ## 글
@@ -22,4 +22,5 @@
 
 - `npm run dev`: 서버(3190) + 웹(5190)
 - `npm test`, `npm run typecheck`
-- `npm run db:up` → `npm run db:migrate`: 로컬 PostgreSQL(Docker, 5433)과 마이그레이션
+- `npm run check`: 서식 검사 + 타입 검사 + 시험
+- DB: `DATABASE_URL`이 없으면 내장 PGlite(`.data/pglite`)를 쓰고 서버가 뜰 때 마이그레이션을 적용해요. 실제 PostgreSQL은 `npm run db:up`(Docker, 5433) → `DATABASE_URL` 설정 → `npm run db:migrate`
