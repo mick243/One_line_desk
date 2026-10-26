@@ -1,9 +1,14 @@
 import { checkInput, maskLine } from '@one-line-desk/shared';
 import { useMemo, useState, type FormEvent } from 'react';
+import { Icon } from './Icon';
 
 interface Props {
   /** 입력 칸 머리. 묻기는 "나만 보여요", 같이 채워요는 "우리 층 모두에게 보여요"(D4). */
   scope: string;
+  /** 머리 아이콘: 나만 보이면 자물쇠, 우리 층에 보이면 사람들 */
+  scopeIcon?: 'lock' | 'people';
+  /** 입력 칸 이름(화면 읽기). 없으면 placeholder를 써요. */
+  label?: string;
   placeholder: string;
   submitLabel: string;
   disabledReason?: string;
@@ -14,7 +19,7 @@ interface Props {
 }
 
 // 공통 입력 검사(ADR-11). 서버와 같은 규칙 파일을 써요.
-export function CheckedInput({ scope, placeholder, submitLabel, disabledReason, onSubmit, value, onValueChange }: Props) {
+export function CheckedInput({ scope, scopeIcon = 'lock', label, placeholder, submitLabel, disabledReason, onSubmit, value, onValueChange }: Props) {
   const [own, setOwn] = useState('');
   const text = value ?? own;
   const setText = onValueChange ?? setOwn;
@@ -37,7 +42,10 @@ export function CheckedInput({ scope, placeholder, submitLabel, disabledReason, 
 
   return (
     <form className='checked-input' onSubmit={submit}>
-      <div className='scope'>{scope}</div>
+      <div className='scope'>
+        <Icon name={scopeIcon} size={14} />
+        {scope}
+      </div>
       <div className='row'>
         <input
           type='text'
@@ -48,10 +56,10 @@ export function CheckedInput({ scope, placeholder, submitLabel, disabledReason, 
           autoCorrect='off'
           spellCheck={false}
           maxLength={1000}
-          aria-label={placeholder}
+          aria-label={label ?? placeholder}
         />
         <button type='submit' disabled={blocked}>
-          {sending ? '보내는 중' : submitLabel}
+          {sending ? (submitLabel.endsWith('찾기') ? '찾는 중' : '보내는 중') : submitLabel}
         </button>
       </div>
       {line && <p className='mask-line'>{line}</p>}

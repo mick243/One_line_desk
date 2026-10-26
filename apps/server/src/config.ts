@@ -22,6 +22,11 @@ export interface ServerConfig {
   production: boolean;
   /** 모의 로그인(가상 직원 고르기)을 열지. 개발은 늘 열고, 운영은 시연 배포에서 DESK_MOCK_LOGIN=true일 때만 열어요. */
   mockLogin: boolean;
+  /** 로그인·직원 명단. mock = 앱 안 가상 직원, keycloak = 임시 IdP(npm run idp:up) 또는 같은 방식의 OIDC IdP */
+  idp:
+    { kind: 'mock' } | { kind: 'keycloak'; issuer: string; clientId: string; clientSecret: string; directoryClientId: string; directoryClientSecret: string };
+  /** 넣으면 Slack DM을 실제로 보내요(봇 권한 users:read.email·im:write·chat:write). 없으면 모의 Slack이에요. */
+  slackBotToken: string | undefined;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -46,5 +51,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     seedDemo: env.DESK_SEED_DEMO !== 'false',
     production,
     mockLogin: !production || env.DESK_MOCK_LOGIN === 'true',
+    idp:
+      env.DESK_IDP === 'keycloak'
+        ? {
+            kind: 'keycloak',
+            issuer: env.DESK_IDP_ISSUER ?? 'http://localhost:8180/realms/one-line-desk',
+            clientId: env.DESK_IDP_CLIENT_ID ?? 'one-line-desk-web',
+            clientSecret: secret('DESK_IDP_CLIENT_SECRET', 'dev-only-idp-web-secret-change-me'),
+            directoryClientId: env.DESK_IDP_DIRECTORY_CLIENT_ID ?? 'one-line-desk-directory',
+            directoryClientSecret: secret('DESK_IDP_DIRECTORY_CLIENT_SECRET', 'dev-only-idp-directory-secret-change-me'),
+          }
+        : { kind: 'mock' },
+    slackBotToken: env.SLACK_BOT_TOKEN || undefined,
   };
 }

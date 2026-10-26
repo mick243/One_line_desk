@@ -71,7 +71,7 @@ export function checkItemName(name: string): ItemNameCheck {
   const blocked: NameBlockKind[] = [];
   const common = checkInput(name);
   for (const lock of common.locks) blocked.push(lock.kind);
-  // 묻기에서 가린 자리표([이메일]·[IP])가 품목 이름에 남아 있어도 그대로 올리지 않아요.
+  // 입력 칸에서 가린 자리표([이메일]·[IP])가 품목 이름에 남아 있어도 그대로 올리지 않아요.
   for (const rule of MASK_RULES) {
     if (common.masked[rule.kind] > 0 || name.includes(rule.label)) blocked.push(rule.kind);
   }
@@ -109,7 +109,7 @@ export interface PantryDraftRequest {
   text: string;
 }
 
-/** 게시 초안. 같은 품목 카드(먼저) 또는 공개 미리보기 카드, 담당 질문이면 [묻기로 옮기기] 카드예요. */
+/** 게시 초안. 같은 품목 카드(먼저) 또는 공개 미리보기 카드, 담당 질문이면 [담당 찾기로 옮기기] 카드예요. */
 export interface PantryDraftResponse {
   cards: Card[];
 }

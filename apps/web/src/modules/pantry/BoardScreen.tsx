@@ -13,14 +13,26 @@ import { pantryApi } from './pantry-api';
 
 const REFRESH_MS = 5000;
 
-export function BoardScreen({ me, onOpenOps, onMoveToAsk }: ScreenProps & { onOpenOps: () => void; onMoveToAsk: (text: string) => void }) {
+export function BoardScreen({
+  me,
+  onOpenOps,
+  onMoveToNavi,
+  initialText = '',
+  head,
+}: ScreenProps & {
+  onOpenOps: () => void;
+  onMoveToNavi: (text: string) => void;
+  initialText?: string;
+  /** 머리 글과 입력 칸 문구. 홈 목록과 같은 기능 목록(screens/features.ts)에서 받아요. */
+  head: { question: string; summary: string; placeholder: string; submit: string };
+}) {
   const actions = useActions();
   const isFacilities = me.roles.includes('facilities');
   const [floor, setFloor] = useState(me.floor);
   const [data, setData] = useState<BoardResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 요청 쓰기 칸 글은 이 화면 상태(페이지 메모리)에만 있어요(R13).
-  const [text, setText] = useState('');
+  const [text, setText] = useState(initialText);
   const [draft, setDraft] = useState<Card[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
@@ -52,10 +64,10 @@ export function BoardScreen({ me, onOpenOps, onMoveToAsk }: ScreenProps & { onOp
   }
 
   async function onDraftAction(action: CardAction, card: Card) {
-    // [묻기로 옮기기]: 글은 앱 메모리로만 넘겨요(F3-4).
-    if (action.type === 'navigate' && action.to === 'ask') {
+    // [담당 찾기로 옮기기]: 글은 앱 메모리로만 넘겨요(F3-4).
+    if (action.type === 'navigate' && action.to === 'navi') {
       setDraft(null);
-      onMoveToAsk(text);
+      onMoveToNavi(text);
       return;
     }
     if (action.type === 'post') setText('');
@@ -81,8 +93,10 @@ export function BoardScreen({ me, onOpenOps, onMoveToAsk }: ScreenProps & { onOp
   return (
     <div className='board'>
       <header className='screen-head'>
-        <div>
-          <h1>{floor} 같이 채워요</h1>
+        <div className='page-head'>
+          <p className='eyebrow'>{floor} 같이 채워요</p>
+          <h1>{canWrite ? head.question : `${floor} 판을 보고 있어요`}</h1>
+          <p className='lead'>{head.summary}</p>
           {data?.cycleNote && <p className='hint'>{data.cycleNote}</p>}
         </div>
         {isFacilities && (
@@ -106,8 +120,10 @@ export function BoardScreen({ me, onOpenOps, onMoveToAsk }: ScreenProps & { onOp
       {canWrite ? (
         <CheckedInput
           scope={PANTRY_TEXT.boardScope}
-          placeholder='필요한 간식·음료·비품을 적어 주세요'
-          submitLabel='보내기'
+          scopeIcon='people'
+          label={head.question}
+          placeholder={head.placeholder}
+          submitLabel={head.submit}
           value={text}
           onValueChange={setText}
           onSubmit={submit}
@@ -147,7 +163,7 @@ export function BoardScreen({ me, onOpenOps, onMoveToAsk }: ScreenProps & { onOp
                 {item.carriedOver && <p className='evidence'>지난 주기에서 넘어왔어요</p>}
                 {data.canVote && (
                   <div className='card-actions'>
-                    <button type='button' className={item.myVote ? 'secondary' : 'primary'} disabled={busy !== null} onClick={() => void press(item)}>
+                    <button type='button' className={item.myVote ? 'neutral' : 'secondary'} disabled={busy !== null} onClick={() => void press(item)}>
                       {busy === item.bundleId ? (item.myVote ? '거두는 중' : '+1 하는 중') : item.myVote ? '표 거두기' : '+1'}
                     </button>
                   </div>

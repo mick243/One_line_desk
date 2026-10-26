@@ -6,6 +6,7 @@ import {
   type ConsentInfo,
   kstTime,
   type McpScope,
+  ROOM_CONDITIONS_VARIANT,
   type RoomCardsResponse,
   type RoomRecheckRequest,
 } from '@one-line-desk/shared';
@@ -268,8 +269,8 @@ export function LinkEntry({ token }: ScreenProps & { token: string }) {
   }, [token]);
 
   const toAsk = (
-    <button type='button' className='secondary' onClick={() => void actions.run({ type: 'navigate', text: '묻기에서 찾기', to: 'ask' })}>
-      묻기에서 찾기
+    <button type='button' className='secondary' onClick={() => void actions.run({ type: 'navigate', text: '회의실에서 찾기', to: 'rooms' })}>
+      회의실에서 찾기
     </button>
   );
 
@@ -284,10 +285,12 @@ export function LinkEntry({ token }: ScreenProps & { token: string }) {
   }
 
   const checked = Date.parse(view.checkedAt);
+  // 링크를 연 사람은 고른 방을 먼저 봐야 해요. 조건 고치기 카드는 방 카드 뒤로 보내요(10/26 MCP 베타 시험).
+  const ordered = [...view.cards.filter((c) => c.variant !== ROOM_CONDITIONS_VARIANT), ...view.cards.filter((c) => c.variant === ROOM_CONDITIONS_VARIANT)];
   return (
     <div className='ask' aria-label='Claude에서 가져온 후보'>
       <p className='mask-line'>Claude에서 가져온 후보예요. 지금 다시 확인했어요(현황 {Number.isNaN(checked) ? '--:--' : kstTime(checked)} 기준)</p>
-      {view.cards.map((card) => (
+      {ordered.map((card) => (
         <CardView key={card.id} card={card} onAction={(action, c) => actions.run(action, c)} />
       ))}
       <div className='actions'>{toAsk}</div>

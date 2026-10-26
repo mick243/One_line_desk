@@ -59,7 +59,7 @@ export function notFoundCard(): Card {
     label: '안내',
     headline: '공지에서 찾지 못했어요',
     evidence: { text: `찾아본 범위: ${ALLOWED_BOARDS.join(' · ')}`, aiSummarized: false },
-    primary: { type: 'reask', text: '담당 안내로 묻기', kind: 'navi' },
+    primary: { type: 'reask', text: '담당 찾기에서 찾기', kind: 'navi' },
     tail: ASK_TAIL,
   });
 }

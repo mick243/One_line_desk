@@ -1,5 +1,5 @@
 import type { AppDestination, Card, CardAction, PlanConfirmResponse, PlanSheet } from '@one-line-desk/shared';
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
+import { type ComponentType, createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 import { ApiFailure, api, apiRequest } from '../api';
 import { CardView } from './CardView';
 import { Sheet } from './Sheet';
@@ -35,10 +35,22 @@ export function useActions(): ActionsApi {
   return ctx;
 }
 
-export function ActionHost({ children, onNavigate }: { children: ReactNode; onNavigate: (to: AppDestination) => void }) {
+type InviteAction = Extract<CardAction, { type: 'invite' }>;
+
+export function ActionHost({
+  children,
+  onNavigate,
+  InviteSheet,
+}: {
+  children: ReactNode;
+  onNavigate: (to: AppDestination) => void;
+  /** 참석자 고르기 양식(ADR-17). 모듈 부품이라 App이 넘겨줘요(공통 부품이 모듈을 import하지 않게). */
+  InviteSheet?: ComponentType<{ action: InviteAction; onClose: () => void }>;
+}) {
   const [confirming, setConfirming] = useState<Confirming | null>(null);
   const [shown, setShown] = useState<Shown | null>(null);
   const [version, setVersion] = useState(0);
+  const [inviting, setInviting] = useState<InviteAction | null>(null);
 
   const showOutcome = useCallback((res: PlanConfirmResponse) => {
     setVersion((v) => v + 1);
@@ -63,7 +75,13 @@ export function ActionHost({ children, onNavigate }: { children: ReactNode; onNa
             onNavigate(action.to);
             return;
           case 'reask':
-            // 다시 묻기는 원문을 가진 묻기 화면이 처리해요(CardView onAction에서 먼저 가로채요).
+          case 'inquire':
+            // 다시 찾기·문의 양식은 원문을 가진 기능 페이지가 처리해요(CardView onAction에서 먼저 가로채요).
+            return;
+          case 'invite':
+            // 참석자 고르기 양식(ADR-17). 확정 카드 시트 위에서도 열려야 해서 여기서 띄워요.
+            setShown(null);
+            setInviting(action);
             return;
           case 'propose': {
             const created = await api.createPlan(action.proposalToken);
@@ -124,6 +142,7 @@ export function ActionHost({ children, onNavigate }: { children: ReactNode; onNa
           }}
         />
       )}
+      {inviting && InviteSheet && <InviteSheet action={inviting} onClose={() => setInviting(null)} />}
       {shown && (
         <Sheet title={shown.title} onClose={() => setShown(null)}>
           {shown.message && <p>{shown.message}</p>}

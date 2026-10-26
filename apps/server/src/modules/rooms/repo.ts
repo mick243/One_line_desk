@@ -11,6 +11,17 @@ export interface RoomRow {
   floor: string;
   capacity: number;
   equipment: Equipment[];
+  facilities: string[];
+  photoUrl: string | null;
+}
+
+/** 하루 일정 한 칸. 내 예약인지(참·거짓)만 알고, 남의 예약은 누가 잡았는지 모르는 채로 와요. */
+export interface DayBlockRow {
+  start: number;
+  end: number;
+  mine: boolean;
+  /** 내 앱 예약일 때만 */
+  reservationId: string | null;
 }
 
 /** 어느 방이 언제 차 있는지만 알아요. 누가 잡았는지는 읽지 않아요. */
@@ -40,13 +51,10 @@ export async function countRooms(q: Queryable): Promise<number> {
 /** 모의 장부를 넣어요. 남의 예약은 'ledger' 출처·가명 값으로만 들어가요(plan 없음). */
 export async function insertLedger(q: Queryable, rooms: LedgerRoom[], bookings: LedgerBooking[]): Promise<void> {
   for (const r of rooms) {
-    await q.query('insert into rooms (id, name, floor, capacity, equipment) values ($1, $2, $3, $4, $5) on conflict (id) do nothing', [
-      r.id,
-      r.name,
-      r.floor,
-      r.capacity,
-      r.equipment,
-    ]);
+    await q.query(
+      'insert into rooms (id, name, floor, capacity, equipment, facilities, photo_url) values ($1, $2, $3, $4, $5, $6, $7) on conflict (id) do nothing',
+      [r.id, r.name, r.floor, r.capacity, r.equipment, r.facilities, r.photoUrl],
+    );
   }
   for (const b of bookings) {
     await q.query(
@@ -56,14 +64,38 @@ export async function insertLedger(q: Queryable, rooms: LedgerRoom[], bookings: 
   }
 }
 
+/** 이미 들어간 방에 사진·설비가 비어 있으면 장부 값으로 채워요(301 마이그레이션 전에 넣은 시연 DB용). */
+export async function fillRoomDetails(q: Queryable, rooms: LedgerRoom[]): Promise<void> {
+  for (const r of rooms) {
+    await q.query('update rooms set facilities = $2, photo_url = $3 where id = $1 and photo_url is null', [r.id, r.facilities, r.photoUrl]);
+  }
+}
+
+const ROOM_COLUMNS = 'id, name, floor, capacity, equipment, facilities, photo_url as "photoUrl"';
+
 export async function listRooms(q: Queryable): Promise<RoomRow[]> {
-  const { rows } = await q.query<RoomRow>('select id, name, floor, capacity, equipment from rooms order by id');
+  const { rows } = await q.query<RoomRow>(`select ${ROOM_COLUMNS} from rooms order by id`);
   return rows;
 }
 
 export async function getRoom(q: Queryable, id: string): Promise<RoomRow | null> {
-  const { rows } = await q.query<RoomRow>('select id, name, floor, capacity, equipment from rooms where id = $1', [id]);
+  const { rows } = await q.query<RoomRow>(`select ${ROOM_COLUMNS} from rooms where id = $1`, [id]);
   return rows[0] ?? null;
+}
+
+/** 한 방의 하루 일정. 예약자 칸은 고르지 않고, 내 예약인지만 계산해요(ADR-06). */
+export async function dayBlocks(q: Queryable, roomId: string, from: number, to: number, pseudonymId: string): Promise<DayBlockRow[]> {
+  const { rows } = await q.query<DayBlockRow>(
+    `select (extract(epoch from lower(slot)) * 1000)::float8 as start,
+            (extract(epoch from upper(slot)) * 1000)::float8 as "end",
+            (source = 'app' and pseudonym_id = $4) as mine,
+            case when source = 'app' and pseudonym_id = $4 then id::text end as "reservationId"
+       from room_reservations
+      where room_id = $1 and slot && tstzrange($2, $3, '[)')
+      order by lower(slot)`,
+    [roomId, iso(from), iso(to), pseudonymId],
+  );
+  return rows;
 }
 
 /** [from, to)와 겹치는 예약 구간. 예약자 칸은 고르지 않아요. */

@@ -136,7 +136,7 @@
 | MCP 요구4 | 허용 두 겹(등록 ID·비밀 + 보안팀 승인 목록), 시험 클라이언트 하나, 허용 목록이 비면 실제 데이터로 켜지 않음 | 부분 | S/modules/mcp/policy.ts:11-31, S/modules/mcp/index.ts:17-47, D/500_mcp_clients.sql | oauth.test.ts:107, :502, :512 [MCP 요구 4] · policy.test.ts:12 [ADR-12·15 시험], :19 | 정책 검사는 있어요. 운영자가 보안팀 승인 클라이언트를 등록하는 경로가 없어요(시연 클라이언트를 seed로만 넣음) |
 | MCP 요구5 | 동의 시트: IdP 로그인 뒤 S6 위, 앱 이름·읽는 것·못 하는 것·"그 앱의 AI 모델로 보내져요"·끊는 곳, 버튼 둘 같은 무게·기본 선택 없음, 허용 밖 문구 | 다르게 됨 | W/modules/mcp/index.tsx:142-243, W/App.tsx:15-20, :78, S/modules/mcp/routes.ts:17-78 | oauth.test.ts:79, :139, :160 [MCP 요구 5], :89 [MCP-4] | 문구·버튼은 문서대로예요. 다만 S6 위 시트가 아니라 `/oauth/consent` 단독 화면으로 떠요. 기능 차이는 없어서 화면설계를 고치거나 S6 위 Sheet로 감싸면 돼요(작음) |
 | MCP 요구6 | S6 "연결된 AI 앱": 앱 이름·연결한 날·[끊기](확인 시트), "마지막 사용" 없음, 끊기 시트 문구 | 완료 | W/modules/mcp/index.tsx:42-126, S/modules/mcp/routes.ts:80-115 | connections.test.ts:27, :40 [MCP 요구 6], :58 [ADR-03 시험] | |
-| MCP 요구7 | 감사 로그는 가명 ID·시각·도구·결과·클라이언트 ID만, 횟수는 가명 ID × 도구, MCP 전체 스위치, 모듈 링크만·끔이면 도구 빠짐, 둘 다 빠지면 "지금 연결할 수 있는 도구가 없어요" | 완료 | S/modules/mcp/mcp-route.ts:48-49, :99, S/core/tool-registry.ts:64-67, S/modules/mcp/policy.ts:35-48 | mcp-route.test.ts:208, :220, :228 [MCP-7], :253 [ADR-13 시험] · oauth.test.ts:172 [MCP-7] · connections.test.ts:47 [MCP-7] · core.test.ts:48 [M5] | |
+| MCP 요구7 | 감사 로그는 가명 ID·시각·도구·결과·클라이언트 ID만, 횟수는 가명 ID × 도구, MCP 전체 스위치(끄면 200 + 도구 0개 + 꺼짐 안내, 10/26), 모듈 링크만·끔이면 도구 빠짐, 둘 다 빠지면 "지금 연결할 수 있는 도구가 없어요" | 완료 | S/modules/mcp/mcp-route.ts:48-49, :99, S/core/tool-registry.ts:64-67, S/modules/mcp/policy.ts:35-48 | mcp-route.test.ts:208, :220, :228 [MCP-7], :253 [ADR-13 시험] · oauth.test.ts:172 [MCP-7] · connections.test.ts:47 [MCP-7] · core.test.ts:48 [M5] | |
 | MCP 완료1 | 도구 목록에 쓰기 도구 0, MCP 호출 중 게이트웨이 LLM 0 | 완료 | 위 | mcp-route.test.ts:37, :182 | |
 | MCP 완료2 | 예약자·제목 넣은 장부로도 `rooms_find_free` 응답에 0, 스키마에 칸·방별 일정 없음 | 완료 | S/modules/mcp/tools.ts:66-89 | mcp-route.test.ts:46, :81 [MCP-2] | |
 | MCP 완료3 | 본문 카나리 공지로도 `notices_search` 본문 0, 허용 밖 게시판 0 | 완료 | S/modules/mcp/tools.ts:92-98, :162-171 | mcp-route.test.ts:57, :152 · notices.test.ts:106, :120 | |
@@ -340,7 +340,7 @@
 |---|---|---|---|---|---|
 | S1 입력창 머리 | 나만 보여요 | 완료 | 있음 | W/screens/Ask.tsx:55 | |
 | S1 입력창 안 | 이거 어디서 해요? 한 줄로 물어보세요 | 완료 | 있음 | W/screens/Ask.tsx:56 | |
-| S1 입력창 아래 | 질문 원문은 저장하지 않아요 · 무엇을 남기나요 | 완료 | 있음 | W/screens/Ask.tsx:63 | 누르면 S6로 가요(무엇을 남기나요 칸으로 스크롤은 안 함) |
+| S1 입력창 아래 | 질문 원문은 저장하지 않아요 · 무엇을 남기나요 | 뺌(10/26 사용자 결정) | — | — | 기능 페이지에서 링크를 뺐어요. 저장 범위는 S6에 있어요 |
 | 가림 줄(S1·S3) | 이메일 N곳, IP N곳을 [이메일] · [IP]로 바꿔 보내요 | 완료 | 없음(shared) | P/input-check/check.ts:37-43, 그림 W/components/CheckedInput.tsx:57 | 묻기·요청 칸 모두 CheckedInput이에요 |
 | 키 잠금 | 키나 토큰처럼 보이는 글자가 있어서 보낼 수 없어요. 그 부분을 지우고 다시 보내 주세요 | 완료 | 없음(shared) | P/input-check/rules.ts:30, 그림 W/components/CheckedInput.tsx:58-62 | |
 | 등급 3 차단 | 주민번호·비밀번호 같은 정보는 받지 않아요. 지우고 다시 보내 주세요 | 완료 | 없음(shared) | P/input-check/rules.ts:31 | |

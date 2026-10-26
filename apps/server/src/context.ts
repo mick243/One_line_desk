@@ -1,11 +1,12 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { Adapters } from './adapters';
+import type { ResolvedAdapters } from './adapters';
 import type { AdapterCapabilities } from './adapters/types';
 import type { ServerConfig } from './config';
 import type { AiGateway } from './core/ai/gateway';
 import type { AuditLog } from './core/audit';
 import type { Db } from './core/db';
 import type { FixedActions } from './core/fixed-action';
+import type { Notifier } from './core/notifications';
 import type { OpsSettingsStore } from './core/ops-settings';
 import type { PlanService } from './core/plans';
 import type { RateLimiter } from './core/rate-limit';
@@ -19,7 +20,8 @@ export type PreHandler = (req: FastifyRequest, reply: FastifyReply) => Promise<u
 export interface AppContext {
   config: ServerConfig;
   db: Db;
-  adapters: Adapters;
+  /** 로그인·직원 명단·그룹웨어 캘린더·메신저(ADR-05·17) */
+  adapters: ResolvedAdapters;
   /** 공통 어댑터와 모듈 어댑터(회의실 장부·분장표·공지 등)를 모두 모은 목록. 실제 데이터인지 판별할 때 써요(ADR-05·15). */
   dataAdapters: () => AdapterCapabilities[];
   sessions: SessionStore;
@@ -29,6 +31,8 @@ export interface AppContext {
   gateway: AiGateway;
   plans: PlanService;
   fixed: FixedActions;
+  /** 앱 안 알림(ADR-16). 쓰기 트랜잭션 안에서 같이 넣어요. */
+  notify: Notifier;
   /** 모듈 사이 기능(core/services.ts). 제공하는 모듈이 팩토리에서 채워요. */
   services: Services;
   guards: {

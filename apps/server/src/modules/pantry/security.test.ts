@@ -169,7 +169,8 @@ describe('[H2] 원문에서 뽑은 이름·막힌 이름은 토큰·plan·영수
     const second = postActionOf(await draft(me, '옥수수차 PLANCANARY9 채워 주세요'));
     const blocked = await me.call('POST', '/api/plans/direct', { proposalToken: second.proposalToken, edits: { itemName: '옥수수차 010-9876-5432' } });
     expect(blocked.body).toMatchObject({ status: 'blocked', card: { label: '막힘', headline: '올릴 수 없는 글자가 있어요: [전화번호]' } });
-    expect(withDecodedTokens(JSON.stringify(blocked.body))).not.toMatch(/9876|옥수수차|PLANCANARY9/);
+    // 무작위 ID·토큰에 우연히 섞일 수 있는 짧은 숫자 대신 전화번호 전체로 찾아요.
+    expect(withDecodedTokens(JSON.stringify(blocked.body))).not.toMatch(/9876-5432|98765432|옥수수차|PLANCANARY9/);
     const replay = await me.call('POST', '/api/plans/direct', { proposalToken: second.proposalToken, edits: { itemName: '옥수수차 010-9876-5432' } });
     expect(replay.body).toEqual(blocked.body);
 
@@ -180,7 +181,7 @@ describe('[H2] 원문에서 뽑은 이름·막힌 이름은 토큰·plan·영수
 
     // 3) DB 전체 덤프(토큰을 풀어서도): 카나리·전화번호·원문 조각 0건
     const dump = await dumpDb(t);
-    for (const needle of ['PLANCANARY9', '010-9876-5432', '9876', '김가상', '과장님']) expect(dump, needle).not.toContain(needle);
+    for (const needle of ['PLANCANARY9', '010-9876-5432', '9876-5432', '98765432', '김가상', '과장님']) expect(dump, needle).not.toContain(needle);
 
     // plan 행: HMAC은 남기지 않고, 막힌 plan에는 이름도 없어요.
     const { rows } = await t.db.query<{ state: string; params: Record<string, unknown> }>("select state, params from plans where module = 'pantry'");

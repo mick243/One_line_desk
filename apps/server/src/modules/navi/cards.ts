@@ -7,6 +7,8 @@ import { GENERAL_DESK } from './fixtures';
 
 export const ASK_TAIL = '질문 원문은 저장하지 않아요';
 export const NO_PERIOD = '분장표에 없음';
+/** 분장표에서 못 찾았을 때 총무 창구로 보내는 문의의 업무 이름 */
+export const GENERAL_TASK = '분장표에 없는 문의';
 
 type CardRow = Pick<ChartRow, 'id' | 'task' | 'team' | 'desk' | 'deskUrl' | 'nextStep' | 'processingPeriod'> & { revisedOn: string };
 
@@ -25,6 +27,7 @@ export function candidateLabel(row: Pick<CardRow, 'task' | 'team'>): string {
  */
 export function naviCard(row: CardRow, opts: { aiSummarized: boolean; others?: CardRow[] }): Card {
   const primary: CardAction | undefined = row.deskUrl ? { type: 'link', text: '창구 열기', href: row.deskUrl } : undefined;
+  const inquire: CardAction = { type: 'inquire', text: `${row.team}에 문의하기`, rowId: row.id, team: row.team, task: row.task };
   return makeCard({
     id: `navi-${row.id}`,
     kind: 'navi',
@@ -38,6 +41,7 @@ export function naviCard(row: CardRow, opts: { aiSummarized: boolean; others?: C
     ],
     evidence: { text: rowEvidence(row), aiSummarized: opts.aiSummarized },
     ...(primary ? { primary } : {}),
+    secondary: [inquire],
     ...(opts.others
       ? {
           wrong: {
@@ -61,6 +65,7 @@ export function askHereCard(): Card {
     fields: [{ name: '여기로 물어보세요', value: `${GENERAL_DESK.team} · ${GENERAL_DESK.desk}` }],
     evidence: { text: '총무 창구 정보', href: GENERAL_DESK.url, aiSummarized: false },
     primary: { type: 'link', text: '총무 창구 열기', href: GENERAL_DESK.url },
+    secondary: [{ type: 'inquire', text: `${GENERAL_DESK.team}에 문의하기`, rowId: null, team: GENERAL_DESK.team, task: GENERAL_TASK }],
     tail: ASK_TAIL,
   });
 }

@@ -1,6 +1,10 @@
 import {
   type ChartApplyRequest,
   type ChartUploadRequest,
+  INQUIRY_QUESTION_MAX,
+  INQUIRY_REASON_MAX,
+  type InquiryListResponse,
+  type InquiryRequest,
   KINDS,
   NAVI_ROW_ID_PATTERN,
   type NaviRowCardRequest,
@@ -10,6 +14,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AppContext } from '../../context';
 import { DeskError } from '../../core/errors';
+import type { InquiryService } from './inquiries';
 import type { NaviService } from './service';
 
 // navi 경로. 묻기(/api/ask)와 따로인 피드백 경로·행 카드·S5(분장표 주인만)예요.
@@ -34,7 +39,7 @@ async function rejectUnknownFeedbackKeys(req: FastifyRequest, reply: FastifyRepl
   return undefined;
 }
 
-export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: NaviService) {
+export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: NaviService, inquiries: InquiryService) {
   const owner = [ctx.guards.user, ctx.guards.role('chart-owner')];
   const assertNotOff = () => {
     if (ctx.ops.get().modules.navi === 'off') throw featureOff();
@@ -136,5 +141,42 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
       },
     },
     async (req) => navi.applyChart(req.deskUser!, req.body.csv, req.body.baseVersion),
+  );
+
+  // ── 담당 팀에 문의 보내기(ADR-16). 받는 곳은 분장표 행의 주인 부서예요. ──
+  app.post<{ Body: InquiryRequest }>(
+    '/api/navi/inquiries',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['rowId', 'question', 'reason', 'requestId'],
+          additionalProperties: false,
+          properties: {
+            rowId: { anyOf: [{ type: 'string', pattern: NAVI_ROW_ID_PATTERN }, { type: 'null' }] },
+            question: { type: 'string', minLength: 1, maxLength: INQUIRY_QUESTION_MAX },
+            reason: { type: 'string', minLength: 1, maxLength: INQUIRY_REASON_MAX },
+            requestId: { type: 'string', pattern: '^[A-Za-z0-9-]{8,64}$' },
+          },
+        },
+      },
+    },
+    async (req) => inquiries.send(req.deskUser!, req.body),
+  );
+
+  app.get('/api/navi/inquiries/inbox', { preHandler: ctx.guards.user }, async (req): Promise<InquiryListResponse> => inquiries.inbox(req.deskUser!));
+  app.get('/api/navi/inquiries/mine', { preHandler: ctx.guards.user }, async (req): Promise<InquiryListResponse> => inquiries.mine(req.deskUser!));
+
+  app.post<{ Params: { id: string }; Body: { state: 'seen' | 'done' } }>(
+    '/api/navi/inquiries/:id/state',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        params: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: { type: 'string', pattern: '^[0-9]{1,18}$' } } },
+        body: { type: 'object', required: ['state'], additionalProperties: false, properties: { state: { enum: ['seen', 'done'] } } },
+      },
+    },
+    async (req) => inquiries.setState(req.deskUser!, req.params.id, req.body.state),
   );
 }

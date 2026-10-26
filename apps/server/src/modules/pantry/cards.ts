@@ -99,15 +99,15 @@ export function postedCard(input: { cardId: number; name: string; floor: string 
   });
 }
 
-/** 판에 담당 질문을 쓰면(F3-4). 단독 모드에서는 묻기 탭이 없어서 옮기기 버튼이 없어요. */
-export function moveToAskCard(standalone: boolean, aiSummarized: boolean): Card {
+/** 판에 담당 질문을 쓰면(F3-4). 담당 찾기가 꺼져 있으면(같이 채워요 단독 등) 옮길 곳이 없어서 버튼이 없어요. */
+export function moveToNaviCard(naviOff: boolean, aiSummarized: boolean): Card {
   return makeCard({
     id: 'pantry-move-to-ask',
     kind: 'pantry',
     label: '안내',
-    headline: standalone ? PANTRY_TEXT.standaloneOnly : PANTRY_TEXT.moveToAsk,
+    headline: naviOff ? PANTRY_TEXT.standaloneOnly : PANTRY_TEXT.moveToAsk,
     evidence: { text: '판에는 탕비실 품목만 올라가요', aiSummarized },
-    ...(standalone ? {} : { primary: { type: 'navigate' as const, text: '묻기로 옮기기', to: 'ask' as const } }),
+    ...(naviOff ? {} : { primary: { type: 'navigate' as const, text: '담당 찾기로 옮기기', to: 'navi' as const } }),
     tail: '저장되는 것이 없어요',
   });
 }

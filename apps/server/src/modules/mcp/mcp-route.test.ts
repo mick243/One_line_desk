@@ -47,9 +47,22 @@ describe('도구 목록', () => {
     const { t, at } = await setup();
     const rooms = (await listed(t, at)).find((x) => x.name === 'rooms_find_free')!;
     const out = rooms.outputSchema;
-    expect(Object.keys(out.properties!).sort()).toEqual(['alternatives', 'candidates', 'checkedAt', 'checkedAtLabel', 'mock']);
+    expect(Object.keys(out.properties!).sort()).toEqual(['alternatives', 'candidates', 'checkedAt', 'checkedAtLabel', 'emptyReason', 'mock']);
     const slot = out.properties!.candidates!.items!;
-    expect(Object.keys(slot.properties!).sort()).toEqual(['date', 'end', 'floor', 'link', 'linkText', 'matched', 'roomId', 'roomName', 'start']);
+    expect(Object.keys(slot.properties!).sort()).toEqual([
+      'capacity',
+      'date',
+      'end',
+      'equipment',
+      'facilities',
+      'floor',
+      'link',
+      'linkText',
+      'matched',
+      'roomId',
+      'roomName',
+      'start',
+    ]);
     expect(slot.additionalProperties).toBe(false);
     expect(JSON.stringify(out)).not.toMatch(/booker|title|meeting|schedule|owner|attendee/i);
   });
@@ -95,10 +108,14 @@ describe('rooms_find_free', () => {
       start: '15:00',
       end: '16:00',
       matched: ['인원 6명 이상', '화면'],
+      capacity: 8,
+      equipment: ['화면'],
+      facilities: ['TV 모니터 55인치', '화이트보드'],
       link: `${BASE}/r/fakeProposal1.sig`,
       linkText: '한 줄 데스크에서 예약하기',
     });
     expect(out).toMatchObject({ checkedAtLabel: '09:00', mock: true, alternatives: [] });
+    expect(out).not.toHaveProperty('emptyReason');
   });
 
   it('[MCP 요구 2] 앱 확인 링크는 토큰 주인의 가명 ID로 서명한 제안 토큰이고, 조건은 운영 설정 기본 길이로 채워요', async () => {
@@ -115,6 +132,7 @@ describe('rooms_find_free', () => {
     const out = (await callTool(t, at, 'rooms_find_free', ROOMS_ARGS)).json().result.structuredContent;
     expect(out.candidates).toEqual([]);
     expect(out.alternatives.map((a: { roomId: string }) => a.roomId)).toEqual(['room-5', 'room-6']);
+    expect(out.emptyReason).toEqual({ code: 'all-booked', message: '조건에 맞는 방이 그 시간에 모두 예약돼 있어요. 가까운 시간 대안을 함께 보냈어요' });
     const audit = (await t.db.query("select result from audit_log where channel = 'mcp' and tool = 'rooms_find_free'")).rows;
     expect(audit).toEqual([{ result: 'none' }]);
   });
@@ -148,7 +166,38 @@ describe('rooms_find_free', () => {
   });
 });
 
+describe('서버 안내문과 도구 설명(MCP 베타 U5)', () => {
+  it('담당 부서 질문은 짐작하지 말고 앱 담당 찾기로 보내라고 안내하고, 앱 주소가 있어요', async () => {
+    const { t, at } = await setup();
+    const init = await mcpRequest(t, at, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } });
+    const text: string = init.json().result.instructions;
+    expect(text).toContain('담당 부서·할 일 질문');
+    expect(text).toContain(`한 줄 데스크 앱(${BASE}/)의 담당 찾기`);
+    expect(text).toContain('짐작해서 답하지 말고');
+  });
+
+  it('안내문·도구 설명에 내부 문서 번호(ADR·R·D·M 번호)가 없어요', async () => {
+    const { t, at } = await setup();
+    const init = await mcpRequest(t, at, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } });
+    const tools = await listed(t, at);
+    const text = JSON.stringify([
+      init.json().result.instructions,
+      tools.map((x) => [x.name, (x as { description?: string }).description, x.inputSchema, x.outputSchema]),
+    ]);
+    expect(text).not.toMatch(/ADR-\d|\b[RDMF]\d{1,2}\b|[RDMF]-\d/);
+  });
+});
+
 describe('notices_search', () => {
+  it('[MCP 베타 U9] 맞는 공지가 없으면 찾아본 게시판과 함께 까닭을 돌려줘요', async () => {
+    const { t, at } = await setup();
+    const out = (await callTool(t, at, 'notices_search', { query: '없는공지' })).json().result.structuredContent;
+    expect(out.hits).toEqual([]);
+    expect(out.emptyReason).toEqual({ code: 'no-match', message: '허용 게시판(인사 · 총무)에서 찾았지만 맞는 공지가 없어요. 다른 낱말로 다시 찾아 주세요' });
+    const found = (await callTool(t, at, 'notices_search', { query: '연말정산' })).json().result.structuredContent;
+    expect(found).not.toHaveProperty('emptyReason');
+  });
+
   it('[MCP-3] 본문에 카나리를 넣은 시험 공지로 불러도 응답에 본문·요약이 0건이에요', async () => {
     const { t, at } = await setup();
     const res = await callTool(t, at, 'notices_search', { query: '연말정산' });
@@ -217,12 +266,25 @@ describe('MCP 경로의 경계', () => {
     expect(all).not.toContain(canaryQuery);
   });
 
-  it('[MCP-7] MCP 스위치를 끄면 연결이 거부돼요', async () => {
-    const { t, at } = await setup();
+  it('[MCP-7·U4] MCP 스위치를 끄면 도구가 0개가 되고, 인증 오류가 아니라 "운영자가 껐어요"로 답해요', async () => {
+    const { t, at, rooms } = await setup();
     await t.ctx.ops.setFlag('p_op', 'mcp', false);
-    const res = await mcpRequest(t, at, 'tools/list');
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toEqual({ error: 'mcp-off', message: '지금 연결할 수 있는 도구가 없어요' });
+    const init = await mcpRequest(t, at, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } });
+    expect(init.statusCode).toBe(200);
+    expect(init.json().result.instructions).toContain('운영자가 한 줄 데스크 MCP를 잠시 껐어요. 인증이나 연결 문제는 아니에요.');
+    expect(await toolNames(t, at)).toEqual([]);
+    // 예전 목록으로 부르면 같은 안내를 오류 결과로 받아요. 서비스는 부르지 않아요.
+    const call = await callTool(t, at, 'rooms_find_free', ROOMS_ARGS);
+    expect(call.statusCode).toBe(200);
+    expect(call.json().result).toMatchObject({
+      isError: true,
+      content: [{ type: 'text', text: expect.stringContaining('운영자가 한 줄 데스크 MCP를 잠시 껐어요') }],
+    });
+    expect(rooms.calls.findFree).toEqual([]);
+    const audit = (await t.db.query("select result from audit_log where channel = 'mcp' and tool = 'rooms_find_free'")).rows;
+    expect(audit).toEqual([{ result: 'refused' }]);
+    // 토큰이 맞지 않으면 꺼져 있어도 그대로 401이에요.
+    expect((await mcpRequest(t, 'not-a-token', 'tools/list')).statusCode).toBe(401);
   });
 
   it('[MCP-7] rooms·notices를 링크만·끔으로 하면 그 도구가 목록에서 빠지고 부를 수 없어요', async () => {

@@ -1,0 +1,426 @@
+{
+  "realm": "one-line-desk",
+  "displayName": "한 줄 데스크 임시 IdP(가상 직원)",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "loginWithEmailAllowed": true,
+  "internationalizationEnabled": true,
+  "supportedLocales": ["ko", "en"],
+  "defaultLocale": "ko",
+  "groups": [
+    {
+      "name": "부서",
+      "path": "/부서",
+      "subGroups": [
+        {
+          "name": "재무팀",
+          "path": "/부서/재무팀",
+          "subGroups": []
+        },
+        {
+          "name": "개발팀",
+          "path": "/부서/개발팀",
+          "subGroups": []
+        },
+        {
+          "name": "총무팀",
+          "path": "/부서/총무팀",
+          "subGroups": []
+        },
+        {
+          "name": "인사팀",
+          "path": "/부서/인사팀",
+          "subGroups": []
+        },
+        {
+          "name": "정보보안팀",
+          "path": "/부서/정보보안팀",
+          "subGroups": []
+        },
+        {
+          "name": "디자인팀",
+          "path": "/부서/디자인팀",
+          "subGroups": []
+        },
+        {
+          "name": "영업팀",
+          "path": "/부서/영업팀",
+          "subGroups": []
+        }
+      ]
+    },
+    {
+      "name": "층",
+      "path": "/층",
+      "subGroups": [
+        {
+          "name": "2층",
+          "path": "/층/2층",
+          "subGroups": []
+        },
+        {
+          "name": "3층",
+          "path": "/층/3층",
+          "subGroups": []
+        },
+        {
+          "name": "4층",
+          "path": "/층/4층",
+          "subGroups": []
+        },
+        {
+          "name": "5층",
+          "path": "/층/5층",
+          "subGroups": []
+        }
+      ]
+    },
+    {
+      "name": "역할",
+      "path": "/역할",
+      "subGroups": [
+        {
+          "name": "facilities",
+          "path": "/역할/facilities",
+          "subGroups": []
+        },
+        {
+          "name": "operator",
+          "path": "/역할/operator",
+          "subGroups": []
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "one-line-desk-web",
+      "name": "한 줄 데스크",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "dev-only-idp-web-secret-change-me",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:5190/api/auth/oidc/callback"],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "full.path": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "false",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "false",
+            "claim.name": "groups"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "one-line-desk-directory",
+      "name": "한 줄 데스크 직원 명단 읽기",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "dev-only-idp-directory-secret-change-me",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true
+    }
+  ],
+  "users": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "username": "haneul",
+      "firstName": "하늘",
+      "lastName": "가상 직원",
+      "email": "haneul@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/재무팀", "/층/3층"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "username": "doyun",
+      "firstName": "도윤",
+      "lastName": "가상 직원",
+      "email": "doyun@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/개발팀", "/층/5층"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "username": "seoyeon",
+      "firstName": "서연",
+      "lastName": "가상 총무",
+      "email": "seoyeon@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/총무팀", "/층/2층", "/역할/facilities"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "username": "jihu",
+      "firstName": "지후",
+      "lastName": "가상 인사",
+      "email": "jihu@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/인사팀", "/층/2층"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "username": "minjun",
+      "firstName": "민준",
+      "lastName": "가상 운영자",
+      "email": "minjun@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/정보보안팀", "/층/4층", "/역할/operator"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "username": "seojun",
+      "firstName": "서준",
+      "lastName": "가상 직원",
+      "email": "seojun@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/개발팀", "/층/5층"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000007",
+      "username": "haeun",
+      "firstName": "하은",
+      "lastName": "가상 직원",
+      "email": "haeun@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/개발팀", "/층/5층"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000008",
+      "username": "jiwoo",
+      "firstName": "지우",
+      "lastName": "가상 직원",
+      "email": "jiwoo@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/디자인팀", "/층/5층"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000009",
+      "username": "yejun",
+      "firstName": "예준",
+      "lastName": "가상 직원",
+      "email": "yejun@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/영업팀", "/층/3층"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000010",
+      "username": "sua",
+      "firstName": "수아",
+      "lastName": "가상 직원",
+      "email": "sua@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/재무팀", "/층/3층"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "username": "eunwoo",
+      "firstName": "은우",
+      "lastName": "가상 직원",
+      "email": "eunwoo@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/인사팀", "/층/2층"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000012",
+      "username": "yuna",
+      "firstName": "유나",
+      "lastName": "가상 직원",
+      "email": "yuna@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/디자인팀", "/층/5층"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000013",
+      "username": "siwoo",
+      "firstName": "시우",
+      "lastName": "가상 직원",
+      "email": "siwoo@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/영업팀", "/층/3층"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000014",
+      "username": "dain",
+      "firstName": "다인",
+      "lastName": "가상 직원",
+      "email": "dain@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/정보보안팀", "/층/4층"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000015",
+      "username": "juwon",
+      "firstName": "주원",
+      "lastName": "가상 직원",
+      "email": "juwon@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/개발팀", "/층/5층"],
+      "requiredActions": []
+    },
+    {
+      "username": "service-account-one-line-desk-directory",
+      "enabled": true,
+      "serviceAccountClientId": "one-line-desk-directory",
+      "clientRoles": {
+        "realm-management": ["view-users", "query-users", "query-groups"]
+      }
+    }
+  ]
+}

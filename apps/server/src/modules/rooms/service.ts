@@ -6,21 +6,45 @@ import type {
   RoomCancelResponse,
   RoomCandidate,
   RoomCardsResponse,
+  RoomDayResponse,
+  RoomListItem,
+  RoomListResponse,
+  RoomSlotRequest,
+  RoomStatus,
   RoomQuery,
   RoomSearchResult,
   Slots,
 } from '@one-line-desk/shared';
+import { kstDate, kstTime } from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
 import type { Queryable } from '../../core/db';
 import { DeskError } from '../../core/errors';
 import type { PlanHandler } from '../../core/module';
 import { linkCard } from '../../core/router';
 import type { DeskUser } from '../../core/user';
-import { blockedCard, cancelAction, cancelledCard, CONFIRM_LINE, conditionsCard, confirmedCard, noFreeCard, slotCard, whenText } from './cards';
+import {
+  blockedCard,
+  cancelAction,
+  cancelledCard,
+  CONFIRM_LINE,
+  conditionsCard,
+  confirmedCard,
+  noFreeCard,
+  roomTakenCard,
+  icsPath,
+  inviteAction,
+  roomTimeCard,
+  slotCard,
+  whenText,
+} from './cards';
+import { type CancelFollowUp, createInviteService, type InviteService } from './invites';
 import type { MockRoomLedger } from './ledger-adapter';
 import {
+  type BusyRow,
   busyBetween,
   countRooms,
+  dayBlocks,
+  fillRoomDetails,
   getRoom,
   insertLedger,
   insertReservation,
@@ -33,6 +57,8 @@ import {
 import {
   alternativeSlots,
   checkQuery,
+  DAY_CLOSE,
+  DAY_OPEN,
   dayBounds,
   isFree,
   kstIso,
@@ -68,8 +94,78 @@ export function slotsToQuery(slots: Slots, defaultMinutes: number): Partial<Room
 }
 
 function toCandidate(s: Slot): RoomCandidate {
-  // 칸을 하나씩 골라요. 예약자·회의 제목·방별 일정은 없어요(ADR-14).
-  return { roomId: s.room.id, roomName: s.room.name, floor: s.room.floor, start: kstIso(s.start), end: kstIso(s.end), matched: [...s.matched] };
+  // 칸을 하나씩 골라요. 정원·장비·설비는 방 정보라 넣고, 예약자·회의 제목·방별 일정은 없어요(ADR-14).
+  return {
+    roomId: s.room.id,
+    roomName: s.room.name,
+    floor: s.room.floor,
+    start: kstIso(s.start),
+    end: kstIso(s.end),
+    matched: [...s.matched],
+    capacity: s.room.capacity,
+    equipment: [...s.room.equipment],
+    facilities: [...s.room.facilities],
+  };
+}
+
+/**
+ * 후보가 하나도 없을 때 까닭(MCP가 사람에게 설명해요). 정원 → 장비 → 층 순서로 걸러 보고,
+ * 조건에 맞는 방이 있는데도 없으면 그 시간에 모두 예약된 거예요.
+ */
+function emptyReasonOf(rooms: RoomRow[], q: RoomQuery, alternatives: number): NonNullable<RoomSearchResult['emptyReason']> {
+  const big = rooms.filter((r) => r.capacity >= q.people);
+  if (!big.length) {
+    const largest = Math.max(0, ...rooms.map((r) => r.capacity));
+    return { code: 'too-many-people', message: `정원이 ${q.people}명 이상인 방이 없어요. 가장 큰 방은 ${largest}명이에요` };
+  }
+  const equipped = big.filter((r) => q.equipment.every((e) => r.equipment.includes(e)));
+  if (!equipped.length) return { code: 'no-equipment', message: `${q.people}명이 들어가는 방 중에 장비(${q.equipment.join('·')})를 모두 갖춘 방이 없어요` };
+  if (q.floor && !equipped.some((r) => r.floor === q.floor)) {
+    return { code: 'no-floor', message: `${q.floor}에는 조건에 맞는 방이 없어요. 층을 빼고 다시 찾아 주세요` };
+  }
+  const tail = alternatives ? ' 가까운 시간 대안을 함께 보냈어요' : ' 다른 시간으로 다시 찾아 주세요';
+  return { code: 'all-booked', message: `조건에 맞는 방이 그 시간에 모두 예약돼 있어요.${tail}` };
+}
+
+/** 층 번호 순, 같은 층이면 방 번호(ID) 순 */
+function byFloorThenId(a: RoomRow, b: RoomRow): number {
+  return parseInt(a.floor, 10) - parseInt(b.floor, 10) || a.id.localeCompare(b.id);
+}
+
+/** 자정은 "24:00"으로 보여 줘요. */
+function clockOf(at: number, dayEnd: number): string {
+  return at >= dayEnd ? '24:00' : kstTime(at);
+}
+
+/**
+ * 고른 날 방 상태. 오늘이면 지금 시각으로 "비어 있음(다음 예약 HH:MM)" 또는 "사용 중(HH:MM부터 비어요)",
+ * 다른 날이면 그날 예약 수예요. 이어진 예약은 하나로 이어 보고 비는 시각을 계산해요.
+ */
+export function roomStatus(roomId: string, busy: BusyRow[], date: string, now: number): RoomStatus {
+  const blocks = busy.filter((b) => b.roomId === roomId).sort((a, b) => a.start - b.start);
+  if (date !== kstDate(now)) return { kind: 'day', bookings: blocks.length };
+  const current = blocks.find((b) => b.start <= now && now < b.end);
+  if (current) {
+    let freeAt = current.end;
+    for (const b of blocks) if (b.start <= freeAt && b.end > freeAt) freeAt = b.end;
+    return { kind: 'busy-now', freeAt: clockOf(freeAt, dayBounds(date).to) };
+  }
+  const next = blocks.find((b) => b.start > now);
+  return { kind: 'free-now', nextBusyAt: next ? kstTime(next.start) : null };
+}
+
+function toListItem(r: RoomRow, busy: BusyRow[], date: string, now: number): RoomListItem {
+  // 칸을 하나씩 골라요. 예약자·회의 제목은 처음부터 없어요(ADR-06).
+  return {
+    id: r.id,
+    name: r.name,
+    floor: r.floor,
+    capacity: r.capacity,
+    equipment: [...r.equipment],
+    facilities: [...r.facilities],
+    photoUrl: r.photoUrl,
+    status: roomStatus(r.id, busy, date, now),
+  };
 }
 
 interface CardsOptions {
@@ -86,14 +182,22 @@ function askAgainCard(check: Extract<QueryCheck, { ok: false }>, o: CardsOptions
 }
 
 export class RoomDesk {
+  /** 회의 참석자 초대(ADR-17) */
+  readonly invites: InviteService;
+
   constructor(
     private readonly ctx: AppContext,
     readonly ledger: MockRoomLedger,
-  ) {}
+  ) {
+    this.invites = createInviteService(ctx);
+  }
 
-  /** 비어 있을 때만 모의 장부를 넣어요. */
+  /** 비어 있을 때만 모의 장부를 넣어요. 이미 있으면 비어 있는 사진·설비만 채워요. */
   async seed(): Promise<void> {
-    if ((await countRooms(this.ctx.db)) > 0) return;
+    if ((await countRooms(this.ctx.db)) > 0) {
+      await fillRoomDetails(this.ctx.db, this.ledger.rooms());
+      return;
+    }
     const rooms = this.ledger.rooms();
     const bookings = this.ledger.bookings(this.ctx.now());
     await this.ctx.db.tx((q) => insertLedger(q, rooms, bookings));
@@ -154,6 +258,83 @@ export class RoomDesk {
     };
   }
 
+  // ── 둘러보기(10/26): 방 카드 목록 · 방 자세히 · 이 방 이 시간(읽기만) ──────────
+
+  /** 방 카드 목록과 고른 날 상태. 회의실이 켜져 있지 않으면 그룹웨어 링크만 줘요(R4). */
+  async directory(date: string): Promise<RoomListResponse> {
+    const now = this.ctx.now();
+    const s = this.ctx.ops.get();
+    const base = { checkedAt: kstIso(now), date, mock: this.ledger.capabilities.mock };
+    if (s.modules.rooms !== 'on') return { ...base, linkOnly: true, link: s.links.rooms, rooms: [] };
+    const { rooms, busy } = await this.load(this.ctx.db, date);
+    return { ...base, linkOnly: false, rooms: rooms.sort(byFloorThenId).map((r) => toListItem(r, busy, date, now)) };
+  }
+
+  /** 방 자세히: 설비·지금 상태·하루 일정. 남의 예약은 "예약됨"만, 취소는 내 예약에만 붙어요(ADR-06). */
+  async day(user: Owner, roomId: string, date: string): Promise<RoomDayResponse> {
+    const now = this.ctx.now();
+    const s = this.ctx.ops.get();
+    if (s.modules.rooms !== 'on') throw new DeskError('feature-off', 409, '지금은 이 기능이 꺼져 있어요');
+    const room = await getRoom(this.ctx.db, roomId);
+    if (!room) throw new DeskError('not-found', 404, '없는 회의실이에요');
+    const { from, to } = dayBounds(date);
+    const rows = await dayBlocks(this.ctx.db, roomId, from, to, user.pseudonymId);
+    const busy: BusyRow[] = rows.map((b) => ({ roomId, start: b.start, end: b.end }));
+    const canCancel = roomsWriteEnabled(s);
+    return {
+      checkedAt: kstIso(now),
+      date,
+      open: DAY_OPEN,
+      close: DAY_CLOSE,
+      room: toListItem(room, busy, date, now),
+      blocks: rows.map((b) => ({
+        start: kstTime(Math.max(b.start, from)),
+        end: clockOf(Math.min(b.end, to), to),
+        mine: b.mine,
+        ...(b.mine && b.reservationId && canCancel
+          ? { cancel: cancelAction({ id: b.reservationId, roomId, roomName: room.name, floor: room.floor, start: b.start, end: b.end }) }
+          : {}),
+      })),
+    };
+  }
+
+  /** 방 자세히에서 고른 시간: 비면 [이 시간으로 예약] 카드, 차 있으면 같은 방 가까운 시간 대안이에요. 아무것도 쓰지 않아요. */
+  async slotForRoom(user: Owner, roomId: string, req: RoomSlotRequest): Promise<RoomCardsResponse> {
+    const now = this.ctx.now();
+    const s = this.ctx.ops.get();
+    if (s.modules.rooms !== 'on') return { checkedAt: kstIso(now), cards: [linkCard('rooms', s.links.rooms)] };
+    const room = await getRoom(this.ctx.db, roomId);
+    if (!room) throw new DeskError('not-found', 404, '없는 회의실이에요');
+    const check = checkQuery({ date: req.date, start: req.start, minutes: req.minutes, people: 1, equipment: [] }, now);
+    if (!check.ok) return { checkedAt: kstIso(now), cards: [roomTimeCard(check.problem ?? '시간을 골라 주세요')] };
+    const { busy } = await this.load(this.ctx.db, req.date);
+    const picked = (slot: Slot): Slot => ({ ...slot, matched: [`정원 ${room.capacity}명`, ...room.equipment] });
+    if (isFree(busy, room.id, check.start, check.end)) {
+      const slot = picked(makeSlot(room, check.start, check.end, check.query));
+      return {
+        checkedAt: kstIso(now),
+        cards: this.slotCards(user, [slot], check.query, { checkedAt: now, aiSummarized: false, alternative: false, text: '이 시간으로 예약' }),
+      };
+    }
+    const alternatives = alternativeSlots({
+      rooms: [room],
+      busy,
+      query: check.query,
+      start: check.start,
+      end: check.end,
+      now,
+      anchors: [room],
+      floor: room.floor,
+    }).map(picked);
+    return {
+      checkedAt: kstIso(now),
+      cards: [
+        roomTakenCard(room, check.start, check.end, alternatives.length, now),
+        ...this.slotCards(user, alternatives, check.query, { checkedAt: now, aiSummarized: false, alternative: true, text: '이 시간으로 예약' }),
+      ],
+    };
+  }
+
   /** MCP rooms_find_free가 불러요(ADR-14). LLM·DB 쓰기·사용자 없음. 최대 3개 + 없으면 대안 최대 2개. */
   async findFree(input: RoomQuery): Promise<RoomSearchResult> {
     // 도구 입력은 길이·장비가 선택 칸이에요(tool-registry). 비면 운영 설정 기본값·빈 목록으로 채워요.
@@ -166,10 +347,18 @@ export class RoomDesk {
     const now = this.ctx.now();
     const base = { checkedAt: kstIso(now), mock: this.ledger.capabilities.mock };
     const check = checkQuery(parsed.data, now);
-    if (!check.ok) return { ...base, candidates: [], alternatives: [] };
+    if (!check.ok) {
+      const message =
+        check.code === 'past'
+          ? `이미 지난 시간이에요(현황 ${kstTime(now)} 기준). 지금 이후 시각으로 다시 찾아 주세요`
+          : (check.problem ?? '조건을 알아보지 못했어요');
+      return { ...base, candidates: [], alternatives: [], emptyReason: { code: check.code ?? 'bad-time', message } };
+    }
     const { rooms, busy } = await this.load(this.ctx.db, check.query.date);
     const found = searchSlots({ rooms, busy, query: check.query, start: check.start, end: check.end, now });
-    return { ...base, candidates: found.candidates.map(toCandidate), alternatives: found.alternatives.map(toCandidate) };
+    const result: RoomSearchResult = { ...base, candidates: found.candidates.map(toCandidate), alternatives: found.alternatives.map(toCandidate) };
+    if (!found.candidates.length) result.emptyReason = emptyReasonOf(rooms, check.query, found.alternatives.length);
+    return result;
   }
 
   /** MCP 앱 확인 링크용 제안 토큰(M3). 서명만 하고 DB에 쓰지 않아요. */
@@ -282,9 +471,9 @@ export class RoomDesk {
     const enabled = roomsWriteEnabled(this.ctx.ops.get());
     if (!enabled) return { enabled, items: [] };
     const rows = await myUpcoming(this.ctx.db, user.pseudonymId, this.ctx.now());
-    return {
-      enabled,
-      items: rows.map((r) => ({
+    const items = [];
+    for (const r of rows) {
+      items.push({
         id: r.id,
         roomName: r.roomName,
         floor: r.floor,
@@ -292,22 +481,35 @@ export class RoomDesk {
         end: kstIso(r.end),
         when: whenText(r.start, r.end),
         cancel: cancelAction(r),
-      })),
-    };
+        invite: inviteAction(r),
+        attendees: await this.invites.attendees(r.id),
+        icsPath: icsPath(r.id),
+      });
+    }
+    return { enabled, items };
   }
 
   /** 취소(고정 버튼, 확인 시트 뒤). 내 예약만, 예약 표에서 이력 표로 옮겨요(ADR-06). */
   async cancel(user: DeskUser, id: string): Promise<RoomCancelResponse> {
-    return this.ctx.fixed.run<RoomCancelResponse>(user, {
+    const invites = this.invites;
+    let followUp: CancelFollowUp | null = null;
+    const result = await this.ctx.fixed.run<RoomCancelResponse>(user, {
       module: 'rooms',
       action: 'cancel',
       idempotencyKey: id,
       enabled: roomsWriteEnabled,
       async run(q, now) {
+        // 참석자에게 먼저 알리고(같은 트랜잭션), 예약을 옮기면 참석자 줄은 함께 지워져요(ADR-17).
+        const notice = await invites.beforeCancel(q, id, user);
         const moved = await moveToHistory(q, id, user.pseudonymId, now);
         if (!moved) throw new DeskError('not-found', 404, '취소할 예약을 찾지 못했어요');
+        followUp = notice;
         return { status: 'done', card: cancelledCard(moved, now) };
       },
     });
+    // 트랜잭션이 끝난 뒤 그룹웨어 캘린더·Slack으로 취소를 알려요. 실패해도 취소는 그대로예요.
+    const pending = followUp as CancelFollowUp | null;
+    if (pending) await invites.afterCancel(pending).catch(() => undefined);
+    return result;
   }
 }
