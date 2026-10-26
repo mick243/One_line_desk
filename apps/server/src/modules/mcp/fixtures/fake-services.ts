@@ -23,6 +23,9 @@ export function fakeRooms(opts: { mock?: boolean; empty?: boolean } = {}) {
       start: `2026-10-27T${hour}:00+09:00`,
       end: `2026-10-27T${String(Number(hour.slice(0, 2)) + 1).padStart(2, '0')}:${hour.slice(3)}:00+09:00`,
       matched: ['인원 6명 이상', '화면'],
+      capacity: 8,
+      equipment: ['화면'],
+      facilities: ['TV 모니터 55인치', '‮화이트보드'],
       ...leak,
     }) as RoomCandidate;
 
@@ -34,6 +37,9 @@ export function fakeRooms(opts: { mock?: boolean; empty?: boolean } = {}) {
         mock: opts.mock ?? true,
         candidates: opts.empty ? [] : [candidate(1, '15:00'), candidate(2, '15:00'), candidate(3, '15:00'), candidate(4, '15:00')],
         alternatives: opts.empty ? [candidate(5, '16:00'), candidate(6, '17:00'), candidate(7, '18:00')] : [],
+        ...(opts.empty
+          ? { emptyReason: { code: 'all-booked', message: '조건에 맞는 방이 그 시간에 모두 예약돼 있어요. 가까운 시간 대안을 함께 보냈어요' } }
+          : {}),
         ...leak,
       } as RoomSearchResult;
     },
@@ -63,8 +69,9 @@ export function fakeNotices(opts: { mock?: boolean } = {}) {
         { id: 'n-2', title: '가'.repeat(300), postedOn: '어제', url: 'https://groupware.example.com/board/2', board: '총무', body: CANARY.noticeBody },
         { id: 'n-3', title: '나쁜 링크 공지', postedOn: '2026-10-21', url: 'javascript:alert(1)', board: '총무' },
       ] as NoticeHit[];
-      return { mock: opts.mock ?? true, hits };
+      return { mock: opts.mock ?? true, hits: query === '없는공지' ? [] : hits };
     },
+    boards: () => ['인사', '총무'],
   };
   return { service, calls };
 }

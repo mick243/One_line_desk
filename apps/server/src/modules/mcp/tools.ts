@@ -62,7 +62,7 @@ export const NOTICES_INPUT = z
   .strict();
 export type NoticesInput = z.infer<typeof NOTICES_INPUT>;
 
-// 회의실 후보 한 칸. 예약자·회의 제목·방별 일정 칸은 없어요(ADR-06·14).
+// 회의실 후보 한 칸. 정원·장비·설비는 방을 고를 근거라 넣어요. 예약자·회의 제목·방별 일정 칸은 없어요(ADR-06·14).
 const ROOM_SLOT = z
   .object({
     roomId: z.string(),
@@ -72,10 +72,16 @@ const ROOM_SLOT = z
     start: z.string(),
     end: z.string(),
     matched: z.array(z.string()),
+    capacity: z.number().int().min(1).optional().describe('정원(명)'),
+    equipment: z.array(z.enum(EQUIPMENT)).describe('정해진 장비 목록 중 갖춘 것'),
+    facilities: z.array(z.string()).describe('장부에 적힌 설비(예: TV 모니터 75인치)'),
     link: z.string(),
     linkText: z.string(),
   })
   .strict();
+
+/** 결과가 없을 때 까닭. message를 사람에게 그대로 전하면 돼요. */
+const EMPTY_REASON = z.object({ code: z.string(), message: z.string() }).strict().describe('결과가 없을 때만: 왜 없는지(message를 그대로 전해요)');
 
 export const ROOMS_OUTPUT = z
   .object({
@@ -84,6 +90,7 @@ export const ROOMS_OUTPUT = z
     mock: z.boolean().describe('모의 장부(시연 데이터)인지'),
     candidates: z.array(ROOM_SLOT).max(MAX_CANDIDATES),
     alternatives: z.array(ROOM_SLOT).max(MAX_ALTERNATIVES),
+    emptyReason: EMPTY_REASON.optional(),
   })
   .strict();
 export type RoomsOutput = z.infer<typeof ROOMS_OUTPUT>;
@@ -93,6 +100,7 @@ export const NOTICES_OUTPUT = z
   .object({
     mock: z.boolean().describe('가상 공지(시연 데이터)인지'),
     hits: z.array(z.object({ title: z.string(), postedOn: z.string(), url: z.string() }).strict()).max(NOTICES_MAX_HITS),
+    emptyReason: EMPTY_REASON.optional(),
   })
   .strict();
 export type NoticesOutput = z.infer<typeof NOTICES_OUTPUT>;
@@ -143,23 +151,33 @@ export function shapeRooms(result: RoomSearchResult, now: number, linkFor: (c: R
         .slice(0, 6)
         .map((m) => cleanText(m, 30))
         .filter(Boolean),
+      ...(Number.isInteger(c.capacity) && c.capacity > 0 && c.capacity <= 1000 ? { capacity: c.capacity } : {}),
+      equipment: (Array.isArray(c.equipment) ? c.equipment : []).filter((e) => (EQUIPMENT as readonly string[]).includes(e)),
+      facilities: (Array.isArray(c.facilities) ? c.facilities : [])
+        .slice(0, 10)
+        .map((f) => cleanText(f, 40))
+        .filter(Boolean),
       link,
       linkText,
     };
   };
   const pick = (list: unknown, max: number) => (Array.isArray(list) ? (list as RoomCandidate[]) : []).slice(0, max).flatMap((c) => slot(c) ?? []);
   const checked = epoch(result.checkedAt) ?? now;
+  const candidates = pick(result.candidates, MAX_CANDIDATES);
+  const reason = result.emptyReason;
+  const message = cleanText(reason?.message, 200);
   return {
     checkedAt: new Date(checked).toISOString(),
     checkedAtLabel: kstTime(checked),
     mock: result.mock === true,
-    candidates: pick(result.candidates, MAX_CANDIDATES),
+    candidates,
     alternatives: pick(result.alternatives, MAX_ALTERNATIVES),
+    ...(candidates.length === 0 && message ? { emptyReason: { code: cleanText(reason?.code, 30) || 'none', message } } : {}),
   };
 }
 
-/** 공지 결과에서 제목·게시일·원문 링크만 골라요. 링크가 http(s)가 아니면 그 줄을 버려요. */
-export function shapeNotices(result: { mock: boolean; hits: NoticeHit[] }): NoticesOutput {
+/** 공지 결과에서 제목·게시일·원문 링크만 골라요. 링크가 http(s)가 아니면 그 줄을 버려요. 하나도 없으면 찾아본 게시판을 알려 줘요. */
+export function shapeNotices(result: { mock: boolean; hits: NoticeHit[] }, boards: string[] = []): NoticesOutput {
   const hits = (Array.isArray(result.hits) ? result.hits : []).flatMap((h) => {
     const url = cleanUrl(h.url);
     const title = cleanText(h.title, 120);
@@ -167,5 +185,14 @@ export function shapeNotices(result: { mock: boolean; hits: NoticeHit[] }): Noti
     const postedOn = typeof h.postedOn === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(h.postedOn) ? h.postedOn : '';
     return [{ title, postedOn, url }];
   });
-  return { mock: result.mock === true, hits: hits.slice(0, NOTICES_MAX_HITS) };
+  const out = { mock: result.mock === true, hits: hits.slice(0, NOTICES_MAX_HITS) };
+  if (out.hits.length) return out;
+  const where = boards
+    .map((b) => cleanText(b, 30))
+    .filter(Boolean)
+    .join(' · ');
+  const message = where
+    ? `허용 게시판(${where})에서 찾았지만 맞는 공지가 없어요. 다른 낱말로 다시 찾아 주세요`
+    : '맞는 공지가 없어요. 다른 낱말로 다시 찾아 주세요';
+  return { ...out, emptyReason: { code: 'no-match', message } };
 }

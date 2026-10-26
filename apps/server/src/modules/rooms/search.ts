@@ -58,7 +58,14 @@ export function dayBounds(date: string): { from: number; to: number } {
 }
 
 export type QueryCheck =
-  { ok: true; query: RoomQuery; start: number; end: number } | { ok: false; query: Partial<RoomQuery>; missing: string[]; problem?: string };
+  | { ok: true; query: RoomQuery; start: number; end: number }
+  | {
+      ok: false;
+      query: Partial<RoomQuery>;
+      missing: string[];
+      problem?: string;
+      /** 지난 시간이면 'past', 그 밖의 고칠 값은 'bad-time' */ code?: 'past' | 'bad-time';
+    };
 
 /** 빠진 값(날짜·시작 시각·인원)과 고칠 값(지난 시간, 하루를 넘는 길이)을 찾아요(F2-1). */
 export function checkQuery(partial: Partial<RoomQuery>, now: number): QueryCheck {
@@ -70,13 +77,15 @@ export function checkQuery(partial: Partial<RoomQuery>, now: number): QueryCheck
   if (missing.length) return { ok: false, query: partial, missing };
 
   const parsed = RoomQuerySchema.safeParse({ equipment: [], ...partial });
-  if (!parsed.success) return { ok: false, query: partial, missing: [], problem: '조건을 알아보지 못했어요. 칩을 고쳐 주세요' };
+  if (!parsed.success) return { ok: false, query: partial, missing: [], problem: '조건을 알아보지 못했어요. 칩을 고쳐 주세요', code: 'bad-time' };
   const query = parsed.data;
   const start = kstToEpoch(query.date, query.start);
-  if (Number.isNaN(start) || kstDate(start) !== query.date) return { ok: false, query, missing: [], problem: '없는 날짜예요. 날짜를 고쳐 주세요' };
+  if (Number.isNaN(start) || kstDate(start) !== query.date)
+    return { ok: false, query, missing: [], problem: '없는 날짜예요. 날짜를 고쳐 주세요', code: 'bad-time' };
   const end = start + query.minutes * MINUTE;
-  if (kstDate(end - 1) !== query.date) return { ok: false, query, missing: [], problem: '하루 안의 시간만 예약할 수 있어요. 길이를 줄여 주세요' };
-  if (start < now) return { ok: false, query, missing: [], problem: '이미 지난 시간이에요. 날짜나 시작 시각을 고쳐 주세요' };
+  if (kstDate(end - 1) !== query.date)
+    return { ok: false, query, missing: [], problem: '하루 안의 시간만 예약할 수 있어요. 길이를 줄여 주세요', code: 'bad-time' };
+  if (start < now) return { ok: false, query, missing: [], problem: '이미 지난 시간이에요. 날짜나 시작 시각을 고쳐 주세요', code: 'past' };
   return { ok: true, query, start, end };
 }
 

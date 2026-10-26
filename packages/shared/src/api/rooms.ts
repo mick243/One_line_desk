@@ -20,7 +20,14 @@ export interface RoomCandidate {
   start: string;
   end: string;
   matched: string[];
+  /** 정원·장비·설비(장부 값). 방을 고를 근거예요(10/26 MCP 베타 시험). */
+  capacity: number;
+  equipment: Equipment[];
+  facilities: string[];
 }
+
+/** 후보가 하나도 없을 때 까닭. 지난 시간 · 형식 · 정원 넘음 · 장비 없음 · 그 층에 없음 · 모두 예약됨 */
+export type RoomEmptyCode = 'past' | 'bad-time' | 'too-many-people' | 'no-equipment' | 'no-floor' | 'all-booked';
 
 export interface RoomSearchResult {
   /** 현황 조회 시각(ISO). 화면에 "현황 HH:MM 기준"으로 보여 줘요(D6). */
@@ -30,6 +37,8 @@ export interface RoomSearchResult {
   candidates: RoomCandidate[];
   /** 후보가 없을 때 가까운 시간 대안 최대 2개(R5) */
   alternatives: RoomCandidate[];
+  /** 후보가 없을 때만: 왜 없는지 한 줄(MCP가 사람에게 그대로 설명해요) */
+  emptyReason?: { code: RoomEmptyCode; message: string };
 }
 
 /** POST /api/rooms/search 본문. 조건 칩을 고친 뒤 다시 찾아요. 아무것도 쓰지 않아요. */

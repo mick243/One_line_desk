@@ -48,7 +48,20 @@ describe('실제 모듈과 함께', () => {
     const rooms = (await callTool(t, tokens.access_token, 'rooms_find_free', ROOMS_ARGS)).json().result;
     expect(rooms.isError).toBeFalsy();
     for (const c of rooms.structuredContent.candidates) {
-      expect(Object.keys(c).sort()).toEqual(['date', 'end', 'floor', 'link', 'linkText', 'matched', 'roomId', 'roomName', 'start']);
+      expect(Object.keys(c).sort()).toEqual([
+        'capacity',
+        'date',
+        'end',
+        'equipment',
+        'facilities',
+        'floor',
+        'link',
+        'linkText',
+        'matched',
+        'roomId',
+        'roomName',
+        'start',
+      ]);
     }
     expect(rooms.structuredContent.mock).toBe(true);
     const notices = (await callTool(t, tokens.access_token, 'notices_search', { query: '연말정산' })).json().result;

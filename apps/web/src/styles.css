@@ -209,7 +209,8 @@ a {
 .home,
 .feature-page,
 .board,
-.mine {
+.mine,
+.ask {
   flex: 1;
   display: flex;
   flex-direction: column;

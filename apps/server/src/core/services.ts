@@ -14,6 +14,8 @@ export interface RoomsService {
 export interface NoticesService {
   /** 허용 게시판의 제목·게시일·원문 링크만(ADR-14). LLM을 부르지 않아요. */
   search(query: string, limit: number): Promise<{ mock: boolean; hits: NoticeHit[] }>;
+  /** 찾아보는 허용 게시판 이름. 결과가 없을 때 어디를 찾았는지 알려 줘요. */
+  boards(): string[];
 }
 
 export interface NaviService {

@@ -91,8 +91,37 @@ export function slotsToQuery(slots: Slots, defaultMinutes: number): Partial<Room
 }
 
 function toCandidate(s: Slot): RoomCandidate {
-  // 칸을 하나씩 골라요. 예약자·회의 제목·방별 일정은 없어요(ADR-14).
-  return { roomId: s.room.id, roomName: s.room.name, floor: s.room.floor, start: kstIso(s.start), end: kstIso(s.end), matched: [...s.matched] };
+  // 칸을 하나씩 골라요. 정원·장비·설비는 방 정보라 넣고, 예약자·회의 제목·방별 일정은 없어요(ADR-14).
+  return {
+    roomId: s.room.id,
+    roomName: s.room.name,
+    floor: s.room.floor,
+    start: kstIso(s.start),
+    end: kstIso(s.end),
+    matched: [...s.matched],
+    capacity: s.room.capacity,
+    equipment: [...s.room.equipment],
+    facilities: [...s.room.facilities],
+  };
+}
+
+/**
+ * 후보가 하나도 없을 때 까닭(MCP가 사람에게 설명해요). 정원 → 장비 → 층 순서로 걸러 보고,
+ * 조건에 맞는 방이 있는데도 없으면 그 시간에 모두 예약된 거예요.
+ */
+function emptyReasonOf(rooms: RoomRow[], q: RoomQuery, alternatives: number): NonNullable<RoomSearchResult['emptyReason']> {
+  const big = rooms.filter((r) => r.capacity >= q.people);
+  if (!big.length) {
+    const largest = Math.max(0, ...rooms.map((r) => r.capacity));
+    return { code: 'too-many-people', message: `정원이 ${q.people}명 이상인 방이 없어요. 가장 큰 방은 ${largest}명이에요` };
+  }
+  const equipped = big.filter((r) => q.equipment.every((e) => r.equipment.includes(e)));
+  if (!equipped.length) return { code: 'no-equipment', message: `${q.people}명이 들어가는 방 중에 장비(${q.equipment.join('·')})를 모두 갖춘 방이 없어요` };
+  if (q.floor && !equipped.some((r) => r.floor === q.floor)) {
+    return { code: 'no-floor', message: `${q.floor}에는 조건에 맞는 방이 없어요. 층을 빼고 다시 찾아 주세요` };
+  }
+  const tail = alternatives ? ' 가까운 시간 대안을 함께 보냈어요' : ' 다른 시간으로 다시 찾아 주세요';
+  return { code: 'all-booked', message: `조건에 맞는 방이 그 시간에 모두 예약돼 있어요.${tail}` };
 }
 
 /** 층 번호 순, 같은 층이면 방 번호(ID) 순 */
@@ -310,10 +339,18 @@ export class RoomDesk {
     const now = this.ctx.now();
     const base = { checkedAt: kstIso(now), mock: this.ledger.capabilities.mock };
     const check = checkQuery(parsed.data, now);
-    if (!check.ok) return { ...base, candidates: [], alternatives: [] };
+    if (!check.ok) {
+      const message =
+        check.code === 'past'
+          ? `이미 지난 시간이에요(현황 ${kstTime(now)} 기준). 지금 이후 시각으로 다시 찾아 주세요`
+          : (check.problem ?? '조건을 알아보지 못했어요');
+      return { ...base, candidates: [], alternatives: [], emptyReason: { code: check.code ?? 'bad-time', message } };
+    }
     const { rooms, busy } = await this.load(this.ctx.db, check.query.date);
     const found = searchSlots({ rooms, busy, query: check.query, start: check.start, end: check.end, now });
-    return { ...base, candidates: found.candidates.map(toCandidate), alternatives: found.alternatives.map(toCandidate) };
+    const result: RoomSearchResult = { ...base, candidates: found.candidates.map(toCandidate), alternatives: found.alternatives.map(toCandidate) };
+    if (!found.candidates.length) result.emptyReason = emptyReasonOf(rooms, check.query, found.alternatives.length);
+    return result;
   }
 
   /** MCP 앱 확인 링크용 제안 토큰(M3). 서명만 하고 DB에 쓰지 않아요. */

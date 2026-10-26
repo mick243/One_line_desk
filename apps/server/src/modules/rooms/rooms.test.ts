@@ -472,7 +472,9 @@ describe('F2 남의 예약자 비노출(ADR-06)', () => {
   it('[F2-9·ADR-06 시험] 장부 어댑터 출력에는 예약자 이름·회의 제목 칸이 없어요', () => {
     const ledger = new MockRoomLedger();
     expectTypeOf<keyof LedgerBooking>().toEqualTypeOf<'ref' | 'roomId' | 'start' | 'end'>();
-    expectTypeOf<keyof RoomCandidate>().toEqualTypeOf<'roomId' | 'roomName' | 'floor' | 'start' | 'end' | 'matched'>();
+    expectTypeOf<keyof RoomCandidate>().toEqualTypeOf<
+      'roomId' | 'roomName' | 'floor' | 'start' | 'end' | 'matched' | 'capacity' | 'equipment' | 'facilities'
+    >();
     for (const b of ledger.bookings(Date.parse('2026-10-26T09:00:00+09:00'))) expect(Object.keys(b).sort()).toEqual(['end', 'ref', 'roomId', 'start']);
     expect(ledger.capabilities).toEqual({ name: 'mock-room-ledger', label: '회의실 장부(모의)', mock: true, freeTime: 'computed', write: true });
   });
@@ -626,7 +628,8 @@ describe('MCP용 services.rooms(ADR-14)', () => {
     expect(Object.keys(result).sort()).toEqual(['alternatives', 'candidates', 'checkedAt', 'mock']);
     expect(result).toMatchObject({ checkedAt: '2026-10-26T09:00:00+09:00', mock: true, alternatives: [] });
     expect(result.candidates).toHaveLength(3);
-    for (const c of result.candidates) expect(Object.keys(c).sort()).toEqual(['end', 'floor', 'matched', 'roomId', 'roomName', 'start']);
+    const keys = ['capacity', 'end', 'equipment', 'facilities', 'floor', 'matched', 'roomId', 'roomName', 'start'];
+    for (const c of result.candidates) expect(Object.keys(c).sort()).toEqual(keys);
     expect(result.candidates[0]).toEqual({
       roomId: 'r-5b',
       roomName: '회의실 5B',
@@ -634,18 +637,39 @@ describe('MCP용 services.rooms(ADR-14)', () => {
       start: '2026-10-27T15:00:00+09:00',
       end: '2026-10-27T16:00:00+09:00',
       matched: ['인원 6명', '화면'],
+      capacity: 8,
+      equipment: ['화면', '화이트보드'],
+      facilities: ['TV 모니터 75인치', '화이트보드', '무선 화면 공유'],
     });
 
     const none = await rooms.findFree({ date: '2026-10-27', start: '09:00', minutes: 60, people: 20, equipment: [] });
     expect(none.candidates).toEqual([]);
     expect(none.alternatives).toHaveLength(2);
-    for (const c of none.alternatives) expect(Object.keys(c).sort()).toEqual(['end', 'floor', 'matched', 'roomId', 'roomName', 'start']);
+    for (const c of none.alternatives) expect(Object.keys(c).sort()).toEqual(keys);
+    expect(none.emptyReason).toEqual({ code: 'all-booked', message: '조건에 맞는 방이 그 시간에 모두 예약돼 있어요. 가까운 시간 대안을 함께 보냈어요' });
 
     await expect(rooms.findFree({ date: '내일', start: '15:00', minutes: 60, people: 6, equipment: [] })).rejects.toMatchObject({ status: 400 });
     // 도구 입력에서 길이·장비는 선택 칸이에요. 비면 운영 설정 기본 길이예요.
     const loose = await rooms.findFree({ date: '2026-10-27', start: '15:00', people: 6 } as RoomQuery);
     expect(loose.candidates[0]).toMatchObject({ start: '2026-10-27T15:00:00+09:00', end: '2026-10-27T16:00:00+09:00' });
     expect((await rooms.findFree({ date: '2026-10-26', start: '08:00', minutes: 60, people: 2, equipment: [] })).candidates).toEqual([]);
+  });
+
+  it('[MCP 베타 U9] 후보가 없으면 까닭을 한 줄로 돌려줘요(지난 시간 · 정원 · 층 · 모두 예약됨)', async () => {
+    const t = await setup();
+    const rooms = t.ctx.services.rooms!;
+    const ask = (q: Partial<RoomQuery>) => rooms.findFree({ date: '2026-10-27', start: '15:00', minutes: 60, people: 4, equipment: [], ...q });
+    expect((await ask({ date: '2026-10-26', start: '08:00' })).emptyReason).toEqual({
+      code: 'past',
+      message: '이미 지난 시간이에요(현황 09:00 기준). 지금 이후 시각으로 다시 찾아 주세요',
+    });
+    expect((await ask({ people: 30 })).emptyReason).toEqual({ code: 'too-many-people', message: '정원이 30명 이상인 방이 없어요. 가장 큰 방은 20명이에요' });
+    expect((await ask({ people: 20, floor: '2층' })).emptyReason).toEqual({
+      code: 'no-floor',
+      message: '2층에는 조건에 맞는 방이 없어요. 층을 빼고 다시 찾아 주세요',
+    });
+    // 후보가 있으면 까닭 칸이 없어요.
+    expect(Object.keys(await ask({}))).not.toContain('emptyReason');
   });
 
   it('[F2-11] proposeReservation 토큰도 확인 시트 한 번을 거쳐야 예약돼요(MCP 경로는 DB에 쓰지 않아요)', async () => {
