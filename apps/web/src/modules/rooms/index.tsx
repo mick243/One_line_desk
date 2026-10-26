@@ -1,10 +1,12 @@
-import { type MyReservationsResponse, ROOM_CONDITIONS_VARIANT } from '@one-line-desk/shared';
+import { INVITE_RESPONSE_LABEL, type MyReservationsResponse, ROOM_CONDITIONS_VARIANT } from '@one-line-desk/shared';
 import { type ComponentType, useEffect, useState } from 'react';
 import { apiRequest } from '../../api';
 import { useActions } from '../../components/ActionHost';
 import type { CardViewProps } from '../../components/CardView';
 import { RoomConditionsCard } from './RoomConditionsCard';
 
+export { DemoInbox, InvitedMeetings } from './Invited';
+export { InviteSheet } from './InviteSheet';
 export { RoomDirectory } from './RoomDirectory';
 
 // F2 회의실 화면 부품.
@@ -61,16 +63,34 @@ export function MyReservations({ compact }: { compact?: boolean }) {
       ) : (
         <ul className='plain my-reservations'>
           {items.map((r) => (
-            <li key={r.id}>
+            <li key={r.id} className='invited'>
               <div>
                 <p>
                   <strong>{r.roomName}</strong> · {r.floor}
                 </p>
                 <p className='hint'>{r.when} · 내 예약</p>
+                {r.attendees.length > 0 && (
+                  <p className='hint'>{r.attendees.map((a) => `${a.name.split(' ').at(-1)}(${INVITE_RESPONSE_LABEL[a.response]})`).join(' · ')}</p>
+                )}
               </div>
-              <button type='button' className='secondary small' onClick={() => void run(r.cancel)}>
-                {r.cancel.text}
-              </button>
+              {!compact && (
+                <div className='row-actions'>
+                  <button type='button' className='secondary small' onClick={() => void run(r.invite)}>
+                    {r.invite.text}
+                  </button>
+                  <a className='neutral small' href={r.icsPath} download>
+                    캘린더 파일
+                  </a>
+                  <button type='button' className='neutral small' onClick={() => void run(r.cancel)}>
+                    {r.cancel.text}
+                  </button>
+                </div>
+              )}
+              {compact && (
+                <button type='button' className='secondary small' onClick={() => void run(r.cancel)}>
+                  {r.cancel.text}
+                </button>
+              )}
             </li>
           ))}
         </ul>

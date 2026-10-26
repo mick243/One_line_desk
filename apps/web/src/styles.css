@@ -1395,3 +1395,87 @@ select {
 .profile p {
   margin: 0;
 }
+
+/* 회의 참석자 초대(ADR-17) */
+.text-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-m);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 1rem;
+  outline: none;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+}
+.text-input:focus {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.people-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.people-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.people-list li:first-child {
+  border-top: 0;
+}
+.avatar.small {
+  width: 36px;
+  height: 36px;
+  font-size: 0.875rem;
+}
+.channel-list {
+  margin: 0;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--radius-m);
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.channel-list legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 4px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+.channel-list label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.channel-list label.off {
+  color: var(--text-quiet);
+}
+.channel-list input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+.my-reservations li.invited {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}

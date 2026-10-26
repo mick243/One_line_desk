@@ -66,6 +66,7 @@ async function resolveUser(ctx: Omit<AppContext, 'guards'>, session: DeskSession
     department: profile.department,
     floor: profile.floor,
     roles: computeRoles(profile, owners),
+    ...(profile.email ? { email: profile.email } : {}),
   };
 }
 

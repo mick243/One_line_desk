@@ -31,10 +31,13 @@ import {
   confirmedCard,
   noFreeCard,
   roomTakenCard,
+  icsPath,
+  inviteAction,
   roomTimeCard,
   slotCard,
   whenText,
 } from './cards';
+import { type CancelFollowUp, createInviteService, type InviteService } from './invites';
 import type { MockRoomLedger } from './ledger-adapter';
 import {
   type BusyRow,
@@ -179,10 +182,15 @@ function askAgainCard(check: Extract<QueryCheck, { ok: false }>, o: CardsOptions
 }
 
 export class RoomDesk {
+  /** 회의 참석자 초대(ADR-17) */
+  readonly invites: InviteService;
+
   constructor(
     private readonly ctx: AppContext,
     readonly ledger: MockRoomLedger,
-  ) {}
+  ) {
+    this.invites = createInviteService(ctx);
+  }
 
   /** 비어 있을 때만 모의 장부를 넣어요. 이미 있으면 비어 있는 사진·설비만 채워요. */
   async seed(): Promise<void> {
@@ -463,9 +471,9 @@ export class RoomDesk {
     const enabled = roomsWriteEnabled(this.ctx.ops.get());
     if (!enabled) return { enabled, items: [] };
     const rows = await myUpcoming(this.ctx.db, user.pseudonymId, this.ctx.now());
-    return {
-      enabled,
-      items: rows.map((r) => ({
+    const items = [];
+    for (const r of rows) {
+      items.push({
         id: r.id,
         roomName: r.roomName,
         floor: r.floor,
@@ -473,22 +481,35 @@ export class RoomDesk {
         end: kstIso(r.end),
         when: whenText(r.start, r.end),
         cancel: cancelAction(r),
-      })),
-    };
+        invite: inviteAction(r),
+        attendees: await this.invites.attendees(r.id),
+        icsPath: icsPath(r.id),
+      });
+    }
+    return { enabled, items };
   }
 
   /** 취소(고정 버튼, 확인 시트 뒤). 내 예약만, 예약 표에서 이력 표로 옮겨요(ADR-06). */
   async cancel(user: DeskUser, id: string): Promise<RoomCancelResponse> {
-    return this.ctx.fixed.run<RoomCancelResponse>(user, {
+    const invites = this.invites;
+    let followUp: CancelFollowUp | null = null;
+    const result = await this.ctx.fixed.run<RoomCancelResponse>(user, {
       module: 'rooms',
       action: 'cancel',
       idempotencyKey: id,
       enabled: roomsWriteEnabled,
       async run(q, now) {
+        // 참석자에게 먼저 알리고(같은 트랜잭션), 예약을 옮기면 참석자 줄은 함께 지워져요(ADR-17).
+        const notice = await invites.beforeCancel(q, id, user);
         const moved = await moveToHistory(q, id, user.pseudonymId, now);
         if (!moved) throw new DeskError('not-found', 404, '취소할 예약을 찾지 못했어요');
+        followUp = notice;
         return { status: 'done', card: cancelledCard(moved, now) };
       },
     });
+    // 트랜잭션이 끝난 뒤 그룹웨어 캘린더·Slack으로 취소를 알려요. 실패해도 취소는 그대로예요.
+    const pending = followUp as CancelFollowUp | null;
+    if (pending) await invites.afterCancel(pending).catch(() => undefined);
+    return result;
   }
 }

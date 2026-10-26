@@ -33,7 +33,9 @@ export type CardAction =
   | { type: 'reask'; text: string; kind: Kind }
   | { type: 'navigate'; text: string; to: AppDestination }
   /** 담당 팀에 문의 보내기 양식을 열어요(ADR-16). 양식은 페이지가 띄우고, 보내기는 확인 시트를 거쳐요. */
-  | { type: 'inquire'; text: string; rowId: string | null; team: string; task: string };
+  | { type: 'inquire'; text: string; rowId: string | null; team: string; task: string }
+  /** 회의 참석자 고르기 양식을 열어요(ADR-17). 보내기는 확인 시트를 거쳐요. */
+  | { type: 'invite'; text: string; reservationId: string; roomName: string; when: string };
 
 /** 앱 안 페이지. 기능마다 페이지가 따로 있어요(10/26 화면 구조 변경, ADR-02 개정). */
 export type AppDestination = 'home' | 'navi' | 'rooms' | 'notices' | 'board' | 'mine' | 'ops' | 'chart';

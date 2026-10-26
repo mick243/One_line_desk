@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { Adapters } from './adapters';
+import type { ResolvedAdapters } from './adapters';
 import type { AdapterCapabilities } from './adapters/types';
 import type { ServerConfig } from './config';
 import type { AiGateway } from './core/ai/gateway';
@@ -20,7 +20,8 @@ export type PreHandler = (req: FastifyRequest, reply: FastifyReply) => Promise<u
 export interface AppContext {
   config: ServerConfig;
   db: Db;
-  adapters: Adapters;
+  /** 로그인·직원 명단·그룹웨어 캘린더·메신저(ADR-05·17) */
+  adapters: ResolvedAdapters;
   /** 공통 어댑터와 모듈 어댑터(회의실 장부·분장표·공지 등)를 모두 모은 목록. 실제 데이터인지 판별할 때 써요(ADR-05·15). */
   dataAdapters: () => AdapterCapabilities[];
   sessions: SessionStore;

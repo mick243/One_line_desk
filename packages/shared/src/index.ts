@@ -8,6 +8,7 @@ export * from './input-check/check';
 export * from './api/core';
 export * from './api/slots';
 export * from './api/rooms';
+export * from './api/invites';
 export * from './api/notices';
 export * from './api/navi';
 export * from './api/notifications';

@@ -2,7 +2,7 @@ import cookie from '@fastify/cookie';
 import type { ModuleKind } from '@one-line-desk/shared';
 import Fastify, { type FastifyServerOptions } from 'fastify';
 import { ZodError } from 'zod';
-import { type Adapters, createMockAdapters } from './adapters';
+import { type Adapters, createAdapters, withOutboundAdapters } from './adapters';
 import type { ServerConfig } from './config';
 import type { AppContext } from './context';
 import { AnthropicProvider } from './core/ai/anthropic-provider';
@@ -23,6 +23,8 @@ import { SessionStore } from './core/session';
 import { createModules } from './modules';
 import { registerAskRoutes } from './routes/ask';
 import { registerAuthRoutes } from './routes/auth';
+import { registerDemoInboxRoutes } from './routes/demo-inbox';
+import { registerPeopleRoutes } from './routes/people';
 import { registerConfigRoutes } from './routes/config';
 import { registerNotificationRoutes } from './routes/notifications';
 import { registerPlanRoutes } from './routes/plans';
@@ -50,7 +52,7 @@ export async function buildApp(opts: BuildOptions) {
   const settings = () => ops.get();
   const provider = opts.provider ?? (config.aiProvider === 'anthropic' ? new AnthropicProvider(config.aiModel) : new FakeProvider());
   const tokens = new ProposalTokens(config.proposalSecret, now, () => settings().values.proposalTtlSeconds * 1000);
-  const adapters = opts.adapters ?? createMockAdapters();
+  const adapters = withOutboundAdapters(opts.adapters ?? createAdapters(config), db, now);
   // 운영 환경에서 모의 IdP로 뜨면 누구나 운영자로 들어와요. 시연 배포는 DESK_MOCK_LOGIN=true로 드러내 놓고 열어요.
   if (adapters.idp.loginChoices && !config.mockLogin) {
     throw new Error('운영 환경에서는 모의 로그인을 쓸 수 없어요. 실제 IdP 어댑터를 넘기거나, 시연 배포면 DESK_MOCK_LOGIN=true를 넣어 주세요');
@@ -101,6 +103,8 @@ export async function buildApp(opts: BuildOptions) {
   registerAskRoutes(app, ctx, router);
   registerPlanRoutes(app, ctx);
   registerNotificationRoutes(app, ctx);
+  registerPeopleRoutes(app, ctx);
+  registerDemoInboxRoutes(app, ctx);
   for (const module of modules) module.register?.(app);
 
   if (opts.seed ?? config.seedDemo) {

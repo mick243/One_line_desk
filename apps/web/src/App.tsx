@@ -85,16 +85,17 @@ export function App() {
   const autoRun = handoff?.to === current && handoff.auto;
   const pageKey = `${current}-${handoff?.to === current ? handoff.at : 0}`;
   const feature = FEATURES.find((f) => f.page === current);
-  const { BoardScreen, OpsScreen, ChartScreen, ConsentScreen, LinkEntry, MyReservations, RoomDirectory, InquiryInbox, MyInquiries } = webModules;
+  const { BoardScreen, OpsScreen, ChartScreen, ConsentScreen, LinkEntry, MyReservations, RoomDirectory, InquiryInbox, MyInquiries, InvitedMeetings } =
+    webModules;
   const isChartOwner = me?.roles.includes('chart-owner') ?? false;
 
   return (
     <div className='app'>
       <DemoBand items={config.demoData} />
       {me === null ? (
-        <Login onLoggedIn={refreshMe} />
+        <Login onLoggedIn={refreshMe} login={config.login} />
       ) : (
-        <ActionHost onNavigate={navigate}>
+        <ActionHost onNavigate={navigate} InviteSheet={webModules.InviteSheet}>
           <div className='app-bar'>
             <span className='brand'>한 줄 데스크</span>
             <NotificationBell onNavigate={navigate} />
@@ -107,6 +108,7 @@ export function App() {
               <FeaturePage key={pageKey} feature={feature} initialText={initial} autoRun={autoRun} onMove={move}>
                 {current === 'rooms' && (
                   <>
+                    <InvitedMeetings />
                     <RoomDirectory me={me} />
                     <MyReservations />
                   </>

@@ -21,6 +21,8 @@ npm run dev
 - DB: `DATABASE_URL`이 없으면 내장 PGlite(`.data/pglite`)를 써요. 서버가 뜰 때 마이그레이션을 적용하고, 비어 있으면 가상 자료(분장표·공지·회의실 장부·탕비실 카탈로그와 요청)를 넣어요. 처음부터 다시 하려면 서버를 끄고 `.data/`를 지워요.
 - 실제 PostgreSQL: `cp .env.example .env` → `npm run db:up`(Docker, 5433) → `DATABASE_URL` 설정 → `npm run db:migrate`
 - AI: 기본은 모델을 부르지 않는 `fake`예요(규칙과 틀 문장으로 돌아가요). 실제 모델은 `DESK_AI_PROVIDER=anthropic`, `ANTHROPIC_API_KEY`, 무보관 계약 확인 뒤 `NO_RETENTION_CONTRACT_CONFIRMED=true`예요. 모델은 ADR-10대로 `claude-opus-5-5` 하나로 고정해요(`DESK_AI_MODEL`).
+- 임시 IdP(Keycloak): `npm run idp:up`(Docker, http://localhost:8180) → `npm run dev:idp`. 로그인 화면이 "회사 계정으로 로그인"이 되고, 직원 명단(참석자 검색)도 IdP에서 와요. 가상 직원 15명이고 아이디는 `idp/realm-one-line-desk.json`, 비밀번호는 모두 `desk-demo`예요(로컬 시험용). 끄려면 `npm run idp:down`.
+- 회의 초대(ADR-17): 그룹웨어 캘린더·Slack은 기본이 모의예요(내 것 > 시연 받은편지함에서 보여요). `SLACK_BOT_TOKEN`을 넣으면 실제 Slack DM을 보내요(보관 조건·보안 승인 뒤에만).
 - MCP: 운영자(가상 운영자 민준)가 MCP 스위치를 켜야 열려요. 시연용 클라이언트는 개발 환경에서만 넣어요(`apps/server/src/modules/mcp/index.ts`).
 
 검사:

@@ -239,10 +239,14 @@ describe('F2 확인 예약(쓰기 경계, ADR-03·06)', () => {
         ],
         evidence: { text: '09:02에 다시 확인하고 예약했어요', aiSummarized: false },
         actions: {
-          primary: { type: 'navigate', to: 'mine' },
-          secondary: [{ type: 'fixed', text: '취소', method: 'DELETE', confirm: { confirmLabel: '취소하기' } }],
+          // 확정 뒤 바로 참석자를 부를 수 있어요(ADR-17).
+          primary: { type: 'invite', text: '참석자 초대', roomName: '회의실 5B', when: '10월 27일(화) 15:00~16:00' },
+          secondary: [
+            { type: 'link', text: '캘린더 파일 받기' },
+            { type: 'fixed', text: '취소', method: 'DELETE', confirm: { confirmLabel: '취소하기' } },
+          ],
         },
-        tail: '예약 기록이 남아요',
+        tail: '예약 기록이 남아요 · 내 예약은 내 것에서 봐요',
       },
     });
     const rows = await appReservations(t.db);

@@ -18,7 +18,7 @@ export function Mine({
   onOpen: (to: 'ops' | 'chart') => void;
 }) {
   const [confirmAll, setConfirmAll] = useState(false);
-  const { MyReservations, MyRequests, ConnectedApps } = webModules;
+  const { MyReservations, MyRequests, ConnectedApps, InvitedMeetings, DemoInbox } = webModules;
 
   async function logout(all: boolean) {
     await api.logout(all);
@@ -48,6 +48,7 @@ export function Mine({
       </section>
 
       <MyReservations />
+      <InvitedMeetings />
       <MyRequests />
 
       {(hasFacilities || hasChart) && (
@@ -69,6 +70,8 @@ export function Mine({
       )}
 
       <ConnectedApps />
+
+      <DemoInbox />
 
       <section className='card' id='retention'>
         <h2>무엇을 남기나요</h2>

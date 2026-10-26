@@ -7,6 +7,10 @@ export interface PublicConfig {
   standalone: boolean;
   demoData: string[];
   rulesVersion: number;
+  /** 로그인 방식: 모의(가상 직원 고르기) 또는 IdP 리디렉트(임시 IdP·회사 IdP) */
+  login: { kind: 'mock' } | { kind: 'oidc'; label: string };
+  /** 회의 초대에 쓸 수 있는 바깥 길(ADR-17) */
+  inviteChannels: { calendar: string | null; slack: string | null };
 }
 
 export interface Me {

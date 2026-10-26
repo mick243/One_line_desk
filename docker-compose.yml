@@ -10,5 +10,19 @@ services:
     volumes:
       - desk-db:/var/lib/postgresql/data
 
+  # 임시 IdP(Keycloak). 가상 직원 15명이 들어 있는 로컬 개발용이에요. npm run idp:up → http://localhost:8180
+  # 관리자 계정·클라이언트 비밀은 모두 개발용 값이에요. 운영에서는 회사 IdP를 써요.
+  idp:
+    image: quay.io/keycloak/keycloak:26.7.4
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: dev-only-admin
+      KC_HOSTNAME: http://localhost:8180
+    ports:
+      - '8180:8080'
+    volumes:
+      - ./idp:/opt/keycloak/data/import:ro
+
 volumes:
   desk-db:

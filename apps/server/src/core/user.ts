@@ -9,6 +9,8 @@ export interface DeskUser {
   department: string;
   floor: string;
   roles: Role[];
+  /** 회사 메일. 그룹웨어 캘린더·Slack 받는 사람을 찾을 때만 써요(화면·LLM에는 내보내지 않아요). */
+  email?: string;
 }
 
 export function hasRole(user: DeskUser, role: Role): boolean {

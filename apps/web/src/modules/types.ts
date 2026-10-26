@@ -47,6 +47,12 @@ export interface WebModules {
   MyInquiries: ComponentType;
   /** 회의실 페이지 "모든 회의실": 방 카드(그림·정원·상태) → 방 자세히(설비·하루 일정·이 시간 예약) */
   RoomDirectory: ComponentType<ScreenProps>;
+  /** 회의 참석자 고르기 양식(ADR-17). 확정 카드·내 예약의 [참석자 초대]로 열려요. */
+  InviteSheet: ComponentType<{ action: Extract<CardAction, { type: 'invite' }>; onClose: () => void }>;
+  /** 회의실·내 것의 "나를 부른 회의" 칸 */
+  InvitedMeetings: ComponentType;
+  /** 내 것의 시연 받은편지함(모의 그룹웨어 캘린더·모의 Slack) */
+  DemoInbox: ComponentType;
   /** 홈·회의실·내 것의 "내 예약" 칸 */
   MyReservations: ComponentType<{ compact?: boolean }>;
   /** 홈·내 것의 "내 요청" 칸 */

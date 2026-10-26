@@ -1,4 +1,5 @@
 import type { Card, CardAction } from '../cards';
+import type { ReservationAttendee } from './invites';
 import { EQUIPMENT, type Equipment } from './slots';
 
 /** 빈 회의실 찾기 조건. MCP rooms_find_free 입력과 같아요(ADR-14). */
@@ -70,6 +71,12 @@ export interface MyReservation {
   when: string;
   /** [취소]. 확인 시트를 먼저 띄우는 고정 버튼이에요(ADR-03). */
   cancel: CardAction;
+  /** [참석자 초대](ADR-17). 고르기 양식은 화면이 띄워요. */
+  invite: CardAction;
+  /** 부른 사람과 답 */
+  attendees: ReservationAttendee[];
+  /** 캘린더 파일 받기 주소 */
+  icsPath: string;
 }
 
 /** GET /api/rooms/my-reservations. enabled가 거짓이면(회의실 끔·링크만·쓰기 끔) 내 예약 칸을 숨겨요(R4). */

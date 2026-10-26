@@ -1,5 +1,6 @@
 // 가명 ID × 동작별 요청 횟수(ADR-13). 서버 메모리에 횟수만 둬요. 서버를 다시 켜면 처음으로 돌아가요.
-export type LimitedAction = 'ask' | 'feedback' | 'inquiry' | 'rooms.search' | 'draft' | 'post' | 'vote' | 'mcp.rooms_find_free' | 'mcp.notices_search';
+export type LimitedAction =
+  'ask' | 'feedback' | 'inquiry' | 'rooms.search' | 'draft' | 'post' | 'vote' | 'mcp.rooms_find_free' | 'mcp.notices_search' | 'people.search' | 'invite';
 
 export class RateLimiter {
   private readonly windows = new Map<string, { start: number; count: number }>();

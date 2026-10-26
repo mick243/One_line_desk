@@ -1,4 +1,13 @@
-import { EQUIPMENT, type RoomCardsResponse, type RoomDayResponse, type RoomListResponse, type RoomQuery, type RoomSlotRequest } from '@one-line-desk/shared';
+import {
+  EQUIPMENT,
+  INVITE_MAX,
+  type InviteRequest,
+  type RoomCardsResponse,
+  type RoomDayResponse,
+  type RoomListResponse,
+  type RoomQuery,
+  type RoomSlotRequest,
+} from '@one-line-desk/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../../context';
 import { DeskError } from '../../core/errors';
@@ -118,4 +127,57 @@ export function registerRoomRoutes(app: FastifyInstance, ctx: AppContext, desk: 
     },
     async (req) => desk.cancel(req.deskUser!, req.params.id),
   );
+
+  // 회의 참석자 초대(ADR-17). 화면이 확인 시트를 먼저 띄우고, 같은 requestId로 두 번 와도 한 번만 보내요.
+  const ID_PARAMS = {
+    type: 'object',
+    required: ['id'],
+    additionalProperties: false,
+    properties: { id: { type: 'string', pattern: '^[0-9]{1,18}$' } },
+  } as const;
+  app.post<{ Params: { id: string }; Body: InviteRequest }>(
+    '/api/rooms/reservations/:id/invites',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        params: ID_PARAMS,
+        body: {
+          type: 'object',
+          required: ['people', 'calendar', 'slack', 'requestId'],
+          additionalProperties: false,
+          properties: {
+            people: { type: 'array', minItems: 1, maxItems: INVITE_MAX, uniqueItems: true, items: { type: 'string', maxLength: 300 } },
+            calendar: { type: 'boolean' },
+            slack: { type: 'boolean' },
+            requestId: { type: 'string', minLength: 8, maxLength: 64 },
+          },
+        },
+      },
+    },
+    async (req) => desk.invites.send(req.deskUser!, req.params.id, req.body),
+  );
+
+  app.get('/api/rooms/invites', { preHandler: ctx.guards.user }, async (req) => desk.invites.invited(req.deskUser!));
+
+  app.post<{ Params: { id: string }; Body: { response: 'accepted' | 'declined' } }>(
+    '/api/rooms/invites/:id/response',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        params: ID_PARAMS,
+        body: { type: 'object', required: ['response'], additionalProperties: false, properties: { response: { enum: ['accepted', 'declined'] } } },
+      },
+    },
+    async (req) => desk.invites.respond(req.deskUser!, req.params.id, req.body.response),
+  );
+
+  // 캘린더 파일(.ics). 예약한 사람과 초대받은 사람만 받아요. 서버는 어디에도 보내지 않아요.
+  app.get<{ Params: { id: string } }>('/api/rooms/reservations/:id/ics', { preHandler: ctx.guards.user, schema: { params: ID_PARAMS } }, async (req, reply) => {
+    const file = await desk.invites.ics(req.deskUser!, req.params.id);
+    return reply
+      .header('content-type', 'text/calendar; charset=utf-8')
+      .header('content-disposition', `attachment; filename="${file.filename}"`)
+      .header('cache-control', 'no-store')
+      .send(file.body);
+  });
 }

@@ -109,7 +109,15 @@ export function cancelAction(r: ReservationRow): CardAction {
   };
 }
 
-/** 확정 카드: "HH:MM에 다시 확인하고 예약했어요" + 취소(F2-7). */
+/** 캘린더 파일 받기 주소(ADR-17) */
+export const icsPath = (reservationId: string) => `/api/rooms/reservations/${reservationId}/ics`;
+
+/** 확정 카드·내 예약의 [참석자 초대](ADR-17). 고르기 양식은 화면이 띄우고, 보내기는 확인 시트를 거쳐요. */
+export function inviteAction(r: { id: string; roomName: string; start: number; end: number }): CardAction {
+  return { type: 'invite', text: '참석자 초대', reservationId: r.id, roomName: r.roomName, when: whenText(r.start, r.end) };
+}
+
+/** 확정 카드: "HH:MM에 다시 확인하고 예약했어요" + 참석자 초대 · 캘린더 파일 · 취소(F2-7, ADR-17). */
 export function confirmedCard(r: ReservationRow, checkedAt: number): Card {
   return makeCard({
     id: `rooms-reservation-${r.id}`,
@@ -122,9 +130,9 @@ export function confirmedCard(r: ReservationRow, checkedAt: number): Card {
       { name: '상태', value: '내 예약' },
     ],
     evidence: { text: `${kstTime(checkedAt)}에 다시 확인하고 예약했어요`, aiSummarized: false },
-    primary: { type: 'navigate', text: '내 것에서 보기', to: 'mine' },
-    secondary: [cancelAction(r)],
-    tail: '예약 기록이 남아요',
+    primary: inviteAction(r),
+    secondary: [{ type: 'link', text: '캘린더 파일 받기', href: icsPath(r.id) }, cancelAction(r)],
+    tail: '예약 기록이 남아요 · 내 예약은 내 것에서 봐요',
   });
 }
 
