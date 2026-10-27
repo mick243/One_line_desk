@@ -383,6 +383,19 @@ button.chip:active {
   font-weight: 500;
   color: var(--lock-text);
 }
+/* 로그인 풀림 안내(L-46): 로그인 화면 맨 위 한 줄 */
+.notice-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-s);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
 
 /* 버튼: 주 버튼(파랑) · 보조(연한 파랑) · 중립(회색) · 글자 링크 */
 .primary,
@@ -614,6 +627,10 @@ button.chip:active {
   background: var(--surface);
   border-radius: 28px 28px 0 0;
   animation: sheet-up 0.34s var(--ease);
+}
+/* 열 때 시트 자체에 초점을 둬요(제목부터 읽혀요). 테두리는 안의 버튼·칸에만 그려요. */
+.sheet:focus {
+  outline: none;
 }
 .sheet .handle {
   width: 36px;
@@ -1478,4 +1495,20 @@ select {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 6px;
+}
+
+/* 내 것 > 무엇을 남기나요(L-42): 세 갈래 목록 */
+.retention h3 {
+  margin: 4px 0 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+.retention ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-2);
+  font-size: 0.9375rem;
 }

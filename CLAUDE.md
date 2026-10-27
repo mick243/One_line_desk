@@ -26,3 +26,4 @@
 - `npm test`, `npm run typecheck`
 - `npm run check`: 서식 검사 + 타입 검사 + 시험
 - DB: `DATABASE_URL`이 없으면 내장 PGlite(`.data/pglite`)를 쓰고 서버가 뜰 때 마이그레이션을 적용해요. 실제 PostgreSQL은 `npm run db:up`(Docker, 5433) → `DATABASE_URL` 설정 → `npm run db:migrate`
+- 운영(`NODE_ENV=production`)은 설정 검사(`apps/server/src/config.ts`)를 지나야 뜨고, 시작할 때 마이그레이션을 적용하지 않아요(`npm run db:migrate` 먼저). 시연 배포는 `DESK_MOCK_LOGIN=true`예요. 운영 설정(스위치·값·링크)은 `ops_settings` 표에 남아요

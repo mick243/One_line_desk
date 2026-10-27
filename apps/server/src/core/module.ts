@@ -69,4 +69,6 @@ export interface DeskModule {
   seed?(): Promise<void>;
   /** "시연 데이터로 돌아가요" 띠에 보여 줄 어댑터 */
   adapters?(): AdapterCapabilities[];
+  /** 보관 기간이 지난 자기 표의 행을 지워요. 서버가 정해진 시각마다 불러요(L-33). */
+  retention?(): Promise<void>;
 }

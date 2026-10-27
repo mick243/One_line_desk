@@ -1,4 +1,4 @@
-import type { AppDestination, Kind, ModuleKind } from '@one-line-desk/shared';
+import type { AppDestination, Kind, ModuleKind, ModuleSwitch } from '@one-line-desk/shared';
 
 // 기능 목록 하나를 홈 목록과 기능 페이지가 같이 써요(10/26 화면 구조 변경).
 // 페이지 제목은 그 화면에서 묻는 질문 하나예요. 버튼은 누르면 무엇을 하는지 적어요(10/26 디자인 정리).
@@ -64,6 +64,26 @@ export const FEATURES: Feature[] = [
     examples: ['제로콜라', '녹차 티백', '포스트잇'],
   },
 ];
+
+// "링크만"·회의실 쓰기 끔일 때 소개 글(L-50, QA-13). 이 일은 그룹웨어에서 한다고 먼저 알려요.
+const LINK_COPY: Record<ModuleKind, Pick<Feature, 'short' | 'summary'>> = {
+  navi: { short: '담당 안내는 그룹웨어에서 봐요', summary: '지금은 담당 안내를 그룹웨어에서 봐요. 한 줄로 쓰면 그룹웨어로 가는 길을 알려 줘요.' },
+  rooms: { short: '회의실 예약은 그룹웨어에서 해요', summary: '지금은 회의실 예약을 그룹웨어에서 해요. 한 줄로 쓰면 그룹웨어로 가는 길을 알려 줘요.' },
+  notices: { short: '공지는 그룹웨어 게시판에서 봐요', summary: '지금은 공지를 그룹웨어 게시판에서 봐요. 한 줄로 쓰면 게시판으로 가는 길을 알려 줘요.' },
+  pantry: { short: '비품 요청은 그룹웨어에서 해요', summary: '지금은 비품 요청을 그룹웨어에서 해요. 한 줄로 쓰면 그룹웨어로 가는 길을 알려 줘요.' },
+};
+const ROOMS_READ_ONLY: Pick<Feature, 'short' | 'summary'> = {
+  short: '빈 방을 찾아 줘요. 예약은 그룹웨어에서 해요',
+  summary: '한 줄로 쓰면 빈 방을 찾아요. 예약은 그룹웨어에서 해요.',
+};
+
+/** 지금 스위치에 맞춘 기능 소개. 켬이면 그대로, 링크만·회의실 쓰기 끔이면 "그룹웨어에서 해요"로 바꿔요. */
+export function featureFor(feature: Feature, switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean }): Feature {
+  const value = switches.modules[feature.module];
+  if (value === 'link') return { ...feature, ...LINK_COPY[feature.module] };
+  if (feature.module === 'rooms' && value === 'on' && !switches.roomsWrite) return { ...feature, ...ROOMS_READ_ONLY };
+  return feature;
+}
 
 /** 다른 기능으로 옮길 때 갈 페이지. "모름"은 담당 찾기로 가요. */
 export function pageOfKind(kind: Kind): AppDestination {

@@ -204,7 +204,7 @@ describe('게시: 묻기·초안은 판에 쓰지 못해요(ADR-04)', () => {
       actions: { primary: { type: 'navigate', to: 'navi', text: '담당 찾기로 옮기기' } },
     });
 
-    for (const m of ['navi', 'notices', 'rooms'] as const) await t.ctx.ops.setModule('p_operator', m, 'off');
+    for (const m of ['notices', 'rooms', 'navi'] as const) await t.ctx.ops.setModule('p_operator', m, 'off');
     const [alone] = await draft(me, '법인카드 잃어버렸어요');
     expect(alone!.headline).toBe(PANTRY_TEXT.standaloneOnly);
     expect(alone!.actions.primary).toBeUndefined();

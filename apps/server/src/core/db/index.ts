@@ -5,7 +5,7 @@ import { createPgliteDb } from './pglite';
 import type { Db } from './types';
 
 export type { Db, Queryable } from './types';
-export { applyMigrations } from './migrate';
+export { applyMigrations, pendingMigrations } from './migrate';
 
 export const DEV_DATA_DIR = fileURLToPath(new URL('../../../../../.data/pglite', import.meta.url));
 

@@ -139,6 +139,9 @@ export function parseTime(text: string): string | undefined {
 /** "제로콜라 또 넣어 주세요" → "제로콜라". 요청 말투·부사를 걷어 내고 품목 이름만 남겨요. */
 export function extractItemName(text: string): string | undefined {
   const name = text
+    // 연락처는 품목 이름이 아니에요. "010-1234-5678 로 연락주시면 컵라면" → "컵라면"(QA-26). 문장 전체를 이름으로 뽑지 않아요.
+    .replace(/(?:\+82[-\s.]?)?0\d{1,2}[-\s.)]?\d{3,4}[-\s.]?\d{4}|\[(?:이메일|IP)\]|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, ' ')
+    .replace(/(?:^|\s)(?:으로|로|에게|께)?\s*연락\s*(?:주시면|주세요|줘요|부탁(?:해요|드려요)?|해\s*주세요|해\s*주시면|바랍니다)/g, ' ')
     .replace(/[.!?~,]/g, ' ')
     .replace(/탕비실(에|에서|의)?/g, ' ')
     .replace(/(또|좀|더|다시|많이|조금|제발|혹시)(?=\s|$)/g, ' ')

@@ -1,4 +1,4 @@
-import { type Card, PANTRY_TEXT, PREVIEW_LIMIT_FIELD, previewSentence, sameItemHeadline } from '@one-line-desk/shared';
+import { type Card, type ItemNameCheck, PANTRY_TEXT, PREVIEW_LIMIT_FIELD, previewSentence, sameItemHeadline } from '@one-line-desk/shared';
 import { makeCard } from '../../core/cards';
 
 // 같이 채워요 카드(화면설계 카드 문법). 웹은 variant로 따로 그려요: 공개 미리보기 · 같은 품목 · 게시 막힘.
@@ -11,17 +11,25 @@ export const VARIANT = {
   blocked: 'pantry-blocked',
 } as const;
 
-/** 공개 미리보기(R2). 이 카드 자체가 확인이에요. [올리지 않기]는 서버를 부르지 않아요. */
-export function previewCard(input: { name: string; proposalToken: string; limitFull: boolean; aiSummarized: boolean }): Card {
+/**
+ * 공개 미리보기(R2). 이 카드 자체가 확인이에요. [올리지 않기]는 서버를 부르지 않아요.
+ * block이 있으면 이 이름으로는 올릴 수 없다고 먼저 알려요(QA-26). 이름 칸은 그대로 두어 고쳐 올릴 수 있어요.
+ */
+export function previewCard(input: { name: string; proposalToken: string; limitFull: boolean; aiSummarized: boolean; block?: ItemNameCheck }): Card {
+  const block = input.block && !input.block.ok && input.block.message ? { kinds: input.block.blocked, message: input.block.message } : undefined;
   return makeCard({
     id: 'pantry-preview',
     kind: 'pantry',
     label: '제안',
     variant: VARIANT.preview,
-    headline: previewSentence(input.name),
-    fields: [{ name: '올라갈 이름', value: input.name }, ...(input.limitFull ? [{ name: PREVIEW_LIMIT_FIELD, value: PANTRY_TEXT.postLimit }] : [])],
+    headline: block ? block.message : previewSentence(input.name),
+    fields: [
+      { name: '올라갈 이름', value: input.name },
+      ...(block ? [{ name: '올릴 수 없는 이유', value: block.message }] : []),
+      ...(input.limitFull ? [{ name: PREVIEW_LIMIT_FIELD, value: PANTRY_TEXT.postLimit }] : []),
+    ],
     evidence: { text: '내가 쓴 문장에서 뽑음', aiSummarized: input.aiSummarized },
-    primary: { type: 'post', text: '올리기', proposalToken: input.proposalToken, itemName: input.name },
+    primary: { type: 'post', text: '올리기', proposalToken: input.proposalToken, itemName: input.name, ...(block ? { nameBlock: block } : {}) },
     tail: PANTRY_TEXT.previewTail,
   });
 }

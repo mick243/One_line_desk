@@ -68,4 +68,6 @@ export interface DirectoryAdapter {
   chartOwnerDepartments(): Promise<Set<string>>;
   /** 참석자 고르기용 직원 검색(이름·부서). 재직 중인 사람만, limit명까지예요. 명단을 통째로 주지 않아요. */
   search(query: string, limit: number): Promise<EmployeeProfile[]>;
+  /** 공개 판 이름 검사에 대조할 직원 이름 낱말(재직자). 서버 안에서 대조만 하고 화면·API·LLM에 내보내지 않아요(QA-4). */
+  personNameWords(): Promise<string[]>;
 }

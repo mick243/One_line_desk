@@ -1,0 +1,8 @@
+# 줄 끝은 늘 LF예요(.prettierrc.json의 endOfLine과 같아요). Windows의 core.autocrlf=true에서도 npm run check가 통과해요.
+* text=auto eol=lf
+
+*.pdf binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

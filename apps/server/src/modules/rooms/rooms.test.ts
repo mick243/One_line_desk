@@ -502,12 +502,17 @@ describe('F2 스위치(R4, ADR-12)', () => {
 
     const res = await ask(me);
     expect(res.cards).toMatchObject([
-      { kind: 'link', headline: '이 일은 그룹웨어에서 해요', actions: { primary: { type: 'link', href: 'https://groupware.example.com/resources' } } },
+      {
+        kind: 'rooms',
+        label: '안내',
+        headline: '이 일은 그룹웨어에서 해요',
+        actions: { primary: { type: 'link', href: 'https://groupware.example.com/resources' } },
+      },
     ]);
     expect((await call(me, 'POST', '/api/rooms/search', { query: { date: '2026-10-27', start: '15:00', people: 4 } })).body.cards).toMatchObject([
-      { kind: 'link', headline: '이 일은 그룹웨어에서 해요' },
+      { kind: 'rooms', headline: '이 일은 그룹웨어에서 해요' },
     ]);
-    expect((await call(me, 'POST', '/api/rooms/recheck', { proposalToken: token })).body.cards).toMatchObject([{ kind: 'link' }]);
+    expect((await call(me, 'POST', '/api/rooms/recheck', { proposalToken: token })).body.cards).toMatchObject([{ id: 'link-rooms', kind: 'rooms' }]);
     expect((await call(me, 'GET', '/api/rooms/my-reservations')).body).toEqual({ enabled: false, items: [] });
     expect((await call(me, 'POST', '/api/plans', { proposalToken: token })).status).toBe(409);
     expect(await appReservations(t.db)).toHaveLength(0);

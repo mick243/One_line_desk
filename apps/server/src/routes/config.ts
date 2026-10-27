@@ -3,16 +3,19 @@ import type { FastifyInstance } from 'fastify';
 import type { AdapterCapabilities } from '../adapters/types';
 import type { AppContext } from '../context';
 import { DeskError } from '../core/errors';
+import { OPS_VALUE_RANGE, type OpsValues } from '../core/ops-settings';
 import { listMcpTools } from '../core/tool-registry';
 
 export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demoAdapters: () => AdapterCapabilities[]) {
-  app.get('/health', async () => {
+  // 부하 분산기·배포가 보는 건강 확인. DB가 안 되면 503이라 그 서버로 요청을 보내지 않아요(L-17).
+  app.get('/health', async (_req, reply) => {
     let db: 'connected' | 'error' = 'connected';
     try {
       await ctx.db.query('select 1');
     } catch {
       db = 'error';
     }
+    if (db === 'error') reply.code(503);
     return { ok: db === 'connected', db: `${ctx.db.kind}-${db}`, ai: ctx.gateway.providerName, rulesVersion: RULES_VERSION };
   });
 
@@ -76,5 +79,32 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
       }
       return ctx.ops.setFlag(req.deskUser!.pseudonymId, req.body.flag, req.body.value);
     },
+  );
+  // 운영 값(재확인 간격·토큰 시간·분당 상한 등, CD-14). 범위를 벗어나면 하나도 바꾸지 않아요.
+  const valueProps = Object.fromEntries(Object.entries(OPS_VALUE_RANGE).map(([k, [minimum, maximum]]) => [k, { type: 'integer', minimum, maximum }]));
+  app.put<{ Body: Partial<OpsValues> }>(
+    '/api/ops/values',
+    {
+      preHandler: [ctx.guards.user, ctx.guards.role('operator')],
+      schema: { body: { type: 'object', additionalProperties: false, minProperties: 1, properties: valueProps } },
+    },
+    async (req) => ctx.ops.setValues(req.deskUser!.pseudonymId, req.body),
+  );
+
+  // "링크만"일 때 보내는 그룹웨어 주소(CD-4). https 주소만 받아요.
+  app.put<{ Body: { module: ModuleKind; url: string } }>(
+    '/api/ops/link',
+    {
+      preHandler: [ctx.guards.user, ctx.guards.role('operator')],
+      schema: {
+        body: {
+          type: 'object',
+          required: ['module', 'url'],
+          additionalProperties: false,
+          properties: { module: { enum: [...MODULES] }, url: { type: 'string', maxLength: 500 } },
+        },
+      },
+    },
+    async (req) => ctx.ops.setLink(req.deskUser!.pseudonymId, req.body.module, req.body.url),
   );
 }

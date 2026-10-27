@@ -1,6 +1,6 @@
 import type { Card } from '../cards';
 import { checkInput } from '../input-check/check';
-import { type LockKind, MASK_RULES, type MaskKind } from '../input-check/rules';
+import { INVISIBLE_CHARS, type LockKind, MASK_RULES, type MaskKind } from '../input-check/rules';
 
 // 주문안 줄마다 붙는 이유 코드(D8, ADR-08).
 export const ORDER_REASON_CODES = ['층 최소 몫', '표 대비 값', '예산 초과로 뺌', '카탈로그에 없음'] as const;
@@ -42,8 +42,9 @@ export type NameBlockKind = LockKind | MaskKind | 'phone' | 'person' | 'shape';
 
 export const NAME_BLOCK_LABEL: Record<NameBlockKind, string> = {
   'key-token': '키·토큰',
-  grade3: '주민번호·비밀번호',
+  grade3: '주민번호·카드·계좌·비밀번호',
   health: '건강 정보',
+  control: '줄바꿈·특수 글자',
   email: '이메일',
   ip: 'IP',
   phone: '전화번호',
@@ -54,10 +55,20 @@ export const NAME_BLOCK_LABEL: Record<NameBlockKind, string> = {
 // 게시 직전 서버 재검사에 더하는 패턴(ADR-04). 브라우저 미리보기도 같은 함수로 다시 검사해요.
 // 공통 검사(input-check/rules.ts)에 더해 전화번호·사람 이름을 막아요. 이메일·IP는 가리지 않고 막아요(공개 판이라서요).
 const PHONE = /(?:\+82[-\s.]?)?0\d{1,2}[-\s.)]?\d{3,4}[-\s.]?\d{4}/;
-// "김가상 대리", "가상님"처럼 이름 뒤에 호칭·직함이 붙은 모양. "해바라기씨" 같은 품목을 막지 않게 '씨'는 빼요.
-const PERSON = /[가-힣]{2,4}\s?(?:님|대리|과장|차장|부장|팀장|실장|사원|주임|선임|책임|수석|매니저|이사|상무|전무)(?![가-힣])/;
-// 줄바꿈·제어 문자, 앞뒤 공백. 판 글자 = 미리보기에서 확정한 글자여야 해서 서버가 손대지 않고 거부해요.
-const SHAPE = /[\u0000-\u001f\u007f\u2028\u2029]|^\s|\s$/;
+// 사람을 부를 때 이름 뒤에 붙는 조사. "하늘님이", "김가상 대리가", "팀장님께"처럼 호칭 뒤에 와도 사람 이름으로 봐요(QA-4).
+const PARTICLE = '(?:께서|에게|한테|이랑|하고|께|이|가|의|을|를|도|은|는|랑|과|와|만)';
+const TITLE = '(?:대리|과장|차장|부장|팀장|실장|사원|주임|선임|책임|수석|매니저|이사|상무|전무)';
+// "김가상 대리", "가상님", "하늘님이"처럼 이름 뒤에 호칭·직함(+조사)이 붙은 모양. "해바라기씨" 같은 품목을 막지 않게 '씨'는 빼요.
+const PERSON = new RegExp(String.raw`[가-힣]{2,4}\s?(?:${TITLE}님?|님)${PARTICLE}?(?![가-힣])`);
+// 줄바꿈·제어 문자, 앞뒤 공백, 안 보이는 0폭·글 방향 문자. 판 글자 = 미리보기에서 확정한 글자여야 해서 서버가 손대지 않고 거부해요.
+const SHAPE = new RegExp(String.raw`[\u0000-\u001f\u007f\u2028\u2029]|${INVISIBLE_CHARS.source}|^\s|\s$`);
+
+/** 직원 명단 이름("하늘", "김하늘")이 낱말로 든 모양. "하늘보리"처럼 다른 낱말 안에 든 것은 막지 않아요. */
+function personNamePattern(names: readonly string[]): RegExp | null {
+  const words = [...new Set(names.filter((n) => /^[가-힣]{2,}$/.test(n)))].sort((a, b) => b.length - a.length);
+  if (words.length === 0) return null;
+  return new RegExp(`(?<![가-힣])(?:${words.join('|')})(?:님|씨)?${PARTICLE}?(?![가-힣])`);
+}
 
 export interface ItemNameCheck {
   ok: boolean;
@@ -66,22 +77,36 @@ export interface ItemNameCheck {
   message: string | null;
 }
 
-/** 공개 판에 올릴 품목 이름 검사. 서버(게시 직전)와 브라우저(미리보기)가 같이 써요. */
-export function checkItemName(name: string): ItemNameCheck {
-  const blocked: NameBlockKind[] = [];
+/**
+ * 공개 판에 올릴 품목 이름 검사. 서버(초안·게시 직전)와 브라우저(미리보기)가 같이 써요.
+ * personNames는 서버만 넘겨요(직원 명단 대조). 명단은 브라우저·응답·LLM에 내보내지 않고, 막힘 이유는 "[사람 이름]"으로만 알려요.
+ */
+export function checkItemName(name: string, opts: { personNames?: readonly string[] } = {}): ItemNameCheck {
+  const blocked = new Set<NameBlockKind>();
   const common = checkInput(name);
-  for (const lock of common.locks) blocked.push(lock.kind);
+  // 제어 문자는 아래 모양 검사가 "줄바꿈·특수 글자"로 같이 알려요.
+  for (const lock of common.locks) if (lock.kind !== 'control') blocked.add(lock.kind);
   // 입력 칸에서 가린 자리표([이메일]·[IP])가 품목 이름에 남아 있어도 그대로 올리지 않아요.
   for (const rule of MASK_RULES) {
-    if (common.masked[rule.kind] > 0 || name.includes(rule.label)) blocked.push(rule.kind);
+    if (common.masked[rule.kind] > 0 || name.includes(rule.label)) blocked.add(rule.kind);
   }
-  if (PHONE.test(name)) blocked.push('phone');
-  if (PERSON.test(name)) blocked.push('person');
-  if (SHAPE.test(name)) blocked.push('shape');
-  if (blocked.length === 0) return { ok: true, blocked, message: null };
+  if (PHONE.test(name)) blocked.add('phone');
+  const probe = name.replace(INVISIBLE_CHARS, '');
+  if (PERSON.test(probe) || personNamePattern(opts.personNames ?? [])?.test(probe)) blocked.add('person');
+  if (SHAPE.test(name)) blocked.add('shape');
+  if (blocked.size === 0) return { ok: true, blocked: [], message: null };
+  const kinds = [...blocked];
   const health = common.locks.find((l) => l.kind === 'health');
-  const message = blocked.length === 1 && health ? health.message : `올릴 수 없는 글자가 있어요: ${blocked.map((k) => `[${NAME_BLOCK_LABEL[k]}]`).join(' ')}`;
-  return { ok: false, blocked, message };
+  const message = kinds.length === 1 && health ? health.message : `올릴 수 없는 글자가 있어요: ${kinds.map((k) => `[${NAME_BLOCK_LABEL[k]}]`).join(' ')}`;
+  return { ok: false, blocked: kinds, message };
+}
+
+/** 직원 이름에서 판 대조용 낱말을 뽑아요. "가상 직원 하늘" → 하늘, "김 하늘" → 하늘·김하늘. */
+export function personNameWords(displayName: string): string[] {
+  const parts = displayName.trim().split(/\s+/);
+  const given = parts.at(-1) ?? '';
+  const family = parts.length >= 2 ? parts.at(-2)! : '';
+  return [given, ...(family.length === 1 ? [family + given] : [])].filter((w) => /^[가-힣]{2,}$/.test(w));
 }
 
 /** 마지막 글자에 받침이 있는지(한글·숫자만 봐요). "라는/이라는", "와/과"를 고르는 데 써요. */

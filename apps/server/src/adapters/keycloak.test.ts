@@ -1,5 +1,6 @@
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWK, SignJWT } from 'jose';
 import { afterEach, describe, expect, it } from 'vitest';
+import { safeReturnPath } from '../routes/auth';
 import { createTestApp } from '../testing';
 import { KeycloakAdapter, profileFromGroups } from './keycloak';
 import { SlackMessenger } from './slack';
@@ -162,13 +163,18 @@ describe('IdP 로그인 경로(OIDC 인가 코드 + PKCE)', () => {
 
   it('다른 사이트로는 돌려보내지 않고, 모의 로그인은 닫혀 있어요', async () => {
     const { t, state } = await setup();
-    for (const bad of ['//evil.example/x', 'https://evil.example', '/\\evil', '/api/me']) {
+    // QA-1: tab·줄바꿈·`\`·인코딩한 `/`·전각 `／`·`..`로 돌아 나가는 주소도 앱 첫 화면으로 보내요. 콜백은 500이 나지 않아요.
+    const bads = ['//evil.example/x', 'https://evil.example', '/\\evil', '/api/me', '/\t/evil.example', '/\n/evil.example', '/\r/evil.example'];
+    bads.push('/%5cevil', '/%2fevil.example', '/%2F%2Fevil', '/／evil.example', '/./api/me', '/a/../api/me', '/..//evil.example', '/ x');
+    for (const bad of bads) {
       const start = await t.app.inject({ method: 'GET', url: `/api/auth/oidc/start?return=${encodeURIComponent(bad)}` });
       const auth = new URL(String(start.headers.location)).searchParams;
       state.nonce = auth.get('nonce')!;
       const back = await t.app.inject({ method: 'GET', url: `/api/auth/oidc/callback?code=good&state=${auth.get('state')}` });
+      expect(back.statusCode, bad).toBe(302);
       expect(back.headers.location, bad).toBe('/');
     }
+    for (const ok of ['/rooms#today', '/pantry?tab=board&x=%2F']) expect(safeReturnPath(ok)).toBe(ok);
     expect((await t.app.inject({ method: 'GET', url: '/api/auth/mock-users' })).statusCode).toBe(404);
     expect((await t.app.inject({ method: 'POST', url: '/api/auth/login', payload: { idpSubject: 'kc|u-doyun' } })).statusCode).toBe(404);
     const config = (await t.app.inject({ method: 'GET', url: '/api/config/public' })).json();

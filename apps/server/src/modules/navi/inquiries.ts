@@ -89,6 +89,9 @@ export function createInquiryService(ctx: AppContext) {
   const purge = () => repo.purgeInquiries(ctx.db, ctx.now() - INQUIRY_KEEP_DAYS * DAY_MS);
 
   return {
+    /** 90일 지난 문의를 지워요. 서버가 한 시간마다, 목록을 열 때도 불러요(L-33). */
+    purge,
+
     /** 문의 보내기. 화면은 확인 시트를 먼저 띄우고, 같은 requestId로 두 번 와도 한 번만 들어가요. */
     async send(user: DeskUser, req: InquiryRequest): Promise<{ status: 'done'; card: Card }> {
       if (ctx.ops.get().modules.navi === 'off') throw new DeskError('feature-off', 409, '지금은 이 기능이 꺼져 있어요');

@@ -35,7 +35,7 @@ export function createMcpModule(ctx: AppContext): DeskModule {
     },
     async seed() {
       // 운영 환경에는 개발용 비밀을 가진 클라이언트를 넣지 않아요(모의 로그인을 연 시연 배포만 빼고). 운영자가 보안팀 승인 목록에서 등록해요.
-      if (ctx.config.production && !ctx.config.mockLogin) return;
+      if (!ctx.config.demo) return;
       await repo.insertClient(ctx.db, {
         clientId: DEMO_CLIENT.clientId,
         secretHash: hashClientSecret(DEMO_CLIENT.clientSecret),

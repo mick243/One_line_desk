@@ -63,6 +63,26 @@ describe('직원 검색(ADR-17)', () => {
     expect(JSON.stringify(devs)).not.toContain('@');
     expect((await doyun.call('GET', '/api/people/search?query=개발')).status).toBe(404);
   });
+
+  // QA-27(L-102): 초대가 꺼진 세 구성에서는 명단을 모을 길을 닫아요. 회의실 쓰기를 다시 켜면 열려요.
+  it.each([
+    ['회의실 쓰기 끔', 'on', false],
+    ['링크만 + 쓰기 끔(1단계)', 'link', false],
+    ['회의실 끔', 'off', false],
+    ['링크만(쓰기 켬 그대로)', 'link', true],
+  ] as const)('초대가 꺼진 구성(%s)에서는 직원 검색이 409예요', async (_name, rooms, roomsWrite) => {
+    const { t, doyun } = await setup();
+    await t.ctx.ops.setModule('ops-test', 'rooms', rooms);
+    await t.ctx.ops.setFlag('ops-test', 'roomsWrite', roomsWrite);
+    for (const query of ['가상', '팀', '개발', '']) {
+      const res = await doyun.call('POST', '/api/people/search', { query });
+      expect(res.status, query).toBe(409);
+      expect(res.body).toEqual({ error: 'feature-off', message: '지금은 이 기능이 꺼져 있어요' });
+    }
+    await t.ctx.ops.setModule('ops-test', 'rooms', 'on');
+    await t.ctx.ops.setFlag('ops-test', 'roomsWrite', true);
+    expect((await refsOf(doyun, '서준')).length).toBe(1);
+  });
 });
 
 describe('참석자 초대(ADR-17)', () => {

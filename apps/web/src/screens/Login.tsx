@@ -25,7 +25,7 @@ function initial(name: string): string {
 }
 
 // 1일 차 끝 기준이 "로그인 화면"이에요. 지금은 모의 OIDC로 가상 직원을 골라요.
-export function Login({ onLoggedIn, login }: { onLoggedIn: () => void; login: PublicConfig['login'] }) {
+export function Login({ onLoggedIn, login, notice }: { onLoggedIn: () => void; login: PublicConfig['login']; notice?: string }) {
   const [users, setUsers] = useState<MockUser[]>([]);
   // IdP에서 돌아왔는데 로그인하지 못했으면 주소에 login=failed가 붙어 와요.
   const [error, setError] = useState(() =>
@@ -60,6 +60,12 @@ export function Login({ onLoggedIn, login }: { onLoggedIn: () => void; login: Pu
         </h1>
         <p className='lead'>회의실 잡기, 탕비실 채우기, 누구에게 물을지. 한 줄로 쓰면 확인 카드로 돌려줘요.</p>
       </header>
+      {notice && (
+        <p className='notice-line' role='alert'>
+          <Icon name='lock' size={14} />
+          {notice}
+        </p>
+      )}
       {login.kind === 'oidc' && (
         <section className='card'>
           <h2>{login.label}으로 들어가기</h2>

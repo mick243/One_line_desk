@@ -21,5 +21,6 @@ export function createNaviModule(ctx: AppContext): DeskModule {
     register: (app) => registerNaviRoutes(app, ctx, navi, inquiries),
     seed: () => navi.seed(),
     adapters: () => [{ name: 'mock-chart', label: '업무 분장표(가상 분장표)', mock: true }],
+    retention: () => inquiries.purge(),
   };
 }

@@ -1,5 +1,5 @@
 import cookie from '@fastify/cookie';
-import type { ModuleKind } from '@one-line-desk/shared';
+import { DEFAULT_OPS_SETTINGS, hasControlChar, LAUNCH_OPS_SETTINGS, LOCK_MESSAGE, type ModuleKind } from '@one-line-desk/shared';
 import Fastify, { type FastifyServerOptions } from 'fastify';
 import { ZodError } from 'zod';
 import { type Adapters, createAdapters, withOutboundAdapters } from './adapters';
@@ -8,9 +8,10 @@ import type { AppContext } from './context';
 import { AnthropicProvider } from './core/ai/anthropic-provider';
 import { AiGateway, FakeProvider, type LlmProvider } from './core/ai/gateway';
 import { AuditLog } from './core/audit';
-import { applyMigrations, type Db, openDb } from './core/db';
+import { applyMigrations, type Db, openDb, pendingMigrations } from './core/db';
 import { DeskError } from './core/errors';
 import { FixedActions } from './core/fixed-action';
+import { errorSummary, maskedLogger } from './core/logging';
 import { Notifier } from './core/notifications';
 import { createGuards } from './core/guard';
 import type { DeskModule } from './core/module';
@@ -39,22 +40,33 @@ export interface BuildOptions {
   /** 비어 있는 DB에 가상 자료를 넣을지. 기본은 config.seedDemo예요. */
   seed?: boolean;
   logger?: FastifyServerOptions['logger'];
+  /** 보관 기간 지우기를 한 시간마다 돌릴지. 시험은 끄고 runRetention()을 직접 불러요. 기본은 켬이에요. */
+  retentionTimer?: boolean;
 }
+
+const RETENTION_EVERY_MS = 60 * 60_000;
 
 export async function buildApp(opts: BuildOptions) {
   const { config } = opts;
   const now = opts.now ?? Date.now;
   const db = opts.db ?? (await openDb(config.databaseUrl));
-  await applyMigrations(db);
+  // 운영은 앱 시작 적용을 끄고(앱 계정에 표 만들기 권한 없음) 배포 잡이 먼저 적용해요(L-22). 빠진 게 있으면 뜨지 않아요.
+  if (config.migrateOnStart) await applyMigrations(db);
+  else {
+    const pending = await pendingMigrations(db);
+    if (pending.length) throw new Error(`아직 적용하지 않은 마이그레이션이 있어요(${pending.join(', ')}). npm run db:migrate를 먼저 돌려 주세요`);
+  }
 
   const audit = new AuditLog(db);
-  const ops = new OpsSettingsStore(audit);
+  // 운영(production)은 출시 기본값(회의실 쓰기·MCP 끔)에서 시작해요. 개발·시연은 모두 켠 기본값이에요. 바꾼 값은 표에서 읽어요.
+  const ops = new OpsSettingsStore(audit, db, config.production ? LAUNCH_OPS_SETTINGS : DEFAULT_OPS_SETTINGS);
+  await ops.load();
   const settings = () => ops.get();
   const provider = opts.provider ?? (config.aiProvider === 'anthropic' ? new AnthropicProvider(config.aiModel) : new FakeProvider());
   const tokens = new ProposalTokens(config.proposalSecret, now, () => settings().values.proposalTtlSeconds * 1000);
-  const adapters = withOutboundAdapters(opts.adapters ?? createAdapters(config), db, now);
+  const adapters = withOutboundAdapters(opts.adapters ?? createAdapters(config), db, now, config.demo);
   // 운영 환경에서 모의 IdP로 뜨면 누구나 운영자로 들어와요. 시연 배포는 DESK_MOCK_LOGIN=true로 드러내 놓고 열어요.
-  if (adapters.idp.loginChoices && !config.mockLogin) {
+  if (adapters.idp.loginChoices && !config.demo) {
     throw new Error('운영 환경에서는 모의 로그인을 쓸 수 없어요. 실제 IdP 어댑터를 넘기거나, 시연 배포면 DESK_MOCK_LOGIN=true를 넣어 주세요');
   }
   const base: Omit<AppContext, 'guards'> = {
@@ -80,9 +92,19 @@ export async function buildApp(opts: BuildOptions) {
   const askModules = new Map(modules.filter((m): m is DeskModule & { kind: ModuleKind } => m.kind !== 'mcp').map((m) => [m.kind, m]));
   const router = new Router(askModules, ctx.gateway, ops, audit, now);
 
-  // 요청 로그에는 방법·주소·상태만 남아요. 본문은 로그·오류 응답에 넣지 않아요(R13).
+  // 요청 로그에는 방법·경로·상태만 남아요. 쿼리·IP·본문은 로그·오류 응답에 넣지 않아요(R13, L-28 core/logging.ts).
   // additionalProperties: false인 본문에 모르는 칸이 오면 조용히 지우지 않고 400으로 거부해요.
-  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 64 * 1024, ajv: { customOptions: { removeAdditional: false } } });
+  // 시간 제한(L-17): 요청 30초. 앞단 부하 분산기(보통 60초)보다 연결 유지를 길게 둬서 끊긴 연결로 502가 나지 않게 해요.
+  const app = Fastify({
+    logger: maskedLogger(opts.logger),
+    bodyLimit: 64 * 1024,
+    ajv: { customOptions: { removeAdditional: false } },
+    trustProxy: config.trustProxy,
+    requestTimeout: 30_000,
+    connectionTimeout: 35_000,
+    keepAliveTimeout: 65_000,
+    return503OnClosing: true,
+  });
   await app.register(cookie, { secret: config.sessionSecret });
 
   app.setErrorHandler((err: Error & { statusCode?: number; validation?: unknown }, req, reply) => {
@@ -93,8 +115,21 @@ export async function buildApp(opts: BuildOptions) {
       req.log.warn({ msg: 'client-error', statusCode: err.statusCode });
       return reply.code(err.statusCode).send({ error: 'bad-request', message: '요청 형식이 맞지 않아요' });
     }
-    req.log.error({ msg: err.message });
+    req.log.error({ msg: 'server-error', err: errorSummary(err) });
     return reply.code(500).send({ error: 'server-error', message: '지금 처리하지 못했어요' });
+  });
+
+  // API 기본 머리(L-17): 응답을 캐시에 남기지 않고, 형식 추측·주소 넘김을 막아요. HTML 보안 머리는 웹·앞단 프록시가 맡아요(L-19).
+  app.addHook('onSend', async (_req, reply) => {
+    reply.header('x-content-type-options', 'nosniff');
+    reply.header('referrer-policy', 'no-referrer');
+    if (!reply.hasHeader('cache-control')) reply.header('cache-control', 'no-store');
+  });
+
+  // NUL 같은 제어 문자(줄바꿈·tab 빼고)가 든 본문·쿼리는 어느 경로든 검사·저장 전에 400으로 돌려보내요(QA-10).
+  // jsonb 저장이나 응답 머리에서 500이 나지 않게 해요. 브라우저도 같은 규칙으로 보내기를 잠가요.
+  app.addHook('preValidation', async (req) => {
+    if (hasControlChar(req.body) || hasControlChar(req.query)) throw new DeskError('bad-request', 400, LOCK_MESSAGE.control);
   });
 
   ctx.dataAdapters = () => [...ctx.adapters.all(), ...modules.flatMap((m) => m.adapters?.() ?? [])];
@@ -111,9 +146,25 @@ export async function buildApp(opts: BuildOptions) {
     for (const module of modules) await module.seed?.();
   }
 
+  // 보관 기간 지우기(L-33): 화면을 열지 않아도 문의 90일·알림 30일이 지나면 지워요. 뜰 때 한 번, 그 뒤 한 시간마다예요.
+  const runRetention = async () => {
+    await ctx.notify.purge();
+    for (const module of modules) await module.retention?.();
+  };
+  let retentionTimer: NodeJS.Timeout | undefined;
+  if (opts.retentionTimer ?? true) {
+    await runRetention();
+    retentionTimer = setInterval(
+      () => void runRetention().catch((err) => app.log.error({ msg: 'retention-failed', err: errorSummary(err) })),
+      RETENTION_EVERY_MS,
+    );
+    retentionTimer.unref();
+  }
+
   app.addHook('onClose', async () => {
+    clearInterval(retentionTimer);
     if (!opts.db) await db.close();
   });
 
-  return { app, ctx, modules };
+  return { app, ctx, modules, runRetention };
 }

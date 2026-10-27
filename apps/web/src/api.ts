@@ -47,7 +47,24 @@ export type AskResult =
 // CSRF 토큰은 페이지 메모리에만 둬요. 브라우저 저장소에 아무것도 넣지 않아요(R13).
 let csrfToken = '';
 
+/** 로그인 풀림 안내(L-46). 모든 기기 로그아웃·퇴사 확인·세션 만료 뒤 첫 401에서 보여 줘요. */
+export const SESSION_ENDED_MESSAGE = '보안을 위해 다시 로그인해 주세요';
+
+// 로그인이 풀리면(로그인한 뒤 받은 401) 한 번만 알리고, 다시 로그인할 때까지 API를 부르지 않아요(그 뒤 401 요청 0).
+let sessionEnded = false;
+const sessionEndedListeners = new Set<() => void>();
+
+/** 로그인이 풀렸을 때 부를 함수를 걸어요. 떼는 함수를 돌려줘요. */
+export function onSessionEnded(listener: () => void): () => void {
+  sessionEndedListeners.add(listener);
+  return () => sessionEndedListeners.delete(listener);
+}
+
+// 로그인 전 401이 정상인 경로(내 정보 확인, 로그인 자체)는 로그인 풀림으로 보지 않아요.
+const isAuthPath = (url: string) => url === '/api/me' || url.startsWith('/api/auth/') || url.startsWith('/api/config/');
+
 async function raw<T>(method: string, url: string, body?: unknown): Promise<{ status: number; data: T }> {
+  if (sessionEnded && !isAuthPath(url)) return { status: 401, data: { error: 'login-required', message: SESSION_ENDED_MESSAGE } as T };
   const res = await fetch(url, {
     method,
     credentials: 'same-origin',
@@ -55,6 +72,11 @@ async function raw<T>(method: string, url: string, body?: unknown): Promise<{ st
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const data = (await res.json().catch(() => ({}))) as T;
+  if (res.status === 401 && !isAuthPath(url) && !sessionEnded) {
+    sessionEnded = true;
+    csrfToken = '';
+    for (const listener of sessionEndedListeners) listener();
+  }
   return { status: res.status, data };
 }
 
@@ -75,6 +97,7 @@ export const api = {
     const { status, data } = await raw<Me>('GET', '/api/me');
     if (status !== 200) return null;
     csrfToken = data.csrfToken;
+    sessionEnded = false;
     return data;
   },
   async mockUsers(): Promise<MockUser[]> {

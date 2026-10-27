@@ -107,8 +107,9 @@ export class McpAuth {
 
   // ── 정책 ─────────────────────────────────────────────
 
+  /** 모의 자료로만 도는 시연인지. 운영(시연 배포 아님)에서는 늘 거짓이라 시연 클라이언트가 허용 목록에 들지 않아요(L-16). */
   allMockData(): boolean {
-    return isAllMockData(this.ctx.dataAdapters());
+    return this.ctx.config.demo && isAllMockData(this.ctx.dataAdapters());
   }
 
   isClientAllowed(client: repo.ClientRecord): boolean {

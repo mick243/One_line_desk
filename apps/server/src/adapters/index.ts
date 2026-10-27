@@ -3,6 +3,7 @@ import type { Db } from '../core/db';
 import { KeycloakAdapter } from './keycloak';
 import { MockEmployees } from './mock/employees';
 import { MockGroupwareCalendar, MockMessenger } from './mock/groupware';
+import { OffCalendar, OffMessenger } from './off';
 import { SlackMessenger } from './slack';
 import type { AdapterCapabilities, CalendarAdapter, DirectoryAdapter, IdpAdapter, MessengerAdapter } from './types';
 
@@ -24,12 +25,15 @@ export function createAdapters(config: ServerConfig): Adapters {
   return { ...base, messenger, all: () => [...base.all(), messenger.capabilities] };
 }
 
-/** 앱이 쓰는 어댑터: 캘린더·메신저가 없으면 DB에 모의 어댑터를 채워요(그래서 늘 있어요). */
+/**
+ * 앱이 쓰는 어댑터: 캘린더·메신저가 없으면 시연은 DB에 모의 어댑터를, 운영은 "연결 안 함" 어댑터를 채워요(그래서 늘 있어요).
+ * 운영에서는 모의 바깥 어댑터가 0개예요(L-15). 연결 안 함 어댑터는 보내기를 실패로 돌려줘요.
+ */
 export type ResolvedAdapters = Adapters & { calendar: CalendarAdapter; messenger: MessengerAdapter };
 
-export function withOutboundAdapters(a: Adapters, db: Db, now: () => number): ResolvedAdapters {
-  const calendar = a.calendar ?? new MockGroupwareCalendar(db, now);
-  const messenger = a.messenger ?? new MockMessenger(db, now);
+export function withOutboundAdapters(a: Adapters, db: Db, now: () => number, allowMock = true): ResolvedAdapters {
+  const calendar = a.calendar ?? (allowMock ? new MockGroupwareCalendar(db, now) : new OffCalendar());
+  const messenger = a.messenger ?? (allowMock ? new MockMessenger(db, now) : new OffMessenger());
   return {
     ...a,
     calendar,

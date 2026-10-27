@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { checkInput, maskLine } from './check';
+import { checkInput, hasControlChar, maskLine } from './check';
+import { luhnValid } from './rules';
+import { QA_LOCKED } from './samples';
 
 describe('공통 입력 검사', () => {
   it('평범한 질문은 그대로 보내요', () => {
@@ -39,5 +41,72 @@ describe('공통 입력 검사', () => {
   it('건강 정보는 막고, 병가 같은 제도 이름은 막지 않아요', () => {
     expect(checkInput('땅콩 알레르기가 있어서 간식 빼 주세요').locks.map((l) => l.kind)).toEqual(['health']);
     expect(checkInput('병가 신청은 어디서 해요?').locks).toEqual([]);
+  });
+});
+
+describe('입력 검사 규칙 2(QA-2·3·10·19)', () => {
+  it.each(QA_LOCKED)('%s → 잠가요', (_name, text, kind) => {
+    const r = checkInput(text);
+    expect(r.rulesVersion).toBe(2);
+    expect(r.locks.map((l) => l.kind)).toContain(kind);
+  });
+
+  it('0폭·글 방향 문자는 지운 글로 저장·표시해요', () => {
+    expect(checkInput('\u202Egnp.exe 끝').text).toBe('gnp.exe 끝');
+    expect(checkInput('회의\u200B실 \uFEFF예약').text).toBe('회의실 예약');
+    expect(checkInput('\u202Egnp.exe 끝').locks).toEqual([]);
+  });
+
+  it('검사는 전각 글자를 반각으로 보지만, 저장 글의 한글 낱자는 그대로 둬요', () => {
+    expect(checkInput('ㅋㅋ 감사해요').text).toBe('ㅋㅋ 감사해요');
+  });
+
+  it('제어 문자를 본문 어디서든 찾아요(줄바꿈·tab은 괜찮아요)', () => {
+    expect(hasControlChar({ edits: { itemName: '녹차\u0000' } })).toBe(true);
+    expect(hasControlChar(['a', { b: '\u001F' }])).toBe(true);
+    expect(hasControlChar({ question: '첫 줄\n둘째 줄\t끝\r\n' })).toBe(false);
+    expect(hasControlChar(42)).toBe(false);
+  });
+
+  it('카드 번호는 Luhn이 맞을 때만 잠가요', () => {
+    expect(luhnValid('4111111111111111')).toBe(true);
+    expect(luhnValid('4111111111111112')).toBe(false);
+    expect(checkInput('주문번호 4111 1111 1111 1112').locks).toEqual([]);
+  });
+
+  // 담당 팀 문의·묻기에 흔히 오는 정상 문장. 하나도 잠기면 안 돼요(QA 검수 F-3).
+  it.each([
+    '법인카드를 잃어버렸어요. 정지는 어디서 해요?',
+    '급여 계좌를 바꾸고 싶은데 어디서 신청해요?',
+    '급여명세서는 매달 며칠에 나와요?',
+    '이번 달 급여 3,500,000원이 덜 들어온 것 같아요',
+    '입금 확인은 010-1234-5678로 연락 주시면 돼요',
+    '계좌이체 영수증도 증빙으로 받나요?',
+    '비밀번호를 잃어버렸어요',
+    '비밀번호 재설정 메일이 안 와요',
+    '비밀번호 8자리 이상이어야 하나요?',
+    '비밀번호 변경 주기가 90일인가요?',
+    'VPN 비번 초기화는 누가 해 줘요?',
+    '병가 신청은 어디서 해요?',
+    '5천 식대 기준이 바뀌었나요?',
+    '10월 30일 오후 3시에 6명 회의실 있어요?',
+    '내선 1234로 전화했는데 안 받아요',
+    '사번 20231234인데 출입증이 안 찍혀요',
+    '택배 송장번호 6012345678901 조회는 어디서 해요?',
+    '거래처 사업자등록번호 123-45-67890 등록 요청이요',
+    '출장비 정산 마감이 언제예요?',
+    '여권 사본을 출장 서류에 내야 하나요?',
+    '노트북 자산번호 NB-2024-0193 반납하려고요',
+    '모니터 하나 더 받을 수 있나요?',
+    '명함 200장 다시 주문하고 싶어요',
+    '연차 반차 쓰는 법 알려 주세요',
+    '주차 등록 차량번호 12가 3456 바꾸려고요',
+    '카드 한도 300만 원으로 올려 주세요',
+    '회의실 프로젝터가 안 켜져요',
+    '탕비실 커피 원두 떨어졌어요',
+    '고객사 대표번호 1588-1234로 안내해도 되나요?',
+    '2026-10-27 10:00 교육 장소가 어디예요?',
+  ])('정상 문장은 잠그지 않아요: %s', (text) => {
+    expect(checkInput(text).locks).toEqual([]);
   });
 });

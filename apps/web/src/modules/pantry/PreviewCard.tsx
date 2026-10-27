@@ -1,5 +1,5 @@
 import { type Card, type CardAction, checkItemName, PANTRY_ITEM_NAME_MAX, PANTRY_TEXT, PREVIEW_LIMIT_FIELD, previewSentence } from '@one-line-desk/shared';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { CardView, type CardViewProps } from '../../components/CardView';
 
 // 같이 채워요 카드 그리기(화면설계 카드 문법).
@@ -16,10 +16,14 @@ function PostPreview({ action, card, limitFull, onAction }: { action: PostAction
   // 고친 이름은 이 컴포넌트 상태(페이지 메모리)에만 있어요.
   const [name, setName] = useState(action.itemName);
   const [state, setState] = useState<'idle' | 'busy' | 'dismissed'>('idle');
+  const lockId = useId();
   const trimmed = name.trim();
   const check = useMemo(() => checkItemName(trimmed), [trimmed]);
+  // 서버는 직원 명단과도 대조해요. 이름을 안 고쳤으면 서버가 알려 준 막힘 이유를 같이 써요(QA-26).
+  const serverBlock = action.nameBlock && trimmed === action.itemName.trim() ? action.nameBlock.message : null;
+  const lockMessage = check.message ?? serverBlock;
   const tooLong = trimmed.length > PANTRY_ITEM_NAME_MAX;
-  const blocked = !trimmed || !check.ok || tooLong || limitFull;
+  const blocked = !trimmed || Boolean(lockMessage) || tooLong || limitFull;
 
   if (state === 'dismissed') {
     return (
@@ -60,16 +64,23 @@ function PostPreview({ action, card, limitFull, onAction }: { action: PostAction
               spellCheck={false}
               maxLength={60}
               disabled={state === 'busy'}
+              aria-invalid={Boolean(trimmed && lockMessage) || tooLong}
+              aria-describedby={trimmed && (lockMessage || tooLong) ? lockId : undefined}
             />
           </div>
-          {trimmed && check.message && (
-            <p className='lock-line' role='alert'>
-              {check.message}
+          {trimmed && lockMessage && (
+            <p className='lock-line' role='alert' id={lockId}>
+              {lockMessage}
             </p>
           )}
-          {tooLong && <p className='lock-line'>품목 이름은 {PANTRY_ITEM_NAME_MAX}자까지예요</p>}
+          {tooLong && (
+            <p className='lock-line' id={lockMessage ? undefined : lockId}>
+              품목 이름은 {PANTRY_ITEM_NAME_MAX}자까지예요
+            </p>
+          )}
         </div>
-        {trimmed && <p className='headline'>{previewSentence(trimmed)}</p>}
+        {/* 막힌 이름으로 "이렇게 보여요"라고 하지 않아요(QA-26). */}
+        {trimmed && !lockMessage && !tooLong && <p className='headline'>{previewSentence(trimmed)}</p>}
         {limitFull && (
           <p className='lock-line' role='alert'>
             {PANTRY_TEXT.postLimit}
