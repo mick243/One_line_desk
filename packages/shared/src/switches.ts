@@ -46,9 +46,17 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
   },
 };
 
+/** 출시(운영) 기본값(CD-14): 회의실 쓰기·MCP는 끈 채로 시작해요. 운영자가 바꾸면 운영 설정 표에 남아요. */
+export const LAUNCH_OPS_SETTINGS: OpsSettings = { ...DEFAULT_OPS_SETTINGS, roomsWrite: false, mcp: false };
+
 /** "같이 채워요 단독" 모드 = navi·notices·rooms 모두 끔. 묻기 탭을 숨기고 같이 채워요 탭이 첫 화면이에요. */
 export function isPantryStandalone(settings: OpsSettings): boolean {
   return (['navi', 'notices', 'rooms'] as const).every((m) => settings.modules[m] === 'off');
+}
+
+/** 회의실 쓰기(예약·취소·참석자 초대)가 켜져 있는지. 회의실이 `켬`이고 회의실 쓰기가 켜졌을 때만이에요. */
+export function roomsWriteOn(settings: OpsSettings): boolean {
+  return settings.modules.rooms === 'on' && settings.roomsWrite;
 }
 
 /** 라우터 후보에 남는 종류. 끔인 종류는 빠지고, 링크만은 남아서 링크 카드를 받아요. */

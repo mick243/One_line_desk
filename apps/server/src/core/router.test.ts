@@ -32,7 +32,7 @@ function fakeModule(kind: ModuleKind): DeskModule {
 beforeAll(async () => {
   db = await createTestDb();
   const audit = new AuditLog(db);
-  ops = new OpsSettingsStore(audit);
+  ops = new OpsSettingsStore(audit, db);
   const modules = new Map<ModuleKind, DeskModule>((['navi', 'notices', 'rooms', 'pantry'] as const).map((k) => [k, fakeModule(k)]));
   router = new Router(modules, new AiGateway(new FakeProvider(), false, db), ops, audit, () => NOW);
 });
@@ -78,7 +78,7 @@ describe('앞문 라우터(ADR-02)', () => {
 
   it('[R4] 링크만이면 그룹웨어 링크 카드, 끔이면 담당 안내로 가요', async () => {
     await ops.setModule('p_op', 'rooms', 'link');
-    expect((await router.ask(user, '내일 3시 회의실 잡아 줘')).cards[0]).toMatchObject({ kind: 'link', headline: '이 일은 그룹웨어에서 해요' });
+    expect((await router.ask(user, '내일 3시 회의실 잡아 줘')).cards[0]).toMatchObject({ kind: 'rooms', label: '안내', headline: '이 일은 그룹웨어에서 해요' });
     await ops.setModule('p_op', 'rooms', 'off');
     expect((await router.ask(user, '내일 3시 회의실 잡아 줘')).kind).toBe('navi');
     await ops.setModule('p_op', 'rooms', 'on');

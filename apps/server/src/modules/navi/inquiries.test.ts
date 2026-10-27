@@ -143,7 +143,8 @@ describe('담당 팀에 문의 보내기(ADR-16)', () => {
 
   it('[R4] 담당 찾기가 꺼지면 보낼 수 없어요', async () => {
     const t = await setup();
-    await t.ctx.ops.setModule('p_test_operator', 'navi', 'off');
+    // 담당 찾기 끔은 같이 채워요 단독 모드에서만 돼요(ADR-12, QA-14).
+    for (const m of ['notices', 'rooms', 'navi'] as const) await t.ctx.ops.setModule('p_test_operator', m, 'off');
     const doyun = await t.loginAs(MOCK.dev);
     expect((await doyun.call('POST', '/api/navi/inquiries', { rowId: 'HR-01', question: QUESTION, reason: REASON, requestId: requestId() })).status).toBe(409);
   });

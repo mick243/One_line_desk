@@ -135,11 +135,11 @@ function toSlots(s: Classification['slots']): Slots {
   return slots;
 }
 
-/** 스위치가 "링크만"일 때(R4). */
+/** 스위치가 "링크만"일 때(R4). 종류는 그 모듈이라 카드 머리가 "회의실 · 안내"예요(QA-13). */
 export function linkCard(module: ModuleKind, href: string): Card {
   return {
     id: `link-${module}`,
-    kind: 'link',
+    kind: module,
     label: '안내',
     headline: '이 일은 그룹웨어에서 해요',
     fields: [],

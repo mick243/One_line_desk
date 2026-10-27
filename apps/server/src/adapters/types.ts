@@ -55,6 +55,27 @@ export interface CalendarAdapter {
   cancelEvent(uid: string): Promise<void>;
 }
 
+/** 휴가를 한 번 쓴 기록. 날짜와 하루·반나절만 있어요. 사유는 받지 않아요. */
+export interface LeaveUse {
+  /** YYYY-MM-DD(한국 날짜). 앞으로 쓸 예정인 날도 들어 있어요. */
+  date: string;
+  kind: 'full' | 'half';
+}
+
+/** 인사 근태 시스템의 본인 연차 자료(등급 2). 그 사람 화면에만 보이고, AI·로그·DB에는 넣지 않아요(ADR-18). */
+export interface LeaveRecord {
+  /** 입사일 YYYY-MM-DD. 연차 기간과 생긴 일수를 이걸로 계산해요. */
+  hireDate: string;
+  uses: LeaveUse[];
+}
+
+/** 인사 근태(연차) 어댑터. 본인 것만 읽어요. 남의 것을 찾는 함수는 없어요. */
+export interface LeaveAdapter {
+  capabilities: AdapterCapabilities;
+  /** 연결이 안 됐거나 기록이 없으면 null이에요. 회사 메일(사번 대신)로 찾아요. */
+  leaveOf(person: { idpSubject: string; email?: string }): Promise<LeaveRecord | null>;
+}
+
 /** 메신저 DM(ADR-17). 받는 사람은 회사 메일로 찾아요. 글에는 방·시간·부른 사람만 넣어요. */
 export interface MessengerAdapter {
   capabilities: AdapterCapabilities;
@@ -68,4 +89,6 @@ export interface DirectoryAdapter {
   chartOwnerDepartments(): Promise<Set<string>>;
   /** 참석자 고르기용 직원 검색(이름·부서). 재직 중인 사람만, limit명까지예요. 명단을 통째로 주지 않아요. */
   search(query: string, limit: number): Promise<EmployeeProfile[]>;
+  /** 공개 판 이름 검사에 대조할 직원 이름 낱말(재직자). 서버 안에서 대조만 하고 화면·API·LLM에 내보내지 않아요(QA-4). */
+  personNameWords(): Promise<string[]>;
 }

@@ -5,6 +5,7 @@ import {
   type Card,
   checkItemName,
   type FloorSetting,
+  type ItemNameCheck,
   type MergeRequest,
   type MergeResponse,
   type MergesResponse,
@@ -146,6 +147,12 @@ export function createBoardService(ctx: AppContext) {
     return a.length === b.length && timingSafeEqual(a, b);
   }
 
+  /** 공개 판 이름 검사. 직원 명단 이름과도 대조해요(QA-4). 명단을 못 읽으면 호칭·조사 규칙만으로 검사해요. */
+  async function nameCheck(name: string): Promise<ItemNameCheck> {
+    const personNames = await ctx.adapters.directory.personNameWords().catch(() => []);
+    return checkItemName(name, { personNames });
+  }
+
   /** 막힘 카드. 재시도 토큰에도 막힌 이름·그 HMAC을 넣지 않아요(H2). 이 카드는 plan 결과·영수증에 저장돼요. */
   function blockedOutcomeCard(user: DeskUser, message: string, seen: number[]): Card {
     const retry = propose(user, { floor: user.floor, nameMac: null, catalogItemId: null, seen, aiSeen: [] });
@@ -176,6 +183,12 @@ export function createBoardService(ctx: AppContext) {
         limit: await limitFor(q, user.floor),
       };
     });
+    // 막힐 이름(사람 이름·전화번호 등)은 같은 품목 비교(LLM)에 보내지 않고, 막힘 이유를 미리보기에 바로 실어요(QA-26).
+    const check = await nameCheck(name);
+    if (!check.ok) {
+      const retry = propose(user, { floor: user.floor, nameMac: null, catalogItemId: null, seen: [], aiSeen: [] });
+      return [cards.previewCard({ name, proposalToken: retry, limitFull: snap.myCount >= snap.limit, aiSummarized: nameByAi, block: check })];
+    }
     const judged = await judgeName(ctx.gateway, name, snap.candidates, snap.catalog);
     // 토큰에는 이름 글자 대신 HMAC만 넣어요(H2). 이름은 카드 행동(응답)에만 있고 [올리기] 때 edits로 돌아와요.
     const draft: PostDraft = {
@@ -227,8 +240,8 @@ export function createBoardService(ctx: AppContext) {
     const { q, user } = ex;
     const name = p.itemName;
 
-    // 1) 서버 재검사: 공통 검사 + 전화번호·이메일·사람 이름·건강 정보(ADR-04). 막힌 이름은 결과·재시도 토큰에 넣지 않아요(H2).
-    const check = checkItemName(name);
+    // 1) 서버 재검사: 공통 검사 + 전화번호·이메일·사람 이름(직원 명단 대조 포함)·건강 정보(ADR-04). 막힌 이름은 결과·재시도 토큰에 넣지 않아요(H2).
+    const check = await nameCheck(name);
     if (!check.ok) return { status: 'blocked', card: blockedOutcomeCard(user, check.message ?? '올릴 수 없는 글자가 있어요', p.seen) };
     if (!ctx.rateLimiter.hit(user.pseudonymId, 'post')) throw new DeskError('rate-limited', 429, PANTRY_TEXT.rateLimited);
 
@@ -311,7 +324,7 @@ export function createBoardService(ctx: AppContext) {
     // 만료: 고친 이름으로 새 미리보기를 줘요("시간이 지나 다시 확인해 주세요").
     // 고친 이름이 판 검사(전화번호·사람 이름·자리표 등)에 걸리면 LLM을 부르지 않고 막힘 카드만 줘요(H1, ADR-11).
     reSearch: async (p, user) => {
-      const check = checkItemName(p.itemName);
+      const check = await nameCheck(p.itemName);
       if (!check.ok) return [blockedOutcomeCard(user, check.message ?? '올릴 수 없는 글자가 있어요', p.seen)];
       return draftForName(user, p.itemName, false);
     },
@@ -707,7 +720,7 @@ export function createBoardService(ctx: AppContext) {
   async function saveSettings(user: DeskUser, floor: string, body: PantrySettingsUpdate): Promise<FloorSetting> {
     requireFacilities(user);
     if (body.cycleNote) {
-      const check = checkItemName(body.cycleNote);
+      const check = await nameCheck(body.cycleNote);
       if (!check.ok) throw new DeskError('locked', 422, check.message ?? '올릴 수 없는 글자가 있어요');
     }
     return ctx.fixed.run(user, {

@@ -23,6 +23,7 @@ import type { DeskUser } from '../../core/user';
 import { type ChartRow, parseChart, toCsv } from './chart-csv';
 import { askHereCard, naviCard } from './cards';
 import { demoChartCsv } from './fixtures';
+import { myLeaveCard } from './leave';
 import * as repo from './repo';
 import type { StoredRow } from './repo';
 import { bigramSet, coverage, keywords } from './text';
@@ -201,13 +202,16 @@ export function createNaviService(ctx: AppContext) {
     },
 
     async ask(input: AskInput): Promise<AskOutcome> {
+      // 휴가 질문이면 담당 카드 뒤에 본인 남은 연차 카드를 붙여요(ADR-18). 숫자는 서버가 계산해요.
+      const leave = await myLeaveCard(ctx, input.user, input.text);
+      const withLeave = (card: Card): Card[] => (leave ? [card, leave] : [card]);
       const candidates = rankRows(input.text, await repo.allRows(ctx.db));
-      if (candidates.length === 0) return { cards: [askHereCard()], found: false };
+      if (candidates.length === 0) return { cards: withLeave(askHereCard()), found: false };
       const pick = await pickRow(ctx.gateway, input.text, candidates);
       const chosen = pick.index === null ? undefined : candidates[pick.index];
-      if (!chosen) return { cards: [askHereCard()], found: false };
+      if (!chosen) return { cards: withLeave(askHereCard()), found: false };
       const others = candidates.filter((c) => c !== chosen).map((c) => c.row);
-      return { cards: [naviCard(chosen.row, { aiSummarized: pick.ai, others })], found: true };
+      return { cards: withLeave(naviCard(chosen.row, { aiSummarized: pick.ai, others })), found: true };
     },
 
     /** "다른 담당이에요"에서 고른 행 카드. 사람이 고른 것이라 "AI 정리"가 없고, 읽기만 해요. */

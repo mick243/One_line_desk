@@ -1,3 +1,4 @@
+import { personNameWords } from '@one-line-desk/shared';
 import { createRemoteJWKSet, type JWTPayload, type JWTVerifyGetKey, jwtVerify } from 'jose';
 import { matchPeople } from './people';
 import type { AdapterCapabilities, DirectoryAdapter, EmployeeProfile, IdpAdapter, OidcLogin } from './types';
@@ -216,6 +217,10 @@ export class KeycloakAdapter implements IdpAdapter, DirectoryAdapter, OidcLogin 
       query,
       limit,
     ).map(strip);
+  }
+
+  async personNameWords(): Promise<string[]> {
+    return (await this.people()).filter((p) => p.active).flatMap((p) => personNameWords(p.displayName));
   }
 
   async chartOwnerDepartments(): Promise<Set<string>> {

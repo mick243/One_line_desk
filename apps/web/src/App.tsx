@@ -1,12 +1,12 @@
 import type { AppDestination, Kind } from '@one-line-desk/shared';
 import { useCallback, useEffect, useState } from 'react';
-import { api, type Me, type PublicConfig } from './api';
+import { api, type Me, onSessionEnded, type PublicConfig, SESSION_ENDED_MESSAGE } from './api';
 import { ActionHost } from './components/ActionHost';
 import { DemoBand } from './components/DemoBand';
 import { NotificationBell } from './components/NotificationBell';
 import { TabBar, type Tab, visibleTabs } from './components/TabBar';
 import { webModules } from './modules/registry';
-import { FEATURES, pageOfKind } from './screens/features';
+import { FEATURES, featureFor, pageOfKind } from './screens/features';
 import { FeaturePage } from './screens/FeaturePage';
 import { Home } from './screens/Home';
 import { Login } from './screens/Login';
@@ -39,7 +39,21 @@ export function App() {
   // auto: 다른 기능에서 옮겨 온 문장이면 그 페이지에서 바로 찾아요. 홈 예시 문장은 채우기만 해요.
   const [handoff, setHandoff] = useState<{ to: View; text: string; at: number; auto: boolean } | null>(null);
 
-  const refreshMe = useCallback(async () => setMe(await api.me()), []);
+  // 로그인이 풀리면 로그인 화면으로 돌려요. 알림 새로 불러오기 같은 반복 요청도 화면과 함께 멈춰요(L-46).
+  const [ended, setEnded] = useState(false);
+  const refreshMe = useCallback(async () => {
+    const next = await api.me();
+    setMe(next);
+    if (next) setEnded(false);
+  }, []);
+  useEffect(
+    () =>
+      onSessionEnded(() => {
+        setEnded(true);
+        setMe(null);
+      }),
+    [],
+  );
 
   const load = useCallback(async () => {
     setOffline(false);
@@ -84,7 +98,8 @@ export function App() {
   const initial = handoff?.to === current ? handoff.text : '';
   const autoRun = handoff?.to === current && handoff.auto;
   const pageKey = `${current}-${handoff?.to === current ? handoff.at : 0}`;
-  const feature = FEATURES.find((f) => f.page === current);
+  const found = FEATURES.find((f) => f.page === current);
+  const feature = found && featureFor(found, config);
   const { BoardScreen, OpsScreen, ChartScreen, ConsentScreen, LinkEntry, MyReservations, RoomDirectory, InquiryInbox, MyInquiries, InvitedMeetings } =
     webModules;
   const isChartOwner = me?.roles.includes('chart-owner') ?? false;
@@ -93,7 +108,7 @@ export function App() {
     <div className='app'>
       <DemoBand items={config.demoData} />
       {me === null ? (
-        <Login onLoggedIn={refreshMe} login={config.login} />
+        <Login onLoggedIn={refreshMe} login={config.login} notice={ended ? SESSION_ENDED_MESSAGE : undefined} />
       ) : (
         <ActionHost onNavigate={navigate} InviteSheet={webModules.InviteSheet}>
           <div className='app-bar'>
@@ -103,7 +118,7 @@ export function App() {
           <main className='screen'>
             {entry?.kind === 'consent' && <ConsentScreen me={me} />}
             {entry?.kind === 'link' && <LinkEntry me={me} token={entry.token} />}
-            {!entry && current === 'home' && <Home me={me} modules={config.modules} onOpen={go} />}
+            {!entry && current === 'home' && <Home me={me} switches={config} onOpen={go} />}
             {!entry && feature && current !== 'board' && (
               <FeaturePage key={pageKey} feature={feature} initialText={initial} autoRun={autoRun} onMove={move}>
                 {current === 'rooms' && (
@@ -142,7 +157,7 @@ export function App() {
             )}
             {!entry && current === 'ops' && <OpsScreen me={me} />}
             {!entry && current === 'chart' && <ChartScreen me={me} />}
-            {!entry && current === 'mine' && <Mine me={me} modules={config.modules} onLoggedOut={() => setMe(null)} onOpen={(to) => go(to)} />}
+            {!entry && current === 'mine' && <Mine me={me} switches={config} onLoggedOut={() => setMe(null)} onOpen={(to) => go(to)} />}
           </main>
           <TabBar current={tabOf(current)} onChange={(t) => go(t)} modules={config.modules} />
         </ActionHost>

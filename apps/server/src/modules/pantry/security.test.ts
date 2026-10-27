@@ -283,3 +283,47 @@ describe('"AI 정리" 표시는 실제 모델이 판단했을 때만이에요', 
     expect(asked.body.cards[0]).toMatchObject({ variant: 'pantry-preview', evidence: { aiSummarized: false } });
   });
 });
+
+describe('[QA-4·26] 공개 판 사람 이름과 미리보기 막힘 이유', () => {
+  it('호칭 뒤에 조사가 붙은 이름, 명단에 있는 이름은 [올리기]에서 막혀요', async () => {
+    const { me } = await setup();
+    // 막힌 결과도 영수증에 남아 같은 토큰은 같은 답을 줘요. 이름마다 새 미리보기 토큰을 써요.
+    const post = async (itemName: string) => {
+      const action = postActionOf(await draft(me, '보리차 채워 주세요'));
+      return (await me.call('POST', '/api/plans/direct', { proposalToken: action.proposalToken, edits: { itemName } })).body;
+    };
+    const names = [
+      '하늘님이 좋아하는 커피',
+      '하늘님께 드릴 과자',
+      '도윤님의 녹차',
+      '김가상 대리가 찾던 커피',
+      '팀장님도 마시는 두유',
+      '서연님한테 줄 젤리',
+      '하늘 좋아하는 커피',
+      '도윤이 고른 쿠키',
+    ];
+    for (const itemName of names) {
+      expect(await post(itemName), itemName).toMatchObject({ status: 'blocked', card: { headline: '올릴 수 없는 글자가 있어요: [사람 이름]' } });
+    }
+    // 다른 낱말 안에 든 이름은 막지 않아요.
+    expect((await post('하늘보리')).status).toBe('done');
+    const board = await me.call('GET', '/api/pantry/board');
+    expect(JSON.stringify(board.body)).not.toMatch(/도윤|서연|팀장|좋아하는/);
+  });
+
+  it('초안 응답이 막힘 이유를 전부 싣고, 막힐 이름은 모델로 보내지 않아요', async () => {
+    const { me, provider } = await setup({ contract: true });
+    const cards = await draft(me, '하늘님이 좋아하는 커피 채워 주세요');
+    const action = postActionOf(cards);
+    expect(cards[0]).toMatchObject({ variant: 'pantry-preview', headline: '올릴 수 없는 글자가 있어요: [사람 이름]' });
+    expect(action.nameBlock).toEqual({ kinds: ['person'], message: '올릴 수 없는 글자가 있어요: [사람 이름]' });
+    expect(provider.calls.filter((c) => c.purpose !== 'draft-item-name')).toEqual([]);
+  });
+
+  it('연락처가 든 문장은 연락처를 뺀 품목 이름만 뽑아요', async () => {
+    const { me } = await setup();
+    const action = postActionOf(await draft(me, '010-1234-5678 로 연락주시면 컵라면'));
+    expect(action.itemName).toBe('컵라면');
+    expect(action.nameBlock).toBeUndefined();
+  });
+});

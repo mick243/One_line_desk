@@ -11,6 +11,7 @@
 - 입력 검사 규칙은 `packages/shared/src/input-check/rules.ts` 하나를 브라우저와 서버가 같이 써요. 바꾸면 `RULES_VERSION`을 올려요.
 - 사람 이름(남의 예약자, 분장표 담당자), 투표자는 화면·API·LLM 입력에 내보내지 않아요. 예외는 회의 초대뿐이에요: 예약한 사람이 고른 참석자에게만 부른 사람 이름·방·시간이 보여요(ADR-17). 참석자는 사람이 직원 검색에서 고르고, AI가 추측하지 않아요.
 - 바깥 서비스(그룹웨어 캘린더·Slack)로 보내는 글에는 부른 사람 이름·시간·방·앱 주소만 넣어요. 메일·IdP 주체는 화면·LLM에 내보내지 않아요. 실제 Slack(`SLACK_BOT_TOKEN`)은 보관 조건·보안 승인 뒤에만 켜요(ADR-16·17).
+- 연차 같은 개인 인사 자료(등급 2)는 본인 화면에만 보여요. 숫자는 서버가 규칙으로 계산하고, AI에는 질문 글만 보내요. DB·로그에 남기지 않아요(ADR-18).
 - LLM은 `core/ai/gateway.ts`(`ctx.gateway.structured()`) 하나로만 불러요. 등급 2 이상은 거부하고, 무보관 계약 확인 전에는 등급 0만 보내요. 사람이 쓴 글(묻기·판 요청 글·품목 이름)이 들어가면 자료가 가상이어도 등급 1이에요. 카드의 "AI 정리"는 모델이 실제로 판단했을 때만 붙여요(`ctx.gateway.modelBacked`).
 - 새 모듈은 자기 표와 쓰기 경로만 가져요. 다른 모듈 표를 읽지 않아요. 도구는 `core/tool-registry.ts`에 먼저 적어요.
 
@@ -26,3 +27,4 @@
 - `npm test`, `npm run typecheck`
 - `npm run check`: 서식 검사 + 타입 검사 + 시험
 - DB: `DATABASE_URL`이 없으면 내장 PGlite(`.data/pglite`)를 쓰고 서버가 뜰 때 마이그레이션을 적용해요. 실제 PostgreSQL은 `npm run db:up`(Docker, 5433) → `DATABASE_URL` 설정 → `npm run db:migrate`
+- 운영(`NODE_ENV=production`)은 설정 검사(`apps/server/src/config.ts`)를 지나야 뜨고, 시작할 때 마이그레이션을 적용하지 않아요(`npm run db:migrate` 먼저). 시연 배포는 `DESK_MOCK_LOGIN=true`예요. 운영 설정(스위치·값·링크)은 `ops_settings` 표에 남아요

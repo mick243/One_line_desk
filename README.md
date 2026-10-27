@@ -59,4 +59,5 @@ npm run check
 - TypeScript 7, npm workspaces, Fastify 5, React 19 + Vite, PGlite 또는 PostgreSQL, Vitest, Prettier
 - 린트 도구(Biome)는 회사 PC의 응용 프로그램 제어에 막혀서 쓰지 않아요. 대신 엄격한 tsc 옵션과 규칙 시험(`core/conventions.test.ts`)으로 막아요
 - 서버 포트는 `SERVER_PORT`(기본 3190)로 받아요. `PORT`는 미리보기 도구·호스팅이 웹 포트로 넘기는 경우가 있어서 쓰지 않아요
-- 운영 설정의 기본 회의 길이·토큰 만료·횟수 상한은 아직 정하지 않은 임시값이에요(`packages/shared/src/switches.ts`)
+- 운영 설정의 기본 회의 길이·토큰 만료·횟수 상한은 아직 정하지 않은 임시값이에요(`packages/shared/src/switches.ts`). 운영자가 `PUT /api/ops/switch`·`/api/ops/flag`·`/api/ops/values`·`/api/ops/link`로 바꾸면 `ops_settings` 표에 남아서 서버를 다시 켜도 그대로예요. 운영(production)은 회의실 쓰기·MCP를 끈 출시 기본값에서 시작해요(CD-14)
+- 담당 찾기 `끔`은 공지·회의실이 모두 꺼진 같이 채워요 단독 모드에서만 돼요(409, ADR-12)

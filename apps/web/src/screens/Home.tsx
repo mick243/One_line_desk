@@ -4,13 +4,22 @@ import type { AppDestination, ModuleKind, ModuleSwitch } from '@one-line-desk/sh
 import type { Me } from '../api';
 import { Icon } from '../components/Icon';
 import { webModules } from '../modules/registry';
-import { FEATURES } from './features';
+import { FEATURES, featureFor } from './features';
 
 const ICON = { navi: 'navi', rooms: 'rooms', notices: 'notices', pantry: 'pantry' } as const;
 
-export function Home({ me, modules, onOpen }: { me: Me; modules: Record<ModuleKind, ModuleSwitch>; onOpen: (page: AppDestination, text?: string) => void }) {
+export function Home({
+  me,
+  switches,
+  onOpen,
+}: {
+  me: Me;
+  switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean };
+  onOpen: (page: AppDestination, text?: string) => void;
+}) {
   const { MyReservations, MyRequests } = webModules;
-  const features = FEATURES.filter((f) => modules[f.module] !== 'off');
+  const { modules } = switches;
+  const features = FEATURES.filter((f) => modules[f.module] !== 'off').map((f) => featureFor(f, switches));
 
   return (
     <div className='home'>

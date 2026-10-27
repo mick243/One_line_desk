@@ -27,7 +27,7 @@ export function WrongSheet({ card, onReask, onReplace, onClose }: WrongSheetProp
   const wrong = card.wrong;
   const predictedRowId = wrong?.predictedRowId;
   const candidates = wrong?.candidates ?? [];
-  const predictedKind: Kind = wrong?.predictedKind ?? (card.kind === 'link' ? 'unknown' : card.kind);
+  const predictedKind: Kind = wrong?.predictedKind ?? card.kind;
 
   async function send(reason: WrongReason, extra: Pick<WrongFeedbackRequest, 'chosenRowId' | 'correctedKind'> = {}) {
     const body: WrongFeedbackRequest = { predictedKind, reason, ...(predictedRowId ? { predictedRowId } : {}), ...extra };

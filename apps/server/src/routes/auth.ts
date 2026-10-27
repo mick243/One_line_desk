@@ -7,10 +7,25 @@ import { pseudonymize } from '../core/pseudonym';
 import { computeRoles } from '../core/roles';
 import { SESSION_MAX_AGE_MS } from '../core/session';
 
-/** 로그인 뒤 돌아갈 앱 안 주소. 우리 앱 경로만 받아요(다른 사이트로 보내지 않아요). */
+const RETURN_BASE = 'http://return.invalid';
+
+/**
+ * 로그인 뒤 돌아갈 앱 안 주소. 우리 앱 경로만 받아요(다른 사이트로 보내지 않아요).
+ * 브라우저는 주소를 풀 때 tab·줄바꿈을 지우고 `\`를 `/`로 읽어서 `/\t/evil.example`이 바깥 주소가 돼요(QA-1).
+ * 그래서 눈에 보이는 ASCII만 받고, 풀어 본 주소가 같은 출처의 `/`로 시작할 때만 그 풀린 모양을 돌려줘요.
+ */
 export function safeReturnPath(value: unknown): string {
-  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\') || value.startsWith('/api/')) return '/';
-  return value.length > 1000 ? '/' : value;
+  if (typeof value !== 'string' || value.length > 1000 || !/^\/[!-~]*$/.test(value) || value.includes('\\')) return '/';
+  const path = value.split(/[?#]/, 1)[0]!;
+  if (path.startsWith('//') || /%(2f|5c)/i.test(path)) return '/';
+  let url: URL;
+  try {
+    url = new URL(value, RETURN_BASE);
+  } catch {
+    return '/';
+  }
+  if (url.origin !== RETURN_BASE || url.pathname.startsWith('//') || url.pathname === '/api' || url.pathname.startsWith('/api/')) return '/';
+  return url.pathname + url.search + url.hash;
 }
 
 const OIDC_PENDING_MS = 10 * 60_000;
@@ -66,7 +81,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
 
   // 모의 OIDC 고르기 목록. 실제 IdP로 바꾸면 이 경로 대신 리디렉트 로그인을 써요(IdP 등록 뒤).
   app.get('/api/auth/mock-users', async (_req, reply) => {
-    const choices = ctx.config.mockLogin ? ctx.adapters.idp.loginChoices?.() : undefined;
+    const choices = ctx.config.demo ? ctx.adapters.idp.loginChoices?.() : undefined;
     if (!choices) return reply.code(404).send({ error: 'not-mock', message: '모의 로그인이 꺼져 있어요' });
     // 처음 쓰는 사람이 누구를 고를지 알 수 있게 역할도 같이 알려 줘요(가상 직원 목록에서만).
     const owners = ctx.services.navi ? await ctx.services.navi.ownerDepartments() : await ctx.adapters.directory.chartOwnerDepartments();
@@ -87,7 +102,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
       },
     },
     async (req, reply) => {
-      if (!ctx.adapters.idp.loginChoices || !ctx.config.mockLogin) return reply.code(404).send({ error: 'not-mock', message: '모의 로그인이 꺼져 있어요' });
+      if (!ctx.adapters.idp.loginChoices || !ctx.config.demo) return reply.code(404).send({ error: 'not-mock', message: '모의 로그인이 꺼져 있어요' });
       const profile = await ctx.adapters.idp.authenticate(req.body.idpSubject);
       if (!profile) return reply.code(401).send({ error: 'login-failed', message: '로그인하지 못했어요' });
       await startSession(reply, profile);

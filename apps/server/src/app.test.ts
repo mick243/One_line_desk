@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { createMockAdapters } from './adapters';
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createTestDb } from './core/db/test-db';
@@ -19,7 +20,7 @@ describe('공통 바닥', () => {
   it('건강 확인에 DB와 AI 공급자를 알려 줘요', async () => {
     const { app } = await setup();
     const res = await app.inject({ method: 'GET', url: '/health' });
-    expect(res.json()).toMatchObject({ ok: true, db: 'pglite-connected', ai: 'fake', rulesVersion: 1 });
+    expect(res.json()).toMatchObject({ ok: true, db: 'pglite-connected', ai: 'fake', rulesVersion: 2 });
   });
 
   it('로그인 전에는 /api/me가 막혀요', async () => {
@@ -95,10 +96,23 @@ describe('공통 바닥', () => {
   });
 
   it('[ADR-13 시험] 운영 환경은 DESK_MOCK_LOGIN=true 없이 모의 로그인으로 뜨지 않아요', async () => {
-    const secrets = { SESSION_SECRET: 's'.repeat(40), PSEUDONYM_SECRET: 'p'.repeat(40), PROPOSAL_SECRET: 'q'.repeat(40), MCP_TOKEN_SECRET: 'm'.repeat(40) };
+    const secrets = {
+      SESSION_SECRET: 's'.repeat(40),
+      PSEUDONYM_SECRET: 'p'.repeat(40),
+      PROPOSAL_SECRET: 'q'.repeat(40),
+      MCP_TOKEN_SECRET: 'm'.repeat(40),
+      PUBLIC_BASE_URL: 'https://desk.example.com',
+    };
+    const idp = {
+      DESK_IDP: 'keycloak',
+      DESK_IDP_ISSUER: 'https://idp.example.com/realms/desk',
+      DESK_IDP_CLIENT_SECRET: 'c'.repeat(40),
+      DESK_IDP_DIRECTORY_CLIENT_SECRET: 'd'.repeat(40),
+    };
     const db = await createTestDb();
     try {
-      await expect(buildApp({ config: loadConfig({ NODE_ENV: 'production', ...secrets }), db, seed: false })).rejects.toThrow(/모의 로그인/);
+      const prod = loadConfig({ NODE_ENV: 'production', DATABASE_URL: 'postgres://desk@db.example.com/desk', ...secrets, ...idp });
+      await expect(buildApp({ config: prod, db, adapters: createMockAdapters(), seed: false })).rejects.toThrow(/모의 로그인/);
       const demo = await buildApp({ config: loadConfig({ NODE_ENV: 'production', DESK_MOCK_LOGIN: 'true', ...secrets }), db, seed: false });
       expect((await demo.app.inject({ method: 'GET', url: '/api/auth/mock-users' })).statusCode).toBe(200);
       await demo.app.close();

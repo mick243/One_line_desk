@@ -1,3 +1,4 @@
+import { personNameWords } from '@one-line-desk/shared';
 import { matchPeople } from '../people';
 import type { DirectoryAdapter, EmployeeProfile, IdpAdapter } from '../types';
 
@@ -50,6 +51,10 @@ export class MockEmployees implements IdpAdapter, DirectoryAdapter {
       query,
       limit,
     ).map(strip);
+  }
+
+  async personNameWords(): Promise<string[]> {
+    return this.people.filter((e) => e.active).flatMap((e) => personNameWords(e.displayName));
   }
 
   async authenticate(idpSubject: string): Promise<EmployeeProfile | null> {

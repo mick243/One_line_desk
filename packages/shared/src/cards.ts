@@ -19,7 +19,8 @@ export type BlockedReason = (typeof BLOCKED_REASONS)[number];
  */
 export type CardAction =
   | { type: 'propose'; text: string; proposalToken: string }
-  | { type: 'post'; text: string; proposalToken: string; itemName: string }
+  /** 공개 판 [올리기]. nameBlock은 서버가 초안에서 이 이름을 막을 때 이유(명단 대조 포함)예요. 이름을 고치면 브라우저가 다시 검사해요(QA-26). */
+  | { type: 'post'; text: string; proposalToken: string; itemName: string; nameBlock?: { kinds: string[]; message: string } }
   | {
       type: 'fixed';
       text: string;
@@ -53,7 +54,7 @@ export interface Card {
   /** 화면 key·되돌아올 때 쓰는 ID. 사람을 가리키는 값을 넣지 않아요. */
   id: string;
   /** 1 머리: 종류 + 상태 라벨 */
-  kind: ModuleKind | 'link';
+  kind: ModuleKind;
   label: CardLabel;
   /** 모듈이 따로 그리는 카드(예: 'pantry-preview'). 없으면 공통 CardView가 그려요. */
   variant?: string;
