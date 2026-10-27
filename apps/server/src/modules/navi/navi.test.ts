@@ -142,7 +142,11 @@ describe('[F1] 담당 카드', () => {
       cards.push(...(await ask(t, me, q, 'notices')).cards);
     }
     const rows = new Map((await chartRows(t)).map((r) => [r.id as string, r]));
-    const naviCards = cards.filter((c) => c.kind === 'navi' && c.id !== 'navi-ask-here');
+    // 내 남은 연차 카드(ADR-18)는 분장표 행이 아니라 인사 근태 기록이 근거예요.
+    const leaveCards = cards.filter((c) => c.id === 'navi-my-leave');
+    expect(leaveCards.length).toBeGreaterThan(0);
+    for (const c of leaveCards) expect(c.evidence.text).toMatch(/^인사 근태 기록/);
+    const naviCards = cards.filter((c) => c.kind === 'navi' && c.id !== 'navi-ask-here' && c.id !== 'navi-my-leave');
     const noticeCards = cards.filter((c) => c.kind === 'notices' && c.id !== 'notices-not-found');
     expect(naviCards.length).toBeGreaterThan(5);
     expect(noticeCards.length).toBeGreaterThan(2);
