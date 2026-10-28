@@ -160,7 +160,13 @@ export function RoomDetail({
             <h3>예약 현황 · {dateLabel(date)}</h3>
             <div className='chips scroll' role='group' aria-label='날짜'>
               {dayChips(today).map((c) => (
-                <button key={c.date} type='button' className={c.date === date ? 'chip selected' : 'chip'} onClick={() => setDate(c.date)}>
+                <button
+                  key={c.date}
+                  type='button'
+                  className={c.date === date ? 'chip selected' : 'chip'}
+                  aria-pressed={c.date === date}
+                  onClick={() => setDate(c.date)}
+                >
                   {c.label}
                 </button>
               ))}

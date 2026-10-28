@@ -4,52 +4,52 @@ import { ApiFailure, apiRequest } from '../../api';
 import { useActions } from '../../components/ActionHost';
 import type { ScreenProps } from '../types';
 import { RoomDetail } from './RoomDetail';
-import { dateLabel, dayChips, statusText } from './roomText';
+import { dateLabel, statusText } from './roomText';
 
-// 회의실 둘러보기(10/26): 방 카드(그림·정원·지금 상태·장비) 목록. 카드를 누르면 방 자세히가 열려요.
-// 내 층 방을 먼저 보여 줘요. 읽기만 하고, 예약은 방 자세히의 확인 시트에서 해요.
+// 회의실 둘러보기(10/26, 10/28 필터 정리): 오늘 지금 상태로 방 카드(그림·정원·지금 상태·장비)를 층별로 묶어 보여 줘요.
+// 내 층 묶음이 먼저예요. 카드를 누르면 방 자세히가 열리고, 다른 날 일정과 예약은 방 자세히에서 해요(확인 시트).
+// 거르기는 켜고 끄는 칩 한 줄이에요: [지금 빈 방] [6명 이상] [10명 이상]. 아무것도 안 고르면 모든 방이에요.
+// 10/28 필터 평가(디자이너·프론트·PM·QA): 날짜 줄은 방 자세히와 겹쳐 빼고, 층 칩은 층별 묶음으로, "4명 이상"은
+// 가장 작은 방이 4명이라 거르는 게 없어 뺐어요. 휴대폰 폭에서 칩이 화면 밖으로 숨지 않게 줄바꿈해요.
 
-const PEOPLE = [0, 4, 6, 10];
+/** 인원 칩. 하나만 켜지고, 켠 칩을 다시 누르면 꺼져요. */
+const PEOPLE = [6, 10] as const;
+
+/** 층 묶음 순서: 내 층 먼저, 그다음 층 번호 순 */
+function floorOrder(myFloor: string) {
+  return (a: string, b: string) => Number(b === myFloor) - Number(a === myFloor) || parseInt(a, 10) - parseInt(b, 10) || a.localeCompare(b);
+}
 
 export function RoomDirectory({ me }: ScreenProps) {
   const actions = useActions();
-  const [date, setDate] = useState<string | null>(null);
   const [data, setData] = useState<RoomListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [floor, setFloor] = useState<string>('전체');
-  const [people, setPeople] = useState(0);
-  const [freeOnly, setFreeOnly] = useState(false);
+  const [people, setPeople] = useState<number | null>(null);
+  const [freeNow, setFreeNow] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
-  // 오늘은 서버가 정해 줘요(첫 응답의 date).
-  const [today, setToday] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const res = await apiRequest<RoomListResponse>('GET', date ? `/api/rooms/list?date=${date}` : '/api/rooms/list');
-      setData(res);
-      setToday((t) => t ?? res.date);
+      setData(await apiRequest<RoomListResponse>('GET', '/api/rooms/list'));
       setError(null);
     } catch (e) {
       setError(e instanceof ApiFailure ? e.message : '회의실을 불러오지 못했어요');
     }
-  }, [date]);
+  }, []);
 
   useEffect(() => {
     void load();
   }, [load, actions.version]);
 
-  const rooms = useMemo(() => {
+  const groups = useMemo(() => {
     if (!data) return [];
-    const isToday = data.date === today;
-    return data.rooms
-      .filter((r) => floor === '전체' || r.floor === floor)
-      .filter((r) => r.capacity >= people)
-      .filter((r) => !(freeOnly && isToday) || r.status.kind === 'free-now')
-      .sort((a, b) => Number(b.floor === me.floor) - Number(a.floor === me.floor));
-  }, [data, floor, people, freeOnly, today, me.floor]);
+    const shown = data.rooms.filter((r) => (people === null || r.capacity >= people) && (!freeNow || r.status.kind === 'free-now'));
+    const floors = [...new Set(shown.map((r) => r.floor))].sort(floorOrder(me.floor));
+    return floors.map((floor) => ({ floor, rooms: shown.filter((r) => r.floor === floor) }));
+  }, [data, people, freeNow, me.floor]);
 
   if (error) return <p className='lock-line'>{error}</p>;
-  if (!data || !today) return <div className='skeleton' aria-label='회의실 불러오는 중' />;
+  if (!data) return <div className='skeleton' aria-label='회의실 불러오는 중' />;
   if (data.linkOnly) {
     return (
       <section className='card'>
@@ -62,53 +62,58 @@ export function RoomDirectory({ me }: ScreenProps) {
     );
   }
 
-  const floors = ['전체', ...new Set(data.rooms.map((r) => r.floor))];
-  const shownDate = data.date;
+  const count = groups.reduce((n, g) => n + g.rooms.length, 0);
+  const filtered = freeNow || people !== null;
+  const clear = () => {
+    setFreeNow(false);
+    setPeople(null);
+  };
 
   return (
     <section className='room-directory' aria-label='모든 회의실'>
       <header className='screen-head'>
-        <h2>모든 회의실 · {dateLabel(shownDate)}</h2>
+        <h2>모든 회의실 · 오늘 {dateLabel(data.date)}</h2>
       </header>
-      <div className='chips scroll' role='group' aria-label='날짜'>
-        {dayChips(today).map((c) => (
-          <button key={c.date} type='button' className={c.date === shownDate ? 'chip selected' : 'chip'} onClick={() => setDate(c.date)}>
-            {c.label}
-          </button>
-        ))}
-      </div>
-      <div className='chips scroll' role='group' aria-label='층'>
-        {floors.map((f) => (
-          <button key={f} type='button' className={f === floor ? 'chip selected' : 'chip'} onClick={() => setFloor(f)}>
-            {f === me.floor ? `${f}(내 층)` : f}
-          </button>
-        ))}
-      </div>
-      <div className='chips scroll' role='group' aria-label='인원'>
+      <div className='chips' role='group' aria-label='거르기'>
+        <button type='button' className='chip toggle' aria-pressed={freeNow} onClick={() => setFreeNow((v) => !v)}>
+          지금 빈 방
+        </button>
         {PEOPLE.map((p) => (
-          <button key={p} type='button' className={p === people ? 'chip selected' : 'chip'} onClick={() => setPeople(p)}>
-            {p ? `${p}명 이상` : '인원 전체'}
+          <button key={p} type='button' className='chip toggle' aria-pressed={people === p} onClick={() => setPeople((v) => (v === p ? null : p))}>
+            {p}명 이상
           </button>
         ))}
-        {shownDate === today && (
-          <button type='button' className={freeOnly ? 'chip selected' : 'chip'} aria-pressed={freeOnly} onClick={() => setFreeOnly((v) => !v)}>
-            지금 빈 방만
+      </div>
+      {/* 결과가 바뀌면 화면 읽기 프로그램에도 알려요(role=status). */}
+      <p className='room-count' role='status'>
+        <span>{filtered ? `조건에 맞는 방 ${count}곳` : `방 ${count}곳`}</span>
+        {filtered && (
+          <button type='button' className='link' onClick={clear}>
+            조건 지우기
           </button>
         )}
-      </div>
+      </p>
 
-      {rooms.length === 0 && <p className='empty'>조건에 맞는 방이 없어요. 층이나 인원을 바꿔 보세요.</p>}
-      <ul className='room-grid'>
-        {rooms.map((r) => (
-          <li key={r.id}>
-            <RoomCard room={r} onOpen={() => setOpen(r.id)} />
-          </li>
-        ))}
-      </ul>
-      <p className='hint'>현황 {data.checkedAt.slice(11, 16)} 기준 · 그림은 시연용이에요</p>
+      {count === 0 && <p className='empty'>조건에 맞는 방이 없어요. [조건 지우기]로 모든 방을 볼 수 있어요.</p>}
+      {groups.map((g) => (
+        <section key={g.floor} className='room-floor' aria-label={g.floor === me.floor ? `${g.floor} · 내 층` : g.floor}>
+          <h3>
+            {g.floor}
+            {g.floor === me.floor && <span className='room-floor-mine'>내 층</span>}
+          </h3>
+          <ul className='room-grid'>
+            {g.rooms.map((r) => (
+              <li key={r.id}>
+                <RoomCard room={r} onOpen={() => setOpen(r.id)} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+      <p className='hint'>현황 {data.checkedAt.slice(11, 16)} 기준 · 다른 날 일정은 방을 눌러 봐요 · 그림은 시연용이에요</p>
 
       {open && (
-        <RoomDetail roomId={open} today={today} initialDate={shownDate} canEditFacilities={me.roles.includes('facilities')} onClose={() => setOpen(null)} />
+        <RoomDetail roomId={open} today={data.date} initialDate={data.date} canEditFacilities={me.roles.includes('facilities')} onClose={() => setOpen(null)} />
       )}
     </section>
   );

@@ -1633,3 +1633,43 @@ select {
 .recent-head .example-label {
   margin: 0;
 }
+
+/* 모든 회의실 필터(10/28 정리). 켜고 끄는 칩은 연한 파랑 + ✓로, 하나 고르는 칩(흰 바탕)과 모양이 달라요. 층별 묶음 제목이 있어요. */
+.chip.toggle[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1.5px var(--accent-text);
+}
+.chip.toggle[aria-pressed='true']::before {
+  content: '✓';
+}
+.room-count {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.room-floor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.room-floor h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 1rem;
+}
+.room-floor-mine {
+  border-radius: 6px;
+  padding: 2px 8px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
