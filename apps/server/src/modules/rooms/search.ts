@@ -2,7 +2,7 @@ import { EQUIPMENT, kstDate, kstToEpoch, type RoomQuery } from '@one-line-desk/s
 import { z } from 'zod';
 import type { BusyRow, RoomRow } from './repo';
 
-// 빈 방 후보·대안 계산(ADR-06, R5). DB에서 읽은 방·차 있는 구간만 받아 계산해요. 예약자는 모르고 몰라도 돼요.
+// 빈 회의실 후보·대안 계산(ADR-06, R5). DB에서 읽은 회의실·차 있는 구간만 받아 계산해요. 예약자는 모르고 몰라도 돼요.
 
 export const MINUTE = 60_000;
 const KST_MS = 9 * 60 * MINUTE;
@@ -89,13 +89,13 @@ export function checkQuery(partial: Partial<RoomQuery>, now: number): QueryCheck
   return { ok: true, query, start, end };
 }
 
-/** 후보·대안 한 칸. 방 정보와 구간·맞은 조건뿐이에요. */
+/** 후보·대안 한 칸. 회의실 정보와 구간·맞은 조건뿐이에요. */
 export interface Slot {
   room: RoomRow;
   start: number;
   end: number;
   matched: string[];
-  /** 대안일 때: 같은 방 30분 뒤 · 같은 층 다른 방 · 다른 층 */
+  /** 대안일 때: 같은 회의실 30분 뒤 · 같은 층 다른 회의실 · 다른 층 */
   reason?: string;
 }
 
@@ -107,9 +107,25 @@ function matches(room: RoomRow, q: RoomQuery): boolean {
   return fitsPeopleAndEquipment(room, q) && (!q.floor || room.floor === q.floor);
 }
 
-/** 인원에 가장 꼭 맞는 방부터, 같으면 낮은 층, 같으면 방 ID 순이에요. */
-function rankRooms(a: RoomRow, b: RoomRow): number {
-  return a.capacity - b.capacity || parseInt(a.floor, 10) - parseInt(b.floor, 10) || a.id.localeCompare(b.id);
+/** 내 층(home)과 몇 층 떨어졌는지. 내 층을 모르면(MCP) 0이에요. */
+function floorDistance(room: RoomRow, home?: string): number {
+  const a = parseInt(room.floor, 10);
+  const b = home ? parseInt(home, 10) : NaN;
+  return Number.isNaN(a) || Number.isNaN(b) ? 0 : Math.abs(a - b);
+}
+
+/**
+ * 추천 순서(10/28 사용성 점검): 내 층에서 가까운 회의실부터, 같으면 인원에 가장 꼭 맞는 회의실, 같으면 낮은 층, 같으면 ID 순이에요.
+ * 내 층을 모르면(MCP) 인원 순이에요.
+ */
+function rankFor(home?: string): (a: RoomRow, b: RoomRow) => number {
+  return (a, b) =>
+    floorDistance(a, home) - floorDistance(b, home) || a.capacity - b.capacity || parseInt(a.floor, 10) - parseInt(b.floor, 10) || a.id.localeCompare(b.id);
+}
+
+/** 내 층 회의실이면 맞은 조건에 "내 층"을 붙여서 왜 먼저 나왔는지 보여 줘요. */
+function markHome(slot: Slot, home?: string): Slot {
+  return home && slot.room.floor === home && !slot.matched.includes(home) ? { ...slot, matched: [...slot.matched, '내 층'] } : slot;
 }
 
 export function isFree(busy: BusyRow[], roomId: string, start: number, end: number): boolean {
@@ -127,23 +143,27 @@ export function makeSlot(room: RoomRow, start: number, end: number, q: RoomQuery
 }
 
 /** 후보 최대 3개. 없으면 가까운 대안 최대 2개(R5). */
-export function searchSlots(input: { rooms: RoomRow[]; busy: BusyRow[]; query: RoomQuery; start: number; end: number; now: number }): {
+/** home은 찾는 사람의 층이에요. 그 층에서 가까운 회의실부터 보여 줘요. */
+export function searchSlots(input: { rooms: RoomRow[]; busy: BusyRow[]; query: RoomQuery; start: number; end: number; now: number; home?: string }): {
   candidates: Slot[];
   alternatives: Slot[];
 } {
-  const { rooms, busy, query, start, end, now } = input;
-  const matching = rooms.filter((r) => matches(r, query)).sort(rankRooms);
+  const { rooms, busy, query, start, end, now, home } = input;
+  const matching = rooms.filter((r) => matches(r, query)).sort(rankFor(home));
   const candidates = matching
     .filter((r) => isFree(busy, r.id, start, end))
     .slice(0, MAX_CANDIDATES)
-    .map((r) => makeSlot(r, start, end, query));
+    .map((r) => markHome(makeSlot(r, start, end, query), home));
   if (candidates.length) return { candidates, alternatives: [] };
-  return { candidates, alternatives: alternativeSlots({ rooms, busy, query, start, end, now, anchors: matching, floor: query.floor ?? matching[0]?.floor }) };
+  return {
+    candidates,
+    alternatives: alternativeSlots({ rooms, busy, query, start, end, now, anchors: matching, floor: query.floor ?? home ?? matching[0]?.floor, home }),
+  };
 }
 
 /**
- * 대안 규칙(ADR-06): 같은 방 앞뒤 가까운 시간 → 같은 층 조건 맞는 다른 방 → 다른 층, 최대 2개.
- * anchors는 "같은 방"으로 볼 방이에요. 처음 찾기에선 조건 맞는 방 모두, 막혔을 땐 고른 방 하나예요.
+ * 대안 규칙(ADR-06): 같은 회의실 앞뒤 가까운 시간 → 같은 층 조건 맞는 다른 회의실 → 다른 층, 최대 2개.
+ * anchors는 "같은 회의실"로 볼 회의실이에요. 처음 찾기에선 조건 맞는 회의실 모두, 막혔을 땐 고른 회의실 하나예요.
  */
 export function alternativeSlots(input: {
   rooms: RoomRow[];
@@ -154,8 +174,9 @@ export function alternativeSlots(input: {
   now: number;
   anchors: RoomRow[];
   floor?: string | undefined;
+  home?: string | undefined;
 }): Slot[] {
-  const { rooms, busy, query, start, end, now, anchors, floor } = input;
+  const { rooms, busy, query, start, end, now, anchors, floor, home } = input;
   const length = end - start;
   const earliest = Math.max(kstToEpoch(query.date, DAY_OPEN), now);
   const latest = kstToEpoch(query.date, DAY_CLOSE);
@@ -169,7 +190,7 @@ export function alternativeSlots(input: {
         if (dir < 0 ? s < earliest : e > latest) break;
         if (s < earliest || e > latest) continue;
         if (isFree(busy, room.id, s, e)) {
-          shifted.push({ slot: makeSlot(room, s, e, query, `같은 방 ${steps * STEP_MINUTES}분 ${dir < 0 ? '앞' : '뒤'}`), steps, order });
+          shifted.push({ slot: makeSlot(room, s, e, query, `같은 회의실 ${steps * STEP_MINUTES}분 ${dir < 0 ? '앞' : '뒤'}`), steps, order });
           break;
         }
       }
@@ -178,12 +199,13 @@ export function alternativeSlots(input: {
   shifted.sort((a, b) => a.steps - b.steps || a.order - b.order);
 
   const anchorIds = new Set(anchors.map((r) => r.id));
-  const others = rooms.filter((r) => !anchorIds.has(r.id) && fitsPeopleAndEquipment(r, query) && isFree(busy, r.id, start, end)).sort(rankRooms);
-  const sameFloor = others.filter((r) => r.floor === floor).map((r) => makeSlot(r, start, end, query, '같은 층 다른 방'));
+  const others = rooms.filter((r) => !anchorIds.has(r.id) && fitsPeopleAndEquipment(r, query) && isFree(busy, r.id, start, end)).sort(rankFor(home));
+  const sameFloor = others.filter((r) => r.floor === floor).map((r) => makeSlot(r, start, end, query, '같은 층 다른 회의실'));
   const otherFloor = others.filter((r) => r.floor !== floor).map((r) => makeSlot(r, start, end, query, '다른 층'));
 
   const seen = new Set<string>();
   return [...shifted.map((x) => x.slot), ...sameFloor, ...otherFloor]
+    .map((s) => markHome(s, home))
     .filter((s) => {
       const key = `${s.room.id}@${s.start}`;
       if (seen.has(key)) return false;

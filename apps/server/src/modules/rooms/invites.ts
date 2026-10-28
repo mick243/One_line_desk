@@ -23,8 +23,8 @@ import { buildIcs } from './ics';
 
 // 회의 참석자 초대(10/26, ADR-17). 예약한 사람이 직원 검색에서 고른 사람에게만 알려요.
 // - 앱 안 알림은 늘 가요(쓰기 트랜잭션 안). 그룹웨어 캘린더 초대·Slack DM은 고르면 트랜잭션이 끝난 뒤 보내요.
-// - 초대받은 사람만 방·시간·부른 사람 이름을 봐요. 다른 직원의 하루 일정에는 그대로 "예약됨"만 보여요(ADR-06 예외).
-// - 바깥으로 가는 글에는 부른 사람 이름·시간·방만 넣어요. 회의 제목 칸은 없어요. LLM은 부르지 않아요.
+// - 초대받은 사람만 회의실·시간·부른 사람 이름을 봐요. 다른 직원의 하루 일정에는 그대로 "예약됨"만 보여요(ADR-06 예외).
+// - 바깥으로 가는 글에는 부른 사람 이름·시간·회의실만 넣어요. 회의 제목 칸은 없어요. LLM은 부르지 않아요.
 
 interface Meeting {
   id: string;
@@ -229,7 +229,7 @@ export function createInviteService(ctx: AppContext) {
       return out;
     },
 
-    /** 나를 부른 회의(다가오는 것만). 초대받은 사람만 방·시간·부른 사람을 봐요. */
+    /** 나를 부른 회의(다가오는 것만). 초대받은 사람만 회의실·시간·부른 사람을 봐요. */
     async invited(user: DeskUser): Promise<InvitedMeetingsResponse> {
       const enabled = writeOn(ctx.ops.get());
       if (!enabled) return { enabled, items: [] };
@@ -379,7 +379,7 @@ function invitedCard(m: Meeting, sent: { app: number; calendar: number | null; s
     label: '확정',
     headline: '참석자에게 알렸어요',
     fields,
-    evidence: { text: '고른 사람만 방·시간·내 이름을 봐요. 다른 직원에게는 "예약됨"만 보여요', aiSummarized: false },
+    evidence: { text: '고른 사람만 회의실·시간·내 이름을 봐요. 다른 직원에게는 "예약됨"만 보여요', aiSummarized: false },
     primary: { type: 'link', text: '캘린더 파일 받기', href: icsPath(m.id) },
     secondary: [],
     tail: `답(${INVITE_RESPONSE_LABEL.accepted}·${INVITE_RESPONSE_LABEL.declined})은 마이 페이지 > 내 예약에서 봐요`,

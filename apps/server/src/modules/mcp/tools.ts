@@ -62,7 +62,7 @@ export const NOTICES_INPUT = z
   .strict();
 export type NoticesInput = z.infer<typeof NOTICES_INPUT>;
 
-// 회의실 후보 한 칸. 정원·장비·설비는 방을 고를 근거라 넣어요. 예약자·회의 제목·방별 일정 칸은 없어요(ADR-06·14).
+// 회의실 후보 한 칸. 정원·장비·설비는 회의실을 고를 근거라 넣어요. 예약자·회의 제목·방별 일정 칸은 없어요(ADR-06·14).
 const ROOM_SLOT = z
   .object({
     roomId: z.string(),

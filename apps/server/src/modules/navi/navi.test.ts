@@ -146,8 +146,11 @@ describe('[F1] 담당 카드', () => {
     const leaveCards = cards.filter((c) => c.id === 'navi-my-leave');
     expect(leaveCards.length).toBeGreaterThan(0);
     for (const c of leaveCards) expect(c.evidence.text).toMatch(/^인사 근태 기록/);
-    const naviCards = cards.filter((c) => c.kind === 'navi' && !['navi-ask-here', 'navi-my-leave', 'navi-choose-row'].includes(c.id));
-    const noticeCards = cards.filter((c) => c.kind === 'notices' && c.id !== 'notices-not-found');
+    // 다른 기능으로 옮기는 카드(move-, 10/28)는 답 카드가 아니라 빼요.
+    const naviCards = cards.filter(
+      (c) => c.kind === 'navi' && !c.id.startsWith('move-') && !['navi-ask-here', 'navi-my-leave', 'navi-choose-row'].includes(c.id),
+    );
+    const noticeCards = cards.filter((c) => c.kind === 'notices' && !c.id.startsWith('move-') && c.id !== 'notices-not-found');
     expect(naviCards.length).toBeGreaterThan(5);
     expect(noticeCards.length).toBeGreaterThan(2);
     expect(cards.some((c) => c.id === 'navi-ask-here')).toBe(true);
@@ -208,6 +211,34 @@ describe('[F1] 담당 카드', () => {
       reason: 'wrong-kind',
     });
     expect(await dumpDb(t)).not.toContain(canary);
+  });
+});
+
+describe('잘못 고른 기능 페이지(10/28 사용성 점검)', () => {
+  it('담당 찾기·공지에서 못 찾았는데 다른 기능 문장이면 그 페이지로 옮기는 카드를 맨 앞에 줘요', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.dev);
+    const rooms = await ask(t, me, '내일 3시 회의실 6명', 'navi');
+    expect(rooms.cards[0]).toMatchObject({
+      id: 'move-rooms',
+      kind: 'rooms',
+      label: '안내',
+      headline: '회의실 일 같아요',
+      actions: { primary: { type: 'reask', kind: 'rooms', text: '회의실에서 찾기' } },
+    });
+    // 총무 창구 안내는 그 뒤에 그대로 있어요(규칙이 틀릴 수도 있어서요).
+    expect(rooms.cards.map((c) => c.id)).toContain('navi-ask-here');
+
+    const pantry = await ask(t, me, '탕비실에 제로콜라 떨어졌어요', 'navi');
+    expect(pantry.cards[0]).toMatchObject({ id: 'move-pantry', actions: { primary: { type: 'reask', kind: 'pantry', text: '같이 채워요에 올리기' } } });
+
+    // 공지 못 찾음 카드가 이미 [담당 찾기에서 찾기]를 주면 같은 버튼을 또 만들지 않아요.
+    const fromNotices = await ask(t, me, '내일 3시 회의실 6명', 'notices');
+    expect(fromNotices.cards.map((c) => c.id)).toEqual(['move-rooms', 'notices-not-found']);
+
+    // 찾았으면 옮기기 카드가 없어요.
+    const found = await ask(t, me, '법인카드 잃어버렸어요', 'navi');
+    expect(found.cards.some((c) => c.id.startsWith('move-'))).toBe(false);
   });
 });
 

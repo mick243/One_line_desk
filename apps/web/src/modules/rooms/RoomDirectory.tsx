@@ -6,11 +6,11 @@ import type { ScreenProps } from '../types';
 import { RoomDetail } from './RoomDetail';
 import { dateLabel, statusText } from './roomText';
 
-// 회의실 둘러보기(10/26, 10/28 필터 정리): 오늘 지금 상태로 방 카드(그림·정원·지금 상태·장비)를 층별로 묶어 보여 줘요.
-// 내 층 묶음이 먼저예요. 카드를 누르면 방 자세히가 열리고, 다른 날 일정과 예약은 방 자세히에서 해요(확인 시트).
-// 거르기는 켜고 끄는 칩 한 줄이에요: [지금 빈 방] [6명 이상] [10명 이상]. 아무것도 안 고르면 모든 방이에요.
-// 10/28 필터 평가(디자이너·프론트·PM·QA): 날짜 줄은 방 자세히와 겹쳐 빼고, 층 칩은 층별 묶음으로, "4명 이상"은
-// 가장 작은 방이 4명이라 거르는 게 없어 뺐어요. 휴대폰 폭에서 칩이 화면 밖으로 숨지 않게 줄바꿈해요.
+// 회의실 둘러보기(10/26, 10/28 필터 정리): 오늘 지금 상태로 회의실 카드(그림·정원·지금 상태·장비)를 층별로 묶어 보여 줘요.
+// 내 층 묶음이 먼저예요. 카드를 누르면 회의실 자세히가 열리고, 다른 날 일정과 예약은 회의실 자세히에서 해요(확인 시트).
+// 거르기는 켜고 끄는 칩 한 줄이에요: [지금 빈 회의실] [6명 이상] [10명 이상]. 아무것도 안 고르면 모든 회의실이에요.
+// 10/28 필터 평가(디자이너·프론트·PM·QA): 날짜 줄은 회의실 자세히와 겹쳐 빼고, 층 칩은 층별 묶음으로, "4명 이상"은
+// 가장 작은 회의실이 4명이라 거르는 게 없어 뺐어요. 휴대폰 폭에서 칩이 화면 밖으로 숨지 않게 줄바꿈해요.
 
 /** 인원 칩. 하나만 켜지고, 켠 칩을 다시 누르면 꺼져요. */
 const PEOPLE = [6, 10] as const;
@@ -76,7 +76,7 @@ export function RoomDirectory({ me }: ScreenProps) {
       </header>
       <div className='chips' role='group' aria-label='거르기'>
         <button type='button' className='chip toggle' aria-pressed={freeNow} onClick={() => setFreeNow((v) => !v)}>
-          지금 빈 방
+          지금 빈 회의실
         </button>
         {PEOPLE.map((p) => (
           <button key={p} type='button' className='chip toggle' aria-pressed={people === p} onClick={() => setPeople((v) => (v === p ? null : p))}>
@@ -86,7 +86,7 @@ export function RoomDirectory({ me }: ScreenProps) {
       </div>
       {/* 결과가 바뀌면 화면 읽기 프로그램에도 알려요(role=status). */}
       <p className='room-count' role='status'>
-        <span>{filtered ? `조건에 맞는 방 ${count}곳` : `방 ${count}곳`}</span>
+        <span>{filtered ? `조건에 맞는 회의실 ${count}곳` : `회의실 ${count}곳`}</span>
         {filtered && (
           <button type='button' className='link' onClick={clear}>
             조건 지우기
@@ -94,7 +94,7 @@ export function RoomDirectory({ me }: ScreenProps) {
         )}
       </p>
 
-      {count === 0 && <p className='empty'>조건에 맞는 방이 없어요. [조건 지우기]로 모든 방을 볼 수 있어요.</p>}
+      {count === 0 && <p className='empty'>조건에 맞는 회의실이 없어요. [조건 지우기]로 모든 회의실을 볼 수 있어요.</p>}
       {groups.map((g) => (
         <section key={g.floor} className='room-floor' aria-label={g.floor === me.floor ? `${g.floor} · 내 층` : g.floor}>
           <h3>
@@ -110,7 +110,7 @@ export function RoomDirectory({ me }: ScreenProps) {
           </ul>
         </section>
       ))}
-      <p className='hint'>현황 {data.checkedAt.slice(11, 16)} 기준 · 다른 날 일정은 방을 눌러 봐요 · 그림은 시연용이에요</p>
+      <p className='hint'>현황 {data.checkedAt.slice(11, 16)} 기준 · 다른 날 일정은 회의실을 눌러 봐요 · 그림은 시연용이에요</p>
 
       {open && (
         <RoomDetail roomId={open} today={data.date} initialDate={data.date} canEditFacilities={me.roles.includes('facilities')} onClose={() => setOpen(null)} />

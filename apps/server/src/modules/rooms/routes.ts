@@ -232,7 +232,7 @@ export function registerRoomRoutes(app: FastifyInstance, ctx: AppContext, desk: 
     equipment.endLoan(req.deskUser!, req.params.id),
   );
 
-  // 방 설비 상태(정상·점검 중). 총무만 바꿔요.
+  // 회의실 설비 상태(정상·점검 중). 총무만 바꿔요.
   app.put<{ Params: { id: string }; Body: { facility: Equipment; status: FacilityStatus } }>(
     '/api/rooms/:id/facilities',
     {

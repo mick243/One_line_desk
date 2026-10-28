@@ -155,7 +155,7 @@ export function App() {
                 initialText={initial}
                 autoRun={autoRun}
                 onMove={move}
-                // 회의실이 켜져 있으면 빈 방 찾기와 회의실 채팅을 한 입력 칸으로 써요(10/28 통합 개편). 링크만이면 공통 입력이 링크 카드를 줘요.
+                // 회의실이 켜져 있으면 빈 회의실 찾기와 회의실 채팅을 한 입력 칸으로 써요(10/28 통합 개편). 링크만이면 공통 입력이 링크 카드를 줘요.
                 input={
                   current === 'rooms' && config.modules.rooms === 'on'
                     ? (p) => (

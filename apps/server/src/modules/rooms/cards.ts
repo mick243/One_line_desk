@@ -45,10 +45,10 @@ export function conditionsCard(query: Partial<RoomQuery>, o: { headline: string;
   });
 }
 
-/** 후보·대안 카드. 주 버튼은 [이 방으로 예약](제안 토큰) 또는 회의실 쓰기가 꺼졌으면 그룹웨어 링크예요(R4). */
+/** 후보·대안 카드. 주 버튼은 [이 회의실로 예약](제안 토큰) 또는 회의실 쓰기가 꺼졌으면 그룹웨어 링크예요(R4). */
 export function slotCard(slot: Slot, o: { checkedAt: number; aiSummarized: boolean; primary: CardAction; alternative: boolean }): Card {
   const fields = [
-    { name: '방·층', value: roomLine(slot.room) },
+    { name: '회의실·층', value: roomLine(slot.room) },
     { name: '날짜·시간', value: whenText(slot.start, slot.end) },
     { name: '맞은 조건', value: slot.matched.join(' · ') },
   ];
@@ -65,19 +65,35 @@ export function slotCard(slot: Slot, o: { checkedAt: number; aiSummarized: boole
   });
 }
 
-/** 처음부터 빈 방이 없을 때(R5). 막힘이 아니라 안내예요. 대안은 뒤따르는 카드예요. */
+/** 처음부터 빈 회의실이 없을 때(R5). 막힘이 아니라 안내예요. 대안은 뒤따르는 카드예요. */
 export function noFreeCard(start: number, end: number, alternatives: number, checkedAt: number): Card {
   return makeCard({
     id: 'rooms-no-free',
     kind: 'rooms',
     label: '안내',
-    headline: '그 시간엔 빈 방이 없어요',
+    headline: '그 시간엔 빈 회의실이 없어요',
     fields: [
       { name: '찾은 시간', value: whenText(start, end) },
       { name: '대안', value: alternatives ? `가까운 대안 ${alternatives}개` : '대안 없음' },
     ],
     evidence: { text: statusAt(checkedAt), aiSummarized: false },
     tail: alternatives ? NOT_RESERVED : `${NOT_RESERVED} · 조건을 고쳐 다시 찾아 주세요`,
+  });
+}
+
+/** 찾은 시간에 이미 내 예약이 있을 때(10/28 사용성 점검). 막지는 않고, 겹치는 내 예약과 [취소]를 먼저 보여 줘요. */
+export function overlapCard(mine: ReservationRow[], canCancel: boolean): Card {
+  const first = mine[0]!;
+  return makeCard({
+    id: `rooms-overlap-${first.id}`,
+    kind: 'rooms',
+    label: '안내',
+    headline: '이 시간에 이미 내 예약이 있어요',
+    fields: mine.map((r) => ({ name: '내 예약', value: `${roomLine({ name: r.roomName, floor: r.floor })} · ${whenText(r.start, r.end)}` })),
+    evidence: { text: '내 예약 목록', aiSummarized: false },
+    // 안내 카드라 [취소]를 주 버튼(크게)으로 두지 않아요. 회의실 쓰기가 꺼졌으면 취소도 못 해서 버튼을 두지 않아요.
+    ...(mine.length === 1 && canCancel ? { secondary: [cancelAction(first)] } : {}),
+    tail: '두 회의실을 함께 쓸 게 아니라면 기존 예약을 먼저 확인해 주세요',
   });
 }
 
@@ -95,7 +111,7 @@ export function blockedCard(
     label: '막힘',
     headline: '확인하는 사이에 다른 예약이 들어왔어요',
     fields: [
-      ...(room ? [{ name: '방·층', value: roomLine(room) }] : []),
+      ...(room ? [{ name: '회의실·층', value: roomLine(room) }] : []),
       { name: '날짜·시간', value: whenText(start, end) },
       { name: '대안', value: alternatives ? `가까운 대안 ${alternatives}개` : '대안 없음' },
     ],
@@ -136,7 +152,7 @@ export function confirmedCard(r: ReservationRow, checkedAt: number): Card {
     label: '확정',
     headline: '예약했어요',
     fields: [
-      { name: '방·층', value: roomLine({ name: r.roomName, floor: r.floor }) },
+      { name: '회의실·층', value: roomLine({ name: r.roomName, floor: r.floor }) },
       { name: '날짜·시간', value: whenText(r.start, r.end) },
       { name: '상태', value: '내 예약' },
     ],
@@ -155,7 +171,7 @@ export function cancelledCard(r: ReservationRow, at: number, loans: LoanKind[] =
     label: '확정',
     headline: '예약을 취소했어요',
     fields: [
-      { name: '방·층', value: roomLine({ name: r.roomName, floor: r.floor }) },
+      { name: '회의실·층', value: roomLine({ name: r.roomName, floor: r.floor }) },
       { name: '날짜·시간', value: whenText(r.start, r.end) },
       { name: '상태', value: '취소됨' },
       ...(loans.length ? [{ name: '같이 빌린 장비', value: `${loans.join('·')} 대여도 취소했어요` }] : []),
@@ -165,7 +181,7 @@ export function cancelledCard(r: ReservationRow, at: number, loans: LoanKind[] =
   });
 }
 
-/** 방 자세히에서 고른 시간이 이미 차 있을 때. 같은 방 가까운 시간 대안이 뒤따라요. */
+/** 회의실 자세히에서 고른 시간이 이미 차 있을 때. 같은 회의실 가까운 시간 대안이 뒤따라요. */
 export function roomTakenCard(room: { name: string; floor: string }, start: number, end: number, alternatives: number, checkedAt: number): Card {
   return makeCard({
     id: 'rooms-taken',
@@ -173,16 +189,16 @@ export function roomTakenCard(room: { name: string; floor: string }, start: numb
     label: '안내',
     headline: '그 시간에는 이미 예약이 있어요',
     fields: [
-      { name: '방·층', value: roomLine(room) },
+      { name: '회의실·층', value: roomLine(room) },
       { name: '고른 시간', value: whenText(start, end) },
-      { name: '대안', value: alternatives ? `같은 방 가까운 시간 ${alternatives}개` : '대안 없음' },
+      { name: '대안', value: alternatives ? `같은 회의실 가까운 시간 ${alternatives}개` : '대안 없음' },
     ],
     evidence: { text: statusAt(checkedAt), aiSummarized: false },
     tail: alternatives ? NOT_RESERVED : `${NOT_RESERVED} · 다른 시간을 골라 주세요`,
   });
 }
 
-/** 방 자세히에서 고른 시간을 쓸 수 없을 때(지난 시간 등) */
+/** 회의실 자세히에서 고른 시간을 쓸 수 없을 때(지난 시간 등) */
 export function roomTimeCard(headline: string): Card {
   return makeCard({
     id: 'rooms-time',
@@ -294,7 +310,7 @@ export function stockCard(
   });
 }
 
-/** 방 하나의 장비 현황: 쓸 수 있는 설비·점검 중·비품 */
+/** 회의실 하나의 장비 현황: 쓸 수 있는 설비·점검 중·비품 */
 export function roomEquipmentCard(room: RoomRow, aiSummarized: boolean): Card {
   return makeCard({
     id: `rooms-equipment-${room.id}`,
@@ -302,7 +318,7 @@ export function roomEquipmentCard(room: RoomRow, aiSummarized: boolean): Card {
     label: '안내',
     headline: `${room.name} 장비예요`,
     fields: [
-      { name: '방·층', value: `${roomLine(room)} · 정원 ${room.capacity}명` },
+      { name: '회의실·층', value: `${roomLine(room)} · 정원 ${room.capacity}명` },
       { name: '설비', value: room.equipment.join(' · ') || '없음' },
       { name: '점검 중', value: room.repairs.join(' · ') || '없음' },
       { name: '비품', value: room.facilities.join(' · ') || '없음' },
@@ -324,7 +340,7 @@ export function equipmentOverviewCard(rooms: RoomRow[], aiSummarized: boolean): 
       value: [...r.equipment, ...r.repairs.map((e) => `${e}(점검 중)`)].join(' · ') || '설비 없음',
     })),
     evidence: { text: '회의실 장부 · 점검 상태는 총무가 바꿔요', aiSummarized },
-    tail: '방 이름을 넣어 물으면 비품까지 보여 줘요',
+    tail: '회의실 이름을 넣어 물으면 비품까지 보여 줘요',
   });
 }
 
@@ -340,7 +356,7 @@ export function overviewCard(list: RoomListResponse, o: { onlyFree: boolean; che
     id: `rooms-overview-${list.date}${o.onlyFree ? '-free' : ''}`,
     kind: 'rooms',
     label: '안내',
-    headline: o.onlyFree ? (rooms.length ? `지금 빈 방 ${rooms.length}곳이에요` : '지금 빈 방이 없어요') : `${list.date} 회의실 현황이에요`,
+    headline: o.onlyFree ? (rooms.length ? `지금 빈 회의실 ${rooms.length}곳이에요` : '지금 빈 회의실이 없어요') : `${list.date} 회의실 현황이에요`,
     fields: rooms.map((r) => ({ name: roomLine(r), value: value(r.status) })),
     evidence: { text: statusAt(o.checkedAt), aiSummarized: o.aiSummarized },
     tail: '예약하려면 "3시 6명 잡아 줘"처럼 말해 주세요',
@@ -355,7 +371,7 @@ export function myReservationCard(r: MyReservation): Card {
     label: '확정',
     headline: '내 예약',
     fields: [
-      { name: '방·층', value: roomLine({ name: r.roomName, floor: r.floor }) },
+      { name: '회의실·층', value: roomLine({ name: r.roomName, floor: r.floor }) },
       { name: '날짜·시간', value: r.when },
       ...(r.loans.length ? [{ name: '같이 빌린 장비', value: r.loans.join(' · ') }] : []),
       ...(r.attendees.length ? [{ name: '참석자', value: `${r.attendees.length}명 초대` }] : []),
@@ -386,7 +402,7 @@ export function chatHelpCard(o: { mode: 'auto' | 'confirm' | 'read-only'; navi?:
             { name: '예약', value: '내일 3시 6명 회의실 잡아 줘' },
             { name: '장비 대여', value: '내일 3시 회의에 빔프로젝터 빌려 줘' },
           ]),
-      { name: '현황', value: readOnly ? '지금 빈 방 있어? · 오늘 회의실 현황' : '지금 빈 방 있어? · 내 예약 보여 줘' },
+      { name: '현황', value: readOnly ? '지금 빈 회의실 있어? · 오늘 회의실 현황' : '지금 빈 회의실 있어? · 내 예약 보여 줘' },
       { name: '장비 현황', value: '3C 장비 뭐 있어? · 노트북 남았어?' },
     ],
     evidence: { text: '회의실 채팅', aiSummarized: false },
@@ -397,6 +413,6 @@ export function chatHelpCard(o: { mode: 'auto' | 'confirm' | 'read-only'; navi?:
         ? '"잡아 줘·빌려 줘"처럼 시키면 바로 예약·대여하고, 물어보면 카드로만 보여 줘요'
         : o.mode === 'confirm'
           ? '지금은 채팅 자동 실행이 꺼져 있어서 카드에서 확인하고 예약·대여해요'
-          : '지금은 예약·대여를 그룹웨어에서 해요. 채팅으로는 빈 방·장비 현황을 볼 수 있어요',
+          : '지금은 예약·대여를 그룹웨어에서 해요. 채팅으로는 빈 회의실·장비 현황을 볼 수 있어요',
   });
 }

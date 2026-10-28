@@ -5,7 +5,7 @@ import { useActions } from '../../components/ActionHost';
 import { Sheet } from '../../components/Sheet';
 
 // 회의 참석자 고르기(10/26, ADR-17). 직원 이름·부서로 찾아 고르고, 알릴 길(앱 알림은 늘 · 그룹웨어 캘린더 · Slack DM)을 정해요.
-// [알리기] → 확인 시트 → 보내요. 고른 사람만 방·시간·내 이름을 봐요. LLM은 쓰지 않아요.
+// [알리기] → 확인 시트 → 보내요. 고른 사람만 회의실·시간·내 이름을 봐요. LLM은 쓰지 않아요.
 
 type Invite = Extract<CardAction, { type: 'invite' }>;
 
@@ -57,7 +57,7 @@ export function InviteSheet({ action, onClose }: { action: Invite; onClose: () =
     const lines = [
       `${action.roomName} · ${action.when}`,
       `${chosen.map((p) => p.name).join(', ')}`,
-      '고른 사람만 방·시간·내 이름을 봐요. 다른 직원에게는 "예약됨"만 보여요',
+      '고른 사람만 회의실·시간·내 이름을 봐요. 다른 직원에게는 "예약됨"만 보여요',
       ...(calendar && channels.calendar ? [`${channels.calendar}로 초대가 가요`] : []),
       ...(slack && channels.slack ? [`${channels.slack} DM이 가요. 글은 Slack 보관 설정을 따라요`] : []),
     ];

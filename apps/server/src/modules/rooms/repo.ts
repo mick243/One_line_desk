@@ -27,7 +27,7 @@ export interface DayBlockRow {
   reservationId: string | null;
 }
 
-/** 어느 방이 언제 차 있는지만 알아요. 누가 잡았는지는 읽지 않아요. */
+/** 어느 회의실이 언제 차 있는지만 알아요. 누가 잡았는지는 읽지 않아요. */
 export interface BusyRow {
   roomId: string;
   start: number;
@@ -67,7 +67,7 @@ export async function insertLedger(q: Queryable, rooms: LedgerRoom[], bookings: 
   }
 }
 
-/** 이미 들어간 방에 사진·설비가 비어 있으면 장부 값으로 채워요(301 마이그레이션 전에 넣은 시연 DB용). */
+/** 이미 들어간 회의실에 사진·설비가 비어 있으면 장부 값으로 채워요(301 마이그레이션 전에 넣은 시연 DB용). */
 export async function fillRoomDetails(q: Queryable, rooms: LedgerRoom[]): Promise<void> {
   for (const r of rooms) {
     await q.query('update rooms set facilities = $2, photo_url = $3 where id = $1 and photo_url is null', [r.id, r.facilities, r.photoUrl]);
@@ -91,7 +91,7 @@ export async function getRoom(q: Queryable, id: string): Promise<RoomRow | null>
   return rows[0] ?? null;
 }
 
-/** 한 방의 하루 일정. 예약자 칸은 고르지 않고, 내 예약인지만 계산해요(ADR-06). */
+/** 한 회의실의 하루 일정. 예약자 칸은 고르지 않고, 내 예약인지만 계산해요(ADR-06). */
 export async function dayBlocks(q: Queryable, roomId: string, from: number, to: number, pseudonymId: string): Promise<DayBlockRow[]> {
   const { rows } = await q.query<DayBlockRow>(
     `select (extract(epoch from lower(slot)) * 1000)::float8 as start,
@@ -320,7 +320,7 @@ export async function endLoan(q: Queryable, id: string, pseudonymId: string, now
   return { row: { ...row, end: now }, how: 'returned' };
 }
 
-/** 방 설비 상태를 바꿔요(총무). 정상으로 돌리면 줄을 남겨 두고 상태만 바꿔요. */
+/** 회의실 설비 상태를 바꿔요(총무). 정상으로 돌리면 줄을 남겨 두고 상태만 바꿔요. */
 export async function setFacilityStatus(q: Queryable, roomId: string, facility: Equipment, status: FacilityStatus, now: number): Promise<void> {
   await q.query(
     `insert into room_facility_status (room_id, facility, status, updated_at) values ($1, $2, $3, $4)

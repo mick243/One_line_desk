@@ -11,7 +11,7 @@ import { RoomDesk, slotsToQuery } from './service';
 // F2 회의실 찾고 확인 예약(ADR-03·05·06·14).
 // - 찾기(/ask, 조건 칩 다시 찾기, 앱 확인 링크)는 읽기만 하고 제안 토큰만 붙여요.
 // - 예약은 'rooms:reserve' plan(확인 시트 한 번), 취소는 고정 버튼(확인 시트 뒤)뿐이에요.
-// - MCP는 ctx.services.rooms로 빈 방 후보와 제안 토큰만 받아요.
+// - MCP는 ctx.services.rooms로 빈 회의실 후보와 제안 토큰만 받아요.
 // - 회의실 채팅(ADR-19): 시킨 예약·장비 대여는 자동 실행 허용 목록(PlanService.auto), 대여 취소·반납은 고정 버튼이에요.
 export function createRoomsModule(ctx: AppContext): DeskModule {
   const ledger = new MockRoomLedger();

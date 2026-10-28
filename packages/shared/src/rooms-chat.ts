@@ -25,7 +25,7 @@ export function loanKindsIn(text: string): LoanKind[] {
   return LOAN_KINDS.filter((k) => LOAN_WORDS[k].test(text)).slice(0, MAX_KINDS);
 }
 
-/** 장비 이름을 지운 문장. 예약하고 장비도 빌릴 때 "빔프로젝터"가 방 설비(화면) 조건이 되지 않게 해요. */
+/** 장비 이름을 지운 문장. 예약하고 장비도 빌릴 때 "빔프로젝터"가 회의실 설비(화면) 조건이 되지 않게 해요. */
 export function withoutLoanWords(text: string): string {
   return LOAN_KINDS.reduce((t, k) => t.replace(new RegExp(LOAN_WORDS[k].source, 'gi'), ' '), text);
 }

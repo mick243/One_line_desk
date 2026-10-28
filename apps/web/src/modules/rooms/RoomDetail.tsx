@@ -6,7 +6,7 @@ import { CardView } from '../../components/CardView';
 import { Sheet } from '../../components/Sheet';
 import { dateLabel, dayChips, fromMinutes, splitCheckedAt, statusText, toMinutes } from './roomText';
 
-// 방 자세히(10/26): 그림·정원·설비 · 지금 상태 · 하루 일정(30분 칸) · 빈 시간을 골라 [이 시간 확인] → 확인 시트로 예약.
+// 회의실 자세히(10/26): 그림·정원·설비 · 지금 상태 · 하루 일정(30분 칸) · 빈 시간을 골라 [이 시간 확인] → 확인 시트로 예약.
 // 남의 예약은 "예약됨"으로만 보이고, 내 예약에만 [취소]가 있어요(ADR-06). 확인 시트 전에는 아무것도 쓰지 않아요.
 
 const STEP = 30;

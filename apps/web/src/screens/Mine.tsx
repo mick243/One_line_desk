@@ -23,7 +23,7 @@ function retentionLines(s: { modules: Record<ModuleKind, ModuleSwitch>; roomsWri
     '접속기록(가명 ID·시각·접속한 곳의 IP·한 일·열어 본 문의 번호). 법에 따라 1년 두고 지워요. 글과 검색어는 남지 않아요.',
   ].filter((line): line is string => Boolean(line));
   const outside = [
-    invites && '회의 초대를 그룹웨어 캘린더·Slack으로 보내면 부른 사람 이름·방·시간이 그 서비스에 남아요. 그쪽 보관 설정을 따라요.',
+    invites && '회의 초대를 그룹웨어 캘린더·Slack으로 보내면 부른 사람 이름·회의실·시간이 그 서비스에 남아요. 그쪽 보관 설정을 따라요.',
     s.mcp && '연결한 AI 앱으로 간 찾기 결과는 그 앱 기록에 남을 수 있어요.',
   ].filter((line): line is string => Boolean(line));
   return { keep, outside };

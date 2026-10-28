@@ -7,8 +7,8 @@ import { CheckedInput } from '../../components/CheckedInput';
 import { Icon } from '../../components/Icon';
 import { ScrollChips } from '../../components/ScrollChips';
 
-// 회의실 입력 칸(10/28 통합 개편, ADR-19). 빈 방 찾기와 회의실 채팅을 한 칸으로 합쳤어요.
-// - 묻는 말("내일 3시 6명", "빈 방 있어?")은 찾기만 하고, 시키는 말("잡아 줘·빌려 줘")은 조건이 다 있으면 바로 예약·대여해요.
+// 회의실 입력 칸(10/28 통합 개편, ADR-19). 빈 회의실 찾기와 회의실 채팅을 한 칸으로 합쳤어요.
+// - 묻는 말("내일 3시 6명", "빈 회의실 있어?")은 찾기만 하고, 시키는 말("잡아 줘·빌려 줘")은 조건이 다 있으면 바로 예약·대여해요.
 // - 보내기 전에 같은 규칙(공유 패키지 roomChatPreview)으로 "바로 예약돼요 / 찾기만 해요"를 미리 보여 주고, 버튼 이름도 바꿔요.
 // - 다른 페이지에서 옮겨 온 문장은 사람이 보내기를 누르지 않았으니 자동 실행하지 않아요(noAuto).
 // - 대화는 위아래 구분선 안의 대화창에 순서대로 쌓이고, 길어지면 창 안에서 스크롤돼요. 새 답이 오면 그 문장이 창 위에 오게 넘겨요.
@@ -17,11 +17,11 @@ import { ScrollChips } from '../../components/ScrollChips';
 /** 칩 줄에 보이는 문장 수(예시·최근 쓴 문장 모두). 넘치면 옆으로 넘겨요. */
 const CHIP_MAX = 5;
 /** 시키면 바로 실행되는 상태에서 찾기와 예약의 차이를 보여 주는 예시예요. */
-const AUTO_EXAMPLES = ['내일 3시 6명', '내일 3시 6명 잡아 줘', '내일 3시 회의에 빔프로젝터 빌려 줘', '지금 빈 방 있어?', '내 예약 보여 줘'];
+const AUTO_EXAMPLES = ['내일 3시 6명', '내일 3시 6명 잡아 줘', '내일 3시 회의에 빔프로젝터 빌려 줘', '지금 빈 회의실 있어?', '내 예약 보여 줘'];
 /** 자동 실행이 꺼졌을 때(카드에서 확인하고 예약) */
-const CONFIRM_EXAMPLES = ['내일 3시 6명', '다음 주 화요일 10시부터 2시간 4명', '지금 빈 방 있어?', '노트북 남았어?', '내 예약 보여 줘'];
+const CONFIRM_EXAMPLES = ['내일 3시 6명', '다음 주 화요일 10시부터 2시간 4명', '지금 빈 회의실 있어?', '노트북 남았어?', '내 예약 보여 줘'];
 /** 회의실 쓰기가 꺼졌을 때는 보기만 되는 예시예요(QA D-C03). */
-const READ_ONLY_EXAMPLES = ['지금 빈 방 있어?', '오늘 회의실 현황', '3C 장비 뭐 있어?', '노트북 남았어?'];
+const READ_ONLY_EXAMPLES = ['지금 빈 회의실 있어?', '오늘 회의실 현황', '3C 장비 뭐 있어?', '노트북 남았어?'];
 /** 화면에 남기는 대화 수. 넘으면 오래된 것부터 지워요. */
 const KEEP = 20;
 
@@ -38,8 +38,8 @@ type Mode = 'auto' | 'confirm' | 'read-only';
 
 /** 입력 칸 아래 한 줄과 버튼 이름. 지금 스위치와 친 문장으로 정해요. */
 function guide(mode: Mode, text: string): { line: string; tone: 'quiet' | 'warn'; submit: string } {
-  if (mode === 'read-only') return { line: '지금은 예약·대여를 그룹웨어에서 해요. 빈 방·장비 현황은 여기서 볼 수 있어요.', tone: 'quiet', submit: '찾기' };
-  if (mode === 'confirm') return { line: '지금은 확인 후 예약해요. 카드의 [이 방으로 예약]으로 한 번 더 확인해요.', tone: 'quiet', submit: '찾기' };
+  if (mode === 'read-only') return { line: '지금은 예약·대여를 그룹웨어에서 해요. 빈 회의실·장비 현황은 여기서 볼 수 있어요.', tone: 'quiet', submit: '찾기' };
+  if (mode === 'confirm') return { line: '지금은 확인 후 예약해요. 카드의 [이 회의실로 예약]으로 한 번 더 확인해요.', tone: 'quiet', submit: '찾기' };
   if (!text.trim()) return { line: '"잡아 줘·빌려 줘"처럼 시키면 바로 예약·대여해요. 물어보면 찾기만 해요.', tone: 'quiet', submit: '보내기' };
   const preview: RoomChatPreview = roomChatPreview(text);
   if (preview === 'may-run-reserve')
@@ -172,7 +172,7 @@ export function RoomChat({
       <CheckedInput
         scope='나만 보여요'
         label='회의실, 무엇을 할까요?'
-        placeholder={mode === 'read-only' ? '예) 지금 빈 방 있어?' : mode === 'auto' ? '예) 내일 3시 6명 · 내일 3시 6명 잡아 줘' : '예) 내일 3시 6명'}
+        placeholder={mode === 'read-only' ? '예) 지금 빈 회의실 있어?' : mode === 'auto' ? '예) 내일 3시 6명 · 내일 3시 6명 잡아 줘' : '예) 내일 3시 6명'}
         submitLabel={g.submit}
         value={text}
         onValueChange={setText}

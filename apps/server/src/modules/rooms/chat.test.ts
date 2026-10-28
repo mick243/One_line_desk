@@ -72,6 +72,8 @@ describe('규칙 해석', () => {
     ['3C 장비 뭐 있어?', 'equipment', false],
     ['회의실별 장비 현황 알려 줘', 'equipment', true],
     ['지금 빈 방 있어?', 'overview', false],
+    ['지금 빈 회의실 있어?', 'overview', false],
+    ['5층 회의실 지금 비어 있어?', 'overview', false],
     ['오늘 회의실 예약 현황', 'overview', false],
     ['내 예약 보여 줘', 'my', true],
     ['내일 예약 취소해 줘', 'cancel', true],
@@ -131,6 +133,38 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
     expect(stored).not.toContain(text);
   });
 
+  it('같은 시간에 이미 내 예약이 있으면 바로 잡지 않고, 겹치는 내 예약을 맨 앞에 알려요(10/28 사용성 점검)', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.staff);
+    expect((await chat(me, '내일 3시 6명 회의실 잡아 줘')).changed).toBe(true);
+
+    const again = await chat(me, '내일 3시 4명 회의실 잡아 줘');
+    expect(again.changed).toBe(false);
+    expect(again.reply).toMatch(/^이 시간에 이미 내 예약\(회의실 3C · 3층 10월 27일\(화\) 15:00~16:00\)이 있어서 바로 잡지 않았어요/);
+    expect(again.cards[0]).toMatchObject({ label: '안내', headline: '이 시간에 이미 내 예약이 있어요' });
+    expect(fixedOf(again.cards[0], '취소').confirm?.title).toBe('예약을 취소할까요?');
+    expect(await appReservations(t)).toHaveLength(1);
+
+    // 그래도 하나 더 잡으려면 카드 → 확인 시트예요. 시트에도 겹치는 내 예약이 적혀 있어요.
+    const candidate = again.cards.find((c) => c.actions.primary?.type === 'propose')!;
+    const action = candidate.actions.primary as Extract<CardAction, { type: 'propose' }>;
+    const sheet = (await me.call('POST', '/api/plans', { proposalToken: action.proposalToken })).body as PlanCreateResponse;
+    expect(sheet).toMatchObject({ status: 'sheet' });
+    if (sheet.status !== 'sheet') throw new Error();
+    expect(sheet.sheet.lines).toContain('이 시간에 이미 내 예약이 있어요: 회의실 3C · 3층 10월 27일(화) 15:00~16:00');
+  });
+
+  it('내 층에서 가까운 회의실을 먼저 잡아요(10/28 사용성 점검)', async () => {
+    const t = await setup();
+    const dev = await t.loginAs(MOCK.dev);
+    const staff = await t.loginAs(MOCK.staff);
+    // 같은 조건이어도 도윤(5층)은 5층, 하늘(3층)은 3층 회의실이에요.
+    const fromFive = await chat(dev, '내일 3시 6명 화면 회의실 잡아 줘');
+    expect(fromFive.reply).toMatch(/^예약했어요: 회의실 5B · 5층, .*\(내 층에서 조건에 맞는 회의실\)/);
+    const fromThree = await chat(staff, '내일 3시 6명 화면 회의실 잡아 줘');
+    expect(fromThree.reply).toMatch(/^예약했어요: 회의실 3C · 3층, .*\(내 층에서 조건에 맞는 회의실\)/);
+  });
+
   it('같은 요청 ID로 두 번 와도 한 번만 예약해요', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.staff);
@@ -150,11 +184,11 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
     const first = await chat(me, '내일 오후 4시 3명 3C 잡아 줘');
     expect(first.changed).toBe(true);
     expect(first.reply).toContain('회의실 3C');
-    expect(first.reply).toContain('말한 방');
+    expect(first.reply).toContain('말한 회의실');
 
     const taken = await chat(other, '내일 오후 4시 3명 3C 잡아 줘');
     expect(taken.changed).toBe(false);
-    expect(taken.reply).toContain('말한 방(회의실 3C)은 그 시간에 쓸 수 없어요');
+    expect(taken.reply).toContain('말한 회의실(회의실 3C)은 그 시간에 쓸 수 없어요');
     expect(await appReservations(t)).toHaveLength(1);
   });
 
@@ -174,11 +208,11 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
     expect(audit[0]).toMatchObject({ channel: 'ask', action: 'chat', result: code });
   });
 
-  it('묻는 문장은 후보 카드와 [이 방으로 예약](확인 시트)이에요', async () => {
+  it('묻는 문장은 후보 카드와 [이 회의실로 예약](확인 시트)이에요', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.staff);
     const out = await chat(me, '내일 3시 6명 빈 방 있어?');
-    expect(out.cards.some((c) => c.actions.primary?.type === 'propose' && c.actions.primary.text === '이 방으로 예약')).toBe(true);
+    expect(out.cards.some((c) => c.actions.primary?.type === 'propose' && c.actions.primary.text === '이 회의실로 예약')).toBe(true);
   });
 
   it('운영 스위치 autoActions를 끄면 카드로만 보여 줘요', async () => {
@@ -213,7 +247,7 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
     const mine = await chat(me, '내 예약 보여 줘');
     expect(mine.cards[0]!.actions.primary).toMatchObject({ type: 'link' });
     const help = await chat(me, '안녕하세요');
-    expect(help.cards[0]!.tail).toBe('지금은 예약·대여를 그룹웨어에서 해요. 채팅으로는 빈 방·장비 현황을 볼 수 있어요');
+    expect(help.cards[0]!.tail).toBe('지금은 예약·대여를 그룹웨어에서 해요. 채팅으로는 빈 회의실·장비 현황을 볼 수 있어요');
     expect(help.cards[0]!.fields.map((f) => f.name)).not.toContain('예약');
     expect(await appReservations(t)).toHaveLength(0);
   });
@@ -377,7 +411,13 @@ describe('현황·장비 현황', () => {
     expect(mine.cards[0]!.fields).toEqual(expect.arrayContaining([{ name: '같이 빌린 장비', value: '노트북' }]));
 
     const free = await chat(me, '지금 빈 방 있어?');
-    expect(free.cards[0]!.headline).toMatch(/^지금 빈 방 \d+곳이에요$/);
+    expect(free.cards[0]!.headline).toMatch(/^지금 빈 회의실 \d+곳이에요$/);
+    // 하늘(3층)에게는 3층 회의실이 먼저예요. 층을 말하면 그 층만 보여 줘요(10/28 사용성 점검).
+    expect(free.cards[0]!.fields[0]!.name).toMatch(/· 3층$/);
+    const fifth = await chat(me, '5층 회의실 지금 비어 있어?');
+    expect(fifth.reply).toBe('지금 비어 있는 5층 회의실이에요');
+    expect(fifth.cards[0]!.fields.length).toBeGreaterThan(0);
+    expect(fifth.cards[0]!.fields.every((f) => f.name.endsWith('· 5층'))).toBe(true);
 
     const room = await chat(me, '5A 장비 뭐 있어?');
     expect(room.cards[0]!.fields).toEqual(

@@ -30,8 +30,8 @@ describe('빈 방 찾기 계산(ADR-06, R5)', () => {
     expect(found.candidates).toEqual([]);
     // a는 90분 앞·60분 뒤, b는 60분 앞, c는 60분 앞·뒤가 비어요. 가까운 순 → 인원에 꼭 맞는 방 순이에요.
     expect(found.alternatives.map((s) => [s.room.id, kstIso(s.start), s.reason])).toEqual([
-      ['a', '2026-10-27T16:00:00+09:00', '같은 방 60분 뒤'],
-      ['b', '2026-10-27T14:00:00+09:00', '같은 방 60분 앞'],
+      ['a', '2026-10-27T16:00:00+09:00', '같은 회의실 60분 뒤'],
+      ['b', '2026-10-27T14:00:00+09:00', '같은 회의실 60분 앞'],
     ]);
   });
 
@@ -48,8 +48,8 @@ describe('빈 방 찾기 계산(ADR-06, R5)', () => {
       floor: '3층',
     });
     expect(onlyFloor.map((s) => [s.room.id, s.reason])).toEqual([
-      ['a', '같은 방 120분 뒤'],
-      ['a', '같은 방 180분 앞'],
+      ['a', '같은 회의실 120분 뒤'],
+      ['a', '같은 회의실 180분 앞'],
     ]);
 
     const fullDay = alternativeSlots({
@@ -63,7 +63,7 @@ describe('빈 방 찾기 계산(ADR-06, R5)', () => {
       floor: '3층',
     });
     expect(fullDay.map((s) => [s.room.id, s.reason])).toEqual([
-      ['b', '같은 층 다른 방'],
+      ['b', '같은 층 다른 회의실'],
       ['c', '다른 층'],
     ]);
   });

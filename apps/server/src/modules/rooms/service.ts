@@ -30,6 +30,7 @@ import {
   conditionsCard,
   confirmedCard,
   noFreeCard,
+  overlapCard,
   roomTakenCard,
   icsPath,
   inviteAction,
@@ -76,6 +77,8 @@ import {
 // 쓰기는 'rooms:reserve' plan(확인 시트 한 번)과 [취소] 고정 버튼뿐이에요.
 
 type Owner = Pick<DeskUser, 'pseudonymId'>;
+/** 찾는 사람: 내 층에서 가까운 회의실부터 보여 주고(home), 겹치는 내 예약을 알려 줘요(10/28). */
+type Seeker = Pick<DeskUser, 'pseudonymId' | 'floor'>;
 
 /** 예약·취소를 해도 되는 스위치 상태: 회의실 켬 + 회의실 쓰기 켬(R4). */
 export function roomsWriteEnabled(s: OpsSettings): boolean {
@@ -95,7 +98,7 @@ export function slotsToQuery(slots: Slots, defaultMinutes: number): Partial<Room
 }
 
 function toCandidate(s: Slot): RoomCandidate {
-  // 칸을 하나씩 골라요. 정원·장비·설비는 방 정보라 넣고, 예약자·회의 제목·방별 일정은 없어요(ADR-14).
+  // 칸을 하나씩 골라요. 정원·장비·설비는 회의실 정보라 넣고, 예약자·회의 제목·방별 일정은 없어요(ADR-14).
   return {
     roomId: s.room.id,
     roomName: s.room.name,
@@ -111,24 +114,25 @@ function toCandidate(s: Slot): RoomCandidate {
 
 /**
  * 후보가 하나도 없을 때 까닭(MCP가 사람에게 설명해요). 정원 → 장비 → 층 순서로 걸러 보고,
- * 조건에 맞는 방이 있는데도 없으면 그 시간에 모두 예약된 거예요.
+ * 조건에 맞는 회의실이 있는데도 없으면 그 시간에 모두 예약된 거예요.
  */
 function emptyReasonOf(rooms: RoomRow[], q: RoomQuery, alternatives: number): NonNullable<RoomSearchResult['emptyReason']> {
   const big = rooms.filter((r) => r.capacity >= q.people);
   if (!big.length) {
     const largest = Math.max(0, ...rooms.map((r) => r.capacity));
-    return { code: 'too-many-people', message: `정원이 ${q.people}명 이상인 방이 없어요. 가장 큰 방은 ${largest}명이에요` };
+    return { code: 'too-many-people', message: `정원이 ${q.people}명 이상인 회의실이 없어요. 가장 큰 회의실은 ${largest}명이에요` };
   }
   const equipped = big.filter((r) => q.equipment.every((e) => r.equipment.includes(e)));
-  if (!equipped.length) return { code: 'no-equipment', message: `${q.people}명이 들어가는 방 중에 장비(${q.equipment.join('·')})를 모두 갖춘 방이 없어요` };
+  if (!equipped.length)
+    return { code: 'no-equipment', message: `${q.people}명이 들어가는 회의실 중에 장비(${q.equipment.join('·')})를 모두 갖춘 회의실이 없어요` };
   if (q.floor && !equipped.some((r) => r.floor === q.floor)) {
-    return { code: 'no-floor', message: `${q.floor}에는 조건에 맞는 방이 없어요. 층을 빼고 다시 찾아 주세요` };
+    return { code: 'no-floor', message: `${q.floor}에는 조건에 맞는 회의실이 없어요. 층을 빼고 다시 찾아 주세요` };
   }
   const tail = alternatives ? ' 가까운 시간 대안을 함께 보냈어요' : ' 다른 시간으로 다시 찾아 주세요';
-  return { code: 'all-booked', message: `조건에 맞는 방이 그 시간에 모두 예약돼 있어요.${tail}` };
+  return { code: 'all-booked', message: `조건에 맞는 회의실이 그 시간에 모두 예약돼 있어요.${tail}` };
 }
 
-/** 층 번호 순, 같은 층이면 방 번호(ID) 순 */
+/** 층 번호 순, 같은 층이면 회의실 번호(ID) 순 */
 function byFloorThenId(a: RoomRow, b: RoomRow): number {
   return parseInt(a.floor, 10) - parseInt(b.floor, 10) || a.id.localeCompare(b.id);
 }
@@ -139,7 +143,7 @@ function clockOf(at: number, dayEnd: number): string {
 }
 
 /**
- * 고른 날 방 상태. 오늘이면 지금 시각으로 "비어 있음(다음 예약 HH:MM)" 또는 "사용 중(HH:MM부터 비어요)",
+ * 고른 날 회의실 상태. 오늘이면 지금 시각으로 "비어 있음(다음 예약 HH:MM)" 또는 "사용 중(HH:MM부터 비어요)",
  * 다른 날이면 그날 예약 수예요. 이어진 예약은 하나로 이어 보고 비는 시각을 계산해요.
  */
 export function roomStatus(roomId: string, busy: BusyRow[], date: string, now: number): RoomStatus {
@@ -231,38 +235,57 @@ export class RoomDesk {
     );
   }
 
-  /** 조건 → 카드. 빠진 값이면 되묻고, 후보가 없으면 "그 시간엔 빈 방이 없어요" + 대안이에요(F2-1~3). */
-  async cards(partial: Partial<RoomQuery>, user: Owner, o: CardsOptions, now = this.ctx.now()): Promise<{ checkedAt: number; cards: Card[]; found: boolean }> {
+  /** 이 구간과 겹치는 내 앞으로의 예약. 겹쳐도 막지는 않고 알려만 줘요(10/28 사용성 점검). */
+  async myOverlaps(user: Owner, start: number, end: number, now = this.ctx.now(), q: Queryable = this.ctx.db): Promise<ReservationRow[]> {
+    return (await myUpcoming(q, user.pseudonymId, now)).filter((r) => r.start < end && start < r.end);
+  }
+
+  /** 겹치는 내 예약이 있으면 맨 앞에 안내 카드를 붙여요. */
+  private async withOverlap(user: Owner, start: number, end: number, now: number, cards: Card[]): Promise<Card[]> {
+    const mine = await this.myOverlaps(user, start, end, now);
+    return mine.length ? [overlapCard(mine, roomsWriteEnabled(this.ctx.ops.get())), ...cards] : cards;
+  }
+
+  /**
+   * 조건 → 카드. 빠진 값이면 되묻고, 후보가 없으면 "그 시간엔 빈 회의실이 없어요" + 대안이에요(F2-1~3).
+   * 휴대폰에서 후보가 먼저 보이게 후보 카드 → 조건 칩 카드 순서예요. 내 층에서 가까운 회의실부터이고, 겹치는 내 예약은 맨 앞에 알려요(10/28).
+   */
+  async cards(partial: Partial<RoomQuery>, user: Seeker, o: CardsOptions, now = this.ctx.now()): Promise<{ checkedAt: number; cards: Card[]; found: boolean }> {
     const check = checkQuery(partial, now);
     if (!check.ok) return { checkedAt: now, cards: [askAgainCard(check, o)], found: false };
 
     const { rooms, busy } = await this.load(this.ctx.db, check.query.date);
-    const found = searchSlots({ rooms, busy, query: check.query, start: check.start, end: check.end, now });
+    const found = searchSlots({ rooms, busy, query: check.query, start: check.start, end: check.end, now, home: user.floor });
     const cond = conditionsCard(check.query, o);
     if (found.candidates.length) {
       return {
         checkedAt: now,
-        cards: [
+        cards: await this.withOverlap(user, check.start, check.end, now, [
+          ...this.slotCards(user, found.candidates, check.query, {
+            checkedAt: now,
+            aiSummarized: o.aiSummarized,
+            alternative: false,
+            text: '이 회의실로 예약',
+          }),
           cond,
-          ...this.slotCards(user, found.candidates, check.query, { checkedAt: now, aiSummarized: o.aiSummarized, alternative: false, text: '이 방으로 예약' }),
-        ],
+        ]),
         found: true,
       };
     }
     return {
       checkedAt: now,
-      cards: [
-        cond,
+      cards: await this.withOverlap(user, check.start, check.end, now, [
         noFreeCard(check.start, check.end, found.alternatives.length, now),
-        ...this.slotCards(user, found.alternatives, check.query, { checkedAt: now, aiSummarized: o.aiSummarized, alternative: true, text: '이 방으로 예약' }),
-      ],
+        ...this.slotCards(user, found.alternatives, check.query, { checkedAt: now, aiSummarized: o.aiSummarized, alternative: true, text: '이 회의실로 예약' }),
+        cond,
+      ]),
       found: false,
     };
   }
 
-  // ── 둘러보기(10/26): 방 카드 목록 · 방 자세히 · 이 방 이 시간(읽기만) ──────────
+  // ── 둘러보기(10/26): 회의실 카드 목록 · 회의실 자세히 · 이 회의실 이 시간(읽기만) ──────────
 
-  /** 방 카드 목록과 고른 날 상태. 회의실이 켜져 있지 않으면 그룹웨어 링크만 줘요(R4). */
+  /** 회의실 카드 목록과 고른 날 상태. 회의실이 켜져 있지 않으면 그룹웨어 링크만 줘요(R4). */
   async directory(date: string): Promise<RoomListResponse> {
     const now = this.ctx.now();
     const s = this.ctx.ops.get();
@@ -272,7 +295,7 @@ export class RoomDesk {
     return { ...base, linkOnly: false, rooms: rooms.sort(byFloorThenId).map((r) => toListItem(r, busy, date, now)) };
   }
 
-  /** 방 자세히: 설비·지금 상태·하루 일정. 남의 예약은 "예약됨"만, 취소는 내 예약에만 붙어요(ADR-06). */
+  /** 회의실 자세히: 설비·지금 상태·하루 일정. 남의 예약은 "예약됨"만, 취소는 내 예약에만 붙어요(ADR-06). */
   async day(user: Owner, roomId: string, date: string): Promise<RoomDayResponse> {
     const now = this.ctx.now();
     const s = this.ctx.ops.get();
@@ -300,7 +323,7 @@ export class RoomDesk {
     };
   }
 
-  /** 방 자세히에서 고른 시간: 비면 [이 시간으로 예약] 카드, 차 있으면 같은 방 가까운 시간 대안이에요. 아무것도 쓰지 않아요. */
+  /** 회의실 자세히에서 고른 시간: 비면 [이 시간으로 예약] 카드, 차 있으면 같은 회의실 가까운 시간 대안이에요. 아무것도 쓰지 않아요. */
   async slotForRoom(user: Owner, roomId: string, req: RoomSlotRequest): Promise<RoomCardsResponse> {
     const now = this.ctx.now();
     const s = this.ctx.ops.get();
@@ -315,7 +338,13 @@ export class RoomDesk {
       const slot = picked(makeSlot(room, check.start, check.end, check.query));
       return {
         checkedAt: kstIso(now),
-        cards: this.slotCards(user, [slot], check.query, { checkedAt: now, aiSummarized: false, alternative: false, text: '이 시간으로 예약' }),
+        cards: await this.withOverlap(
+          user,
+          check.start,
+          check.end,
+          now,
+          this.slotCards(user, [slot], check.query, { checkedAt: now, aiSummarized: false, alternative: false, text: '이 시간으로 예약' }),
+        ),
       };
     }
     const alternatives = alternativeSlots({
@@ -370,7 +399,7 @@ export class RoomDesk {
 
   /**
    * 앱 확인 링크 다시 확인(M3, ADR-14). 토큰 주인만 열고, 링크를 연 것만으로는 아무것도 쓰지 않아요.
-   * 만료면 같은 조건으로 다시 찾고, 그 방이 아직 비면 그 방 카드 한 장(새 토큰), 찼으면 안내 카드 + 대안이에요.
+   * 만료면 같은 조건으로 다시 찾고, 그 회의실이 아직 비면 그 회의실 카드 한 장(새 토큰), 찼으면 안내 카드 + 대안이에요.
    */
   async recheck(user: DeskUser, token: string): Promise<RoomCardsResponse> {
     const opened = this.ctx.plans.peek(user, token);
@@ -397,26 +426,36 @@ export class RoomDesk {
         checkedAt: now,
         aiSummarized: false,
         alternative: false,
-        text: '이 방으로 예약',
+        text: '이 회의실로 예약',
       });
-      return { checkedAt: kstIso(now), cards: [cond, ...card] };
+      return { checkedAt: kstIso(now), cards: await this.withOverlap(user, start, end, now, [...card, cond]) };
     }
-    const alternatives = alternativeSlots({ rooms, busy, query: p.query, start, end, now, anchors: room ? [room] : [], floor: room?.floor ?? p.query.floor });
+    const alternatives = alternativeSlots({
+      rooms,
+      busy,
+      query: p.query,
+      start,
+      end,
+      now,
+      anchors: room ? [room] : [],
+      floor: room?.floor ?? p.query.floor,
+      home: user.floor,
+    });
     return {
       checkedAt: kstIso(now),
-      cards: [
-        cond,
+      cards: await this.withOverlap(user, start, end, now, [
         noFreeCard(start, end, alternatives.length, now),
-        ...this.slotCards(user, alternatives, p.query, { checkedAt: now, aiSummarized: false, alternative: true, text: '이 방으로 예약' }),
-      ],
+        ...this.slotCards(user, alternatives, p.query, { checkedAt: now, aiSummarized: false, alternative: true, text: '이 회의실로 예약' }),
+        cond,
+      ]),
     };
   }
 
   /**
-   * 채팅 자동 예약(ADR-19)에 쓸 방 하나. 방을 말했으면 그 방이 조건에 맞고 비었을 때만, 아니면 서버가 고른 1순위 후보예요.
-   * 빈 방이 없으면 null이에요. 다른 시간·방을 자동으로 잡지 않아요. 아무것도 쓰지 않아요.
+   * 채팅 자동 예약(ADR-19)에 쓸 회의실 하나. 회의실을 말했으면 그 회의실이 조건에 맞고 비었을 때만, 아니면 서버가 고른 1순위 후보예요.
+   * 빈 회의실이 없으면 null이에요. 다른 시간·회의실을 자동으로 잡지 않아요. 아무것도 쓰지 않아요.
    */
-  async pickForAuto(partial: Partial<RoomQuery>, roomId: string | null, now = this.ctx.now()): Promise<ReserveParams | null> {
+  async pickForAuto(partial: Partial<RoomQuery>, roomId: string | null, now = this.ctx.now(), home?: string): Promise<ReserveParams | null> {
     const check = checkQuery(partial, now);
     if (!check.ok) return null;
     const q = check.query;
@@ -427,7 +466,7 @@ export class RoomDesk {
       const fits = room && room.capacity >= q.people && q.equipment.every((e) => room.equipment.includes(e));
       if (room && fits && isFree(busy, room.id, check.start, check.end)) slot = makeSlot(room, check.start, check.end, q);
     } else {
-      slot = searchSlots({ rooms, busy, query: q, start: check.start, end: check.end, now }).candidates[0];
+      slot = searchSlots({ rooms, busy, query: q, start: check.start, end: check.end, now, home }).candidates[0];
     }
     if (!slot) return null;
     return ReserveParamsSchema.parse({ roomId: slot.room.id, start: kstIso(slot.start), end: kstIso(slot.end), query: q });
@@ -444,13 +483,21 @@ export class RoomDesk {
       enabled: roomsWriteEnabled,
       // 채팅 명령("내일 3시 6명 잡아 줘")이면 확인 시트 없이 실행해요(ADR-19).
       autoAllowed: true,
-      sheet: async (p) => {
+      sheet: async (p, user) => {
         const room = await getRoom(this.ctx.db, p.roomId);
+        const start = Date.parse(p.start);
+        const end = Date.parse(p.end);
+        const mine = await this.myOverlaps(user, start, end);
         return {
-          title: '이 방으로 예약할까요?',
-          lines: [room ? `${room.name} · ${room.floor}` : p.roomId, whenText(Date.parse(p.start), Date.parse(p.end)), CONFIRM_LINE],
+          title: '이 회의실로 예약할까요?',
+          lines: [
+            room ? `${room.name} · ${room.floor}` : p.roomId,
+            whenText(start, end),
+            ...mine.map((r) => `이 시간에 이미 내 예약이 있어요: ${r.roomName} · ${r.floor} ${whenText(r.start, r.end)}`),
+            CONFIRM_LINE,
+          ],
           confirmLabel: '예약하기',
-          note: '[예약하기]를 누르는 순간 빈 방인지 다시 확인해요',
+          note: '[예약하기]를 누르는 순간 빈 회의실인지 다시 확인해요',
         };
       },
       execute: async (p, ex) => {
@@ -474,6 +521,7 @@ export class RoomDesk {
           now: ex.now,
           anchors: room ? [room] : [],
           floor: room?.floor ?? p.query.floor,
+          home: ex.user.floor,
         });
         return {
           status: 'blocked',

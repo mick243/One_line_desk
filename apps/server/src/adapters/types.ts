@@ -98,7 +98,7 @@ export interface LeaveAdapter {
   leaveOf(person: { idpSubject: string; email?: string }): Promise<LeaveRecord | null>;
 }
 
-/** 메신저 DM(ADR-17). 받는 사람은 회사 메일로 찾아요. 글에는 방·시간·부른 사람만 넣어요. */
+/** 메신저 DM(ADR-17). 받는 사람은 회사 메일로 찾아요. 글에는 회의실·시간·부른 사람만 넣어요. */
 export interface MessengerAdapter {
   capabilities: AdapterCapabilities;
   sendDirect(message: { toEmail: string; text: string }): Promise<'sent' | 'not-found'>;

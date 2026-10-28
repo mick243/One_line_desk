@@ -84,7 +84,12 @@ export class Router {
       ? await module.ask({ text, slots: toSlots(classified.slots), aiParsed: classified.byModel, user })
       : { cards: [], found: false };
     await this.audit.record({ pseudonymId: user.pseudonymId, channel: 'ask', module: target, result: outcome.found ? 'card' : 'not-found' });
-    return { kind: target, confidence: 'high', chips: [], cards: outcome.cards };
+    // 기능 페이지에서 못 찾았는데 규칙이 다른 기능을 가리키면(담당 찾기에 "내일 3시 회의실 6명") 그 페이지로 옮기는 카드를 맨 앞에 둬요(10/28 사용성 점검).
+    // 모듈 카드가 이미 옮기기 버튼을 주면(공지 못 찾음 → [담당 찾기에서 찾기]) 같은 버튼을 또 만들지 않아요.
+    const offered = new Set(outcome.cards.flatMap((c) => [c.actions.primary, ...c.actions.secondary]).flatMap((a) => (a?.type === 'reask' ? [a.kind] : [])));
+    const elsewhere = forcedKind !== undefined && !outcome.found ? rules.filter((k) => k !== target && !offered.has(k)).slice(0, 2) : [];
+    const cards = elsewhere.length ? [moveCard(elsewhere), ...outcome.cards] : outcome.cards;
+    return { kind: target, confidence: 'high', chips: [], cards };
   }
 
   private async classify(text: string, rules: ModuleKind[]): Promise<Classification & { byModel: boolean }> {
@@ -146,6 +151,31 @@ export function linkCard(module: ModuleKind, href: string): Card {
     evidence: { text: '그룹웨어 화면 링크', href, aiSummarized: false },
     actions: { primary: { type: 'link', text: '그룹웨어 열기', href }, secondary: [] },
     tail: '저장되는 것이 없어요',
+  };
+}
+
+const MOVE: Record<ModuleKind, { headline: string; button: string }> = {
+  rooms: { headline: '회의실 일 같아요', button: '회의실에서 찾기' },
+  pantry: { headline: '탕비실 요청 같아요', button: '같이 채워요에 올리기' },
+  notices: { headline: '공지를 찾는 말 같아요', button: '공지에서 찾기' },
+  navi: { headline: '담당을 찾는 말 같아요', button: '담당 찾기에서 찾기' },
+};
+
+/** 다른 기능 페이지로 같은 문장을 옮기는 카드. 문장은 앱 메모리로만 넘겨요(R13). 규칙이 고른 거라 "AI 정리"가 아니에요. */
+export function moveCard(kinds: ModuleKind[]): Card {
+  const [first, ...rest] = kinds as [ModuleKind, ...ModuleKind[]];
+  return {
+    id: `move-${kinds.join('-')}`,
+    kind: first,
+    label: '안내',
+    headline: MOVE[first].headline,
+    fields: [],
+    evidence: { text: '쓴 문장의 낱말로 고른 기능', aiSummarized: false },
+    actions: {
+      primary: { type: 'reask', text: MOVE[first].button, kind: first },
+      secondary: rest.map((k) => ({ type: 'reask' as const, text: MOVE[k].button, kind: k })),
+    },
+    tail: '같은 문장을 그 페이지로 옮겨요. 저장되는 것은 없어요',
   };
 }
 

@@ -45,7 +45,7 @@ export interface WebModules {
   InquiryInbox: ComponentType;
   /** 담당 찾기 페이지: 내가 보낸 문의와 처리 상태 */
   MyInquiries: ComponentType;
-  /** 회의실 페이지 "모든 회의실": 방 카드(그림·정원·상태) → 방 자세히(설비·하루 일정·이 시간 예약) */
+  /** 회의실 페이지 "모든 회의실": 회의실 카드(그림·정원·상태) → 회의실 자세히(설비·하루 일정·이 시간 예약) */
   RoomDirectory: ComponentType<ScreenProps>;
   /** 회의 참석자 고르기 양식(ADR-17). 확정 카드·내 예약의 [참석자 초대]로 열려요. */
   InviteSheet: ComponentType<{ action: Extract<CardAction, { type: 'invite' }>; onClose: () => void }>;

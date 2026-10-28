@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { apiRequest } from '../../api';
 import { useActions } from '../../components/ActionHost';
 
-// 나를 부른 회의(10/26, ADR-17). 초대받은 사람만 방·시간·부른 사람을 봐요. [참석할게요]·[못 가요]·캘린더 파일.
+// 나를 부른 회의(10/26, ADR-17). 초대받은 사람만 회의실·시간·부른 사람을 봐요. [참석할게요]·[못 가요]·캘린더 파일.
 
 export function InvitedMeetings() {
   const { run, version } = useActions();

@@ -32,10 +32,10 @@ import {
 import { KST_ISO, kstIso, MINUTE } from './search';
 import { roomsWriteEnabled } from './service';
 
-// 장비 대여·방 설비 상태(10/28, ADR-19).
+// 장비 대여·회의실 설비 상태(10/28, ADR-19).
 // - 대여는 'rooms:rent' plan으로만 들어가요. 채팅 명령이면 자동 실행(허용 목록), 카드 [빌리기]면 확인 시트 한 번이에요.
 // - 대여 취소·반납은 고정 버튼(확인 시트 뒤)이에요. 신청하면 바로 확정이고, 누가 빌렸는지는 다른 사람에게 보이지 않아요.
-// - 방 설비 상태(점검 중)는 총무만 바꿔요.
+// - 회의실 설비 상태(점검 중)는 총무만 바꿔요.
 
 type Owner = Pick<DeskUser, 'pseudonymId'>;
 
@@ -115,7 +115,7 @@ export class RoomEquipment {
     };
   }
 
-  /** 방 하나의 장비 카드 */
+  /** 회의실 하나의 장비 카드 */
   async roomCard(roomId: string, aiSummarized: boolean): Promise<Card | null> {
     const room = await getRoom(this.ctx.db, roomId);
     return room ? roomEquipmentCard(room, aiSummarized) : null;
@@ -192,7 +192,7 @@ export class RoomEquipment {
     });
   }
 
-  /** 방 설비 상태 바꾸기(총무, 고정 버튼). 그 방에 있는 설비만 바꿔요. */
+  /** 회의실 설비 상태 바꾸기(총무, 고정 버튼). 그 회의실에 있는 설비만 바꿔요. */
   async setFacility(user: DeskUser, roomId: string, facility: Equipment, status: FacilityStatus): Promise<{ status: 'done'; card: Card }> {
     return this.ctx.fixed.run(user, {
       module: 'rooms',
@@ -201,7 +201,7 @@ export class RoomEquipment {
       async run(q, now) {
         const room = await getRoom(q, roomId);
         if (!room) throw new DeskError('not-found', 404, '없는 회의실이에요');
-        if (![...room.equipment, ...room.repairs].includes(facility)) throw new DeskError('bad-request', 400, '그 방에 없는 설비예요');
+        if (![...room.equipment, ...room.repairs].includes(facility)) throw new DeskError('bad-request', 400, '그 회의실에 없는 설비예요');
         await setFacilityStatus(q, roomId, facility, status, now);
         const updated = await getRoom(q, roomId);
         return { status: 'done', card: roomEquipmentCard(updated!, false) };

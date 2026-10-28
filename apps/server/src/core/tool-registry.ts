@@ -45,7 +45,7 @@ export const TOOLS: ToolDef[] = [
     mcpExposed: true,
     // ADR-14
     description:
-      '빈 회의실 후보 최대 3개(인원에 가장 꼭 맞는 방부터)와 앱 확인 링크를 돌려줘요. 후보마다 정원·장비·설비가 있어요. 예약자·회의 제목은 없어요. ' +
+      '빈 회의실 후보 최대 3개(인원에 가장 꼭 맞는 회의실부터)와 앱 확인 링크를 돌려줘요. 후보마다 정원·장비·설비가 있어요. 예약자·회의 제목은 없어요. ' +
       '후보가 없으면 emptyReason에 까닭이 있고, 가까운 시간 대안을 최대 2개 줘요.',
     input: {
       date: { type: 'string', description: 'YYYY-MM-DD' },
