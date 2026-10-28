@@ -286,6 +286,29 @@ a {
 .chips.scroll::-webkit-scrollbar {
   display: none;
 }
+/* 옆으로 넘기는 칩 줄(ScrollChips, 10/28). 넘칠 때만 아직 안 보이는 쪽 가장자리를 흐리게 해서 "옆에 더 있어요"를 보여 줘요.
+   마우스(PC)에서는 얇은 막대도 보여요. 손가락 화면은 막대 없이 밀어서 넘겨요. */
+.chips.scroll-x {
+  --fade-start: 0px;
+  --fade-end: 0px;
+  overscroll-behavior-x: contain;
+}
+.chips.scroll-x[data-overflow='true'] {
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent 100%);
+}
+.chips.scroll-x[data-overflow='true'][data-start='false'] {
+  --fade-start: 32px;
+}
+.chips.scroll-x[data-overflow='true'][data-end='false'] {
+  --fade-end: 32px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .chips.scroll-x[data-overflow='true'] {
+    padding-bottom: 6px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--surface-3) transparent;
+  }
+}
 .chip {
   flex: none;
   display: inline-flex;

@@ -4,6 +4,7 @@ import { ApiFailure, apiRequest } from '../../api';
 import { replaceCard, useActions } from '../../components/ActionHost';
 import { CardView } from '../../components/CardView';
 import { CheckedInput } from '../../components/CheckedInput';
+import { ScrollChips } from '../../components/ScrollChips';
 
 // 회의실 입력 칸(10/28 통합 개편, ADR-19). 빈 방 찾기와 회의실 채팅을 한 칸으로 합쳤어요.
 // - 묻는 말("내일 3시 6명", "빈 방 있어?")은 찾기만 하고, 시키는 말("잡아 줘·빌려 줘")은 조건이 다 있으면 바로 예약·대여해요.
@@ -11,8 +12,10 @@ import { CheckedInput } from '../../components/CheckedInput';
 // - 다른 페이지에서 옮겨 온 문장은 사람이 보내기를 누르지 않았으니 자동 실행하지 않아요(noAuto).
 // - 결과는 최신 답 하나를 크게, 지난 대화는 접어요. 대화는 이 페이지 메모리에만 있어요(R13). 수동 예약(모든 회의실)은 그대로예요.
 
+/** 칩 줄에 보이는 문장 수(예시·최근 쓴 문장 모두). 넘치면 옆으로 넘겨요. */
+const CHIP_MAX = 5;
 /** 시키면 바로 실행되는 상태에서 찾기와 예약의 차이를 보여 주는 예시예요. */
-const AUTO_EXAMPLES = ['내일 3시 6명', '내일 3시 6명 잡아 줘', '내일 3시 회의에 빔프로젝터 빌려 줘', '지금 빈 방 있어?', '3C 장비 뭐 있어?', '내 예약 보여 줘'];
+const AUTO_EXAMPLES = ['내일 3시 6명', '내일 3시 6명 잡아 줘', '내일 3시 회의에 빔프로젝터 빌려 줘', '지금 빈 방 있어?', '내 예약 보여 줘'];
 /** 자동 실행이 꺼졌을 때(카드에서 확인하고 예약) */
 const CONFIRM_EXAMPLES = ['내일 3시 6명', '다음 주 화요일 10시부터 2시간 4명', '지금 빈 방 있어?', '노트북 남았어?', '내 예약 보여 줘'];
 /** 회의실 쓰기가 꺼졌을 때는 보기만 되는 예시예요(QA D-C03). */
@@ -170,24 +173,24 @@ export function RoomChat({
               </button>
             )}
           </div>
-          <div className='chips scroll' aria-label='최근 쓴 문장'>
-            {recent.map((ex) => (
+          <ScrollChips label='최근 쓴 문장'>
+            {recent.slice(0, CHIP_MAX).map((ex) => (
               <button key={ex} type='button' className='chip' onClick={() => setText(ex)}>
                 {ex}
               </button>
             ))}
-          </div>
+          </ScrollChips>
         </>
       ) : (
         <>
           <p className='example-label'>이렇게 써 보세요</p>
-          <div className='chips scroll' aria-label='예시 문장'>
-            {(mode === 'auto' ? AUTO_EXAMPLES : mode === 'confirm' ? CONFIRM_EXAMPLES : READ_ONLY_EXAMPLES).map((ex) => (
+          <ScrollChips label='예시 문장'>
+            {(mode === 'auto' ? AUTO_EXAMPLES : mode === 'confirm' ? CONFIRM_EXAMPLES : READ_ONLY_EXAMPLES).slice(0, CHIP_MAX).map((ex) => (
               <button key={ex} type='button' className='chip' onClick={() => setText(ex)}>
                 {ex}
               </button>
             ))}
-          </div>
+          </ScrollChips>
         </>
       )}
 
