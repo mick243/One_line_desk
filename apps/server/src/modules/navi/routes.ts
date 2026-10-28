@@ -88,7 +88,8 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
     },
     async (req) => {
       assertNotOff();
-      return { card: await navi.rowCard(req.body.rowId) };
+      // status를 같이 줘서 동점 카드의 업무 칩(고정 버튼)이 결과 카드로 바로 보여 줘요.
+      return { status: 'done' as const, card: await navi.rowCard(req.body.rowId) };
     },
   );
 

@@ -14,6 +14,40 @@ describe('슬롯 뽑기', () => {
     expect(parseSlots(text, NOW)).toMatchObject(expected);
   });
 
+  // AI 접목 회의 QA 실측에서 규칙이 놓치거나 조용히 틀렸던 말(QA-6·12, R-1). NOW = 2026-10-26(월) 09:00
+  it.each([
+    ['낼 3시 4명 회의실', { date: '2026-10-27', start: '15:00', people: 4 }],
+    ['내일 3시 4명 30분', { minutes: 30 }],
+    ['내일 3시 4명 45분만', { minutes: 45 }],
+    ['모레 오후 4시 6명 1시간 반', { date: '2026-10-28', start: '16:00', minutes: 90 }],
+    ['내일 10시 1시간 30분 4명', { start: '10:00', minutes: 90 }],
+    ['내일 3시 90분 회의 4명', { start: '15:00', minutes: 90 }],
+    ['내일 3시 30분 회의 4명', { start: '15:30' }],
+    ['내일 3시부터 5시까지 4명', { start: '15:00', minutes: 120 }],
+    ['내일 15:00-16:30 4명', { start: '15:00', minutes: 90 }],
+    ['내일 오후 2시에서 3시 반까지', { start: '14:00', minutes: 90 }],
+    ['내일 11시부터 1시까지', { start: '11:00', minutes: 120 }],
+    ['내일 오후 세시 네명', { start: '15:00', people: 4 }],
+    ['다섯 명 두 시간 내일 10시', { people: 5, minutes: 120, start: '10:00' }],
+    ['둘이서 내일 2시', { people: 2, start: '14:00' }],
+    ['내일 아침 9시 반에 대여섯 명', { start: '09:30', people: 6 }],
+    ['다음 달 30일 2시 4명', { date: '2026-11-30', start: '14:00' }],
+    ['지금 바로 4명', { date: '2026-10-26', start: '09:00', people: 4 }],
+    ['30분 뒤에 4명', { date: '2026-10-26', start: '09:30' }],
+    ['내일 점심시간에 4명', { date: '2026-10-27', start: '12:00' }],
+    ['내일 3시 4명 회의실, 프로젝터 말고 화이트보드 있는 곳', { equipment: ['화이트보드'] }],
+    ['내일 3시 4명 4층 화면 없는 곳', { floor: '4층' }],
+  ])('규칙 보강: %s', (text, expected) => {
+    expect(parseSlots(text, NOW)).toMatchObject(expected);
+  });
+
+  it('조용히 틀리던 것: "7시"는 되묻고, "3층 말고"·"프로젝터 말고"는 그 조건을 넣지 않아요', () => {
+    expect(parseSlots('내일 7시 4명 회의실', NOW).start).toBeUndefined();
+    expect(parseSlots('내일 3시 4명 회의실 3층 말고 다른 층', NOW).floor).toBeUndefined();
+    expect(parseSlots('내일 3시 4명 4층 화면 없는 곳', NOW).equipment).toBeUndefined();
+    expect(parseSlots('내일 3시 4명 2시간 뒤에 끝나요', NOW).minutes).toBeUndefined();
+  });
+
   // 2026-10-26은 월요일이에요. 한 주는 월요일에 시작해요.
   it.each([
     ['다음 주 화요일 10시 4명', '2026-11-03'],
@@ -41,6 +75,10 @@ describe('슬롯 뽑기', () => {
     ['3일 동안 쓸 방', undefined],
     ['2월 30일', undefined],
     ['다음 주에 회의실', undefined],
+    ['다음 달 30일', '2026-11-30'],
+    ['이번 달 30일', '2026-10-30'],
+    ['다다음 달 1일', '2026-12-01'],
+    ['낼 오후', '2026-10-27'],
   ])('날짜: %s → %s', (text, date) => {
     expect(parseDate(text, '2026-10-26')).toBe(date);
   });
@@ -54,6 +92,10 @@ describe('슬롯 뽑기', () => {
     ['10시 20분', '10:20'],
     ['3시', '15:00'],
     ['2시간짜리', undefined],
+    ['7시', undefined],
+    ['오전 7시', '07:00'],
+    ['세시', '15:00'],
+    ['오후 두 시 반', '14:30'],
   ])('시각: %s → %s', (text, time) => {
     expect(parseTime(text)).toBe(time);
   });

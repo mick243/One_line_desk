@@ -146,7 +146,7 @@ describe('[F1] 담당 카드', () => {
     const leaveCards = cards.filter((c) => c.id === 'navi-my-leave');
     expect(leaveCards.length).toBeGreaterThan(0);
     for (const c of leaveCards) expect(c.evidence.text).toMatch(/^인사 근태 기록/);
-    const naviCards = cards.filter((c) => c.kind === 'navi' && c.id !== 'navi-ask-here' && c.id !== 'navi-my-leave');
+    const naviCards = cards.filter((c) => c.kind === 'navi' && !['navi-ask-here', 'navi-my-leave', 'navi-choose-row'].includes(c.id));
     const noticeCards = cards.filter((c) => c.kind === 'notices' && c.id !== 'notices-not-found');
     expect(naviCards.length).toBeGreaterThan(5);
     expect(noticeCards.length).toBeGreaterThan(2);
@@ -540,5 +540,34 @@ describe('[F1-9·R9] S5 분장표 수정 제안함', () => {
     const t = await setup();
     for (const m of t.modules) if (m.kind === 'navi' || m.kind === 'notices') await m.seed?.();
     expect((await t.db.query('select count(*)::int as n from navi_rows')).rows[0]).toEqual({ n: 25 });
+  });
+});
+
+describe('동점·두루 쓰이는 말(AI 접목 회의 QA 2차)', () => {
+  it('1등이 동점이면 고르지 않고, 업무 칩을 눌러 사람이 고른 담당 카드를 받아요', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.dev);
+    const [card] = (await ask(t, me, '법카 잃어버렸어요', 'navi')).cards;
+    expect(card).toMatchObject({ id: 'navi-choose-row', kind: 'navi', label: '안내', headline: '어느 업무인지 골라 주세요' });
+    const chips = card!.actions.secondary.filter((a) => a.type === 'fixed');
+    expect(chips.map((a) => a.text)).toEqual(['법인카드 분실 신고 · 재무팀', '출입카드 분실·재발급 · 총무팀']);
+    expect(card!.actions.secondary.at(-1)).toMatchObject({ type: 'inquire', team: '총무팀' });
+
+    const chip = chips[0] as Extract<(typeof chips)[number], { type: 'fixed' }>;
+    const res = await me.call(chip.method, chip.path, chip.body);
+    expect(res.body).toMatchObject({ status: 'done', card: { id: 'navi-FIN-01', evidence: { aiSummarized: false } } });
+  });
+
+  it.each([
+    ['대출 서류 어디서 떼요', 'navi-ask-here'],
+    ['메일 용량이 꽉 찼어요', 'navi-ask-here'],
+    ['출장 숙소 예약은 누가 해요', 'navi-ask-here'],
+    ['수상한 메일 열어봤어요', 'navi-SEC-01'],
+    ['출장비 정산 어디서 해요', 'navi-FIN-03'],
+    ['연말정산 서류 언제 내요', 'navi-FIN-05'],
+  ])('두루 쓰이는 말만 맞으면 담당 카드를 만들지 않아요: %s → %s', async (text, id) => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.dev);
+    expect((await ask(t, me, text, 'navi')).cards[0]!.id).toBe(id);
   });
 });

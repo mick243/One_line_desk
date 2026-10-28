@@ -55,6 +55,25 @@ export function naviCard(row: CardRow, opts: { aiSummarized: boolean; others?: C
   });
 }
 
+/**
+ * 점수가 같은 후보가 여럿이라 고르지 않았을 때: 업무 칩을 보여 주고 사람이 골라요(동점, AI 접목 회의 QA 2차).
+ * 칩을 누르면 그 행의 담당 카드를 불러요(읽기만). 사람이 고른 카드라 "AI 정리"는 없어요.
+ */
+export function chooseRowCard(rows: CardRow[]): Card {
+  const chips: CardAction[] = rows
+    .slice(0, 3)
+    .map((r) => ({ type: 'fixed', text: candidateLabel(r), method: 'POST', path: '/api/navi/rows/card', body: { rowId: r.id } }));
+  return makeCard({
+    id: 'navi-choose-row',
+    kind: 'navi',
+    label: '안내',
+    headline: '어느 업무인지 골라 주세요',
+    evidence: { text: '분장표에서 같은 점수로 찾은 업무', aiSummarized: false },
+    secondary: [...chips, { type: 'inquire', text: `${GENERAL_DESK.team}에 문의하기`, rowId: null, team: GENERAL_DESK.team, task: GENERAL_TASK }],
+    tail: ASK_TAIL,
+  });
+}
+
 /** 근거 행이 없을 때: 담당 카드를 만들지 않고 총무 창구로 보내요(F1-5). */
 export function askHereCard(): Card {
   return makeCard({

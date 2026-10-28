@@ -21,12 +21,12 @@ import { DeskError } from '../../core/errors';
 import type { AskInput, AskOutcome } from '../../core/module';
 import type { DeskUser } from '../../core/user';
 import { type ChartRow, parseChart, toCsv } from './chart-csv';
-import { askHereCard, naviCard } from './cards';
+import { askHereCard, chooseRowCard, naviCard } from './cards';
 import { demoChartCsv } from './fixtures';
 import { myLeaveCard } from './leave';
 import * as repo from './repo';
 import type { StoredRow } from './repo';
-import { bigramSet, coverage, keywords } from './text';
+import { bigramSet, coverage, GENERIC_WORDS, keywords } from './text';
 
 // F1 담당 안내(ADR-09, R8·R9). 검색으로 후보 행을 고르고, LLM은 후보 번호 하나 또는 none만 골라요.
 // 카드는 고른 행의 원문 칸을 그대로 그려요. 묻기 경로는 아무것도 저장하지 않아요(ADR-04).
@@ -61,21 +61,35 @@ export function rankRows(text: string, rows: StoredRow[]): Scored[] {
       const taskSet = bigramSet(row.task);
       const allSet = bigramSet(row.task, ...row.aliases);
       let score = 0;
+      let specific = false;
       for (const k of keys) {
         const inTask = coverage(k, taskSet);
         const inAll = coverage(k, allSet);
-        score += Math.max(inTask >= 0.5 ? inTask : 0, inAll >= 0.5 ? inAll * 0.8 : 0);
+        const add = Math.max(inTask >= 0.5 ? inTask : 0, inAll >= 0.5 ? inAll * 0.8 : 0);
+        score += add;
+        if (add > 0 && !GENERIC_WORDS.has(k)) specific = true;
       }
-      return { row, score };
+      // 두루 쓰이는 말만 맞았으면 근거 점수 아래로 둬요(후보로는 남아요).
+      return { row, score: specific ? score : Math.min(score, FOUND_MIN - 0.01) };
     })
     .filter((s) => s.score >= CANDIDATE_MIN)
     .sort((a, b) => b.score - a.score || a.row.id.localeCompare(b.row.id))
     .slice(0, MAX_CANDIDATES);
 }
 
-/** 모델 없이 고르기: 가장 높은 후보가 근거 점수를 넘을 때만 골라요. */
+/** 근거 점수를 넘은 1등 후보들. 둘 이상이면 점수가 같은 거예요(동점). */
+export function topTied(candidates: Scored[]): Scored[] {
+  const top = candidates[0];
+  if (!top || top.score < FOUND_MIN) return [];
+  return candidates.filter((c) => c.score === top.score);
+}
+
+/**
+ * 모델 없이 고르기: 가장 높은 후보가 근거 점수를 넘을 때만 골라요.
+ * 1등이 동점이면 고르지 않아요. ID 순서로 고르면 엉뚱한 팀 카드와 [문의하기]가 나가서, 사람이 칩으로 골라요(AI 접목 회의 QA 2차).
+ */
 export function deterministicPick(candidates: Scored[]): number | null {
-  return candidates[0] && candidates[0].score >= FOUND_MIN ? 0 : null;
+  return topTied(candidates).length === 1 ? 0 : null;
 }
 
 /**
@@ -209,7 +223,10 @@ export function createNaviService(ctx: AppContext) {
       if (candidates.length === 0) return { cards: withLeave(askHereCard()), found: false };
       const pick = await pickRow(ctx.gateway, input.text, candidates);
       const chosen = pick.index === null ? undefined : candidates[pick.index];
-      if (!chosen) return { cards: withLeave(askHereCard()), found: false };
+      if (!chosen) {
+        const tied = topTied(candidates);
+        return { cards: withLeave(tied.length > 1 ? chooseRowCard(tied.map((c) => c.row)) : askHereCard()), found: false };
+      }
       const others = candidates.filter((c) => c !== chosen).map((c) => c.row);
       return { cards: withLeave(naviCard(chosen.row, { aiSummarized: pick.ai, others })), found: true };
     },
