@@ -3,7 +3,7 @@ import type { ComponentType } from 'react';
 import type { Me } from '../api';
 import type { CardViewProps } from '../components/CardView';
 
-// 모듈 화면 부품 약속. 홈·기능 페이지·내 것은 이 부품을 끼워 그려요.
+// 모듈 화면 부품 약속. 홈·기능 페이지·마이 페이지는 이 부품을 끼워 그려요.
 
 /** "틀렸어요" 시트(R8). 담당 모듈이 만들어요. */
 export interface WrongSheetProps {
@@ -49,11 +49,11 @@ export interface WebModules {
   RoomDirectory: ComponentType<ScreenProps>;
   /** 회의 참석자 고르기 양식(ADR-17). 확정 카드·내 예약의 [참석자 초대]로 열려요. */
   InviteSheet: ComponentType<{ action: Extract<CardAction, { type: 'invite' }>; onClose: () => void }>;
-  /** 회의실·내 것의 "나를 부른 회의" 칸 */
+  /** 회의실·마이 페이지의 "나를 부른 회의" 칸 */
   InvitedMeetings: ComponentType;
-  /** 내 것의 시연 받은편지함(모의 그룹웨어 캘린더·모의 Slack) */
+  /** 마이 페이지의 시연 받은편지함(모의 그룹웨어 캘린더·모의 Slack) */
   DemoInbox: ComponentType;
-  /** 홈·회의실·내 것의 "내 예약" 칸 */
+  /** 홈·회의실·마이 페이지의 "내 예약" 칸 */
   MyReservations: ComponentType<{ compact?: boolean }>;
   /** 회의실 페이지 "내 대여" 칸(ADR-19) */
   MyLoans: ComponentType;
@@ -69,7 +69,7 @@ export interface WebModules {
     onSent?: (text: string) => void;
     onRemoveRecent?: (text: string) => void;
   }>;
-  /** 홈·내 것의 "내 요청" 칸 */
+  /** 홈·마이 페이지의 "내 요청" 칸 */
   MyRequests: ComponentType<{ compact?: boolean }>;
   /** S6 "연결된 AI 앱" 칸 */
   ConnectedApps: ComponentType;

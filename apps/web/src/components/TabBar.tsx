@@ -10,7 +10,7 @@ const TABS: { id: Tab; label: string; icon: IconName; module?: ModuleKind }[] = 
   { id: 'rooms', label: '회의실', icon: 'rooms', module: 'rooms' },
   { id: 'notices', label: '공지', icon: 'notices', module: 'notices' },
   { id: 'board', label: '같이 채워요', icon: 'pantry', module: 'pantry' },
-  { id: 'mine', label: '내 것', icon: 'mine' },
+  { id: 'mine', label: '마이 페이지', icon: 'mine' },
 ];
 
 export function visibleTabs(modules: Record<ModuleKind, ModuleSwitch>): Tab[] {

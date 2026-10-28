@@ -1456,7 +1456,7 @@ select {
   color: var(--ok-text);
 }
 
-/* 내 것: 맨 위 내 정보 */
+/* 마이 페이지: 맨 위 내 정보 */
 .profile {
   display: flex;
   align-items: center;
@@ -1553,7 +1553,7 @@ select {
   margin-top: 6px;
 }
 
-/* 내 것 > 무엇을 남기나요(L-42): 세 갈래 목록 */
+/* 마이 페이지 > 무엇을 남기나요(L-42): 세 갈래 목록 */
 .retention h3 {
   margin: 4px 0 0;
   font-size: 0.9375rem;

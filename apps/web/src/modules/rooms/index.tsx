@@ -98,7 +98,7 @@ export function MyReservations({ compact }: { compact?: boolean }) {
           ))}
         </ul>
       )}
-      {more > 0 && <p className='hint'>내 것에서 {more}건 더 볼 수 있어요.</p>}
+      {more > 0 && <p className='hint'>마이 페이지에서 {more}건 더 볼 수 있어요.</p>}
     </section>
   );
 }

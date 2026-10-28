@@ -1,4 +1,4 @@
-// S6 내 것
+// S6 마이 페이지
 import { type ModuleKind, type ModuleSwitch, ROLE_LABEL } from '@one-line-desk/shared';
 import { useState } from 'react';
 import { api, type Me } from '../api';
@@ -55,7 +55,7 @@ export function Mine({
   return (
     <div className='mine'>
       <header className='screen-head'>
-        <h1>내 것</h1>
+        <h1>마이 페이지</h1>
       </header>
 
       <section className='card profile'>

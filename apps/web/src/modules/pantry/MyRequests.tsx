@@ -64,7 +64,7 @@ export function MyRequests({ compact }: { compact?: boolean }) {
           ))}
         </div>
       )}
-      {compact && items && items.length > 3 && <p className='hint'>나머지는 내 것에서 볼 수 있어요</p>}
+      {compact && items && items.length > 3 && <p className='hint'>나머지는 마이 페이지에서 볼 수 있어요</p>}
     </section>
   );
 }

@@ -246,7 +246,7 @@ describe('F2 확인 예약(쓰기 경계, ADR-03·06)', () => {
             { type: 'fixed', text: '취소', method: 'DELETE', confirm: { confirmLabel: '취소하기' } },
           ],
         },
-        tail: '예약 기록이 남아요 · 내 예약은 내 것에서 봐요',
+        tail: '예약 기록이 남아요 · 내 예약은 마이 페이지에서 봐요',
       },
     });
     const rows = await appReservations(t.db);

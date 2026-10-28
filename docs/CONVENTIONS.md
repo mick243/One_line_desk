@@ -29,7 +29,7 @@ apps/server/src/
   routes/                   공통 경로(auth, ask, plans, config)
 apps/web/src/
   components/               공통 화면 부품(카드, 시트, 입력 칸)
-  screens/                  홈·기능 페이지(FeaturePage)·로그인·내 것
+  screens/                  홈·기능 페이지(FeaturePage)·로그인·마이 페이지
   modules/<kind>/           모듈 화면 부품(S3·S4·S5, S6 칸, 모듈 카드 그리기)
 db/migrations/              NNN_<영역>_<무엇>.sql
 ```

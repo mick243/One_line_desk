@@ -382,6 +382,6 @@ function invitedCard(m: Meeting, sent: { app: number; calendar: number | null; s
     evidence: { text: '고른 사람만 방·시간·내 이름을 봐요. 다른 직원에게는 "예약됨"만 보여요', aiSummarized: false },
     primary: { type: 'link', text: '캘린더 파일 받기', href: icsPath(m.id) },
     secondary: [],
-    tail: `답(${INVITE_RESPONSE_LABEL.accepted}·${INVITE_RESPONSE_LABEL.declined})은 내 것 > 내 예약에서 봐요`,
+    tail: `답(${INVITE_RESPONSE_LABEL.accepted}·${INVITE_RESPONSE_LABEL.declined})은 마이 페이지 > 내 예약에서 봐요`,
   });
 }

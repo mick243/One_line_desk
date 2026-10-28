@@ -179,8 +179,8 @@ export function ConsentScreen({ me }: ScreenProps) {
   }
 
   const backToApp = (
-    <button type='button' className='secondary small' onClick={() => void actions.run({ type: 'navigate', text: '내 것으로 가기', to: 'mine' })}>
-      내 것으로 가기
+    <button type='button' className='secondary small' onClick={() => void actions.run({ type: 'navigate', text: '마이 페이지로 가기', to: 'mine' })}>
+      마이 페이지로 가기
     </button>
   );
 
@@ -226,7 +226,7 @@ export function ConsentScreen({ me }: ScreenProps) {
       </section>
 
       <p className='mask-line'>찾은 결과는 {appName}의 AI 모델로 보내져요</p>
-      <p className='hint'>끊는 곳: 내 것 &gt; 연결된 AI 앱</p>
+      <p className='hint'>끊는 곳: 마이 페이지 &gt; 연결된 AI 앱</p>
 
       <div className='actions' role='group' aria-label='연결 동의'>
         <button type='button' className='secondary' disabled={busy} onClick={() => void decide('allow', appName)}>
@@ -237,7 +237,7 @@ export function ConsentScreen({ me }: ScreenProps) {
         </button>
       </div>
       <p className='hint'>
-        부른 도구와 시각만 남아요. 무엇을 찾았는지는 남지 않아요 · 언제든 내 것 &gt; 연결된 AI 앱에서 끊을 수 있어요. 퇴사하면 자동으로 끊겨요
+        부른 도구와 시각만 남아요. 무엇을 찾았는지는 남지 않아요 · 언제든 마이 페이지 &gt; 연결된 AI 앱에서 끊을 수 있어요. 퇴사하면 자동으로 끊겨요
       </p>
     </div>
   );
