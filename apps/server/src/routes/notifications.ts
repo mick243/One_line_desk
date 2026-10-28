@@ -4,7 +4,10 @@ import type { AppContext } from '../context';
 
 // 앱 안 알림(ADR-16). 내 알림만 읽고, 읽음 표시만 써요. 알림 글에는 내용이 없어요.
 export function registerNotificationRoutes(app: FastifyInstance, ctx: AppContext) {
-  app.get('/api/notifications', { preHandler: ctx.guards.user }, async (req): Promise<NotificationsResponse> => ctx.notify.list(req.deskUser!));
+  // 웹이 15초마다 부르는 폴링이라 쉬는 시간을 늘리지 않아요(ADR-20).
+  app.get('/api/notifications', { preHandler: ctx.guards.user, config: { background: true } }, async (req): Promise<NotificationsResponse> =>
+    ctx.notify.list(req.deskUser!),
+  );
 
   app.post<{ Body: NotificationReadRequest }>(
     '/api/notifications/read',

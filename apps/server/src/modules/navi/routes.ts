@@ -12,6 +12,7 @@ import {
   type WrongFeedbackRequest,
 } from '@one-line-desk/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { accessFrom } from '../../core/access-record';
 import type { AppContext } from '../../context';
 import { DeskError } from '../../core/errors';
 import type { InquiryService } from './inquiries';
@@ -166,7 +167,19 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
     async (req) => inquiries.send(req.deskUser!, req.body),
   );
 
-  app.get('/api/navi/inquiries/inbox', { preHandler: ctx.guards.user }, async (req): Promise<InquiryListResponse> => inquiries.inbox(req.deskUser!));
+  // 받은 문의함은 보낸 사람 이름·부서가 붙은 글을 봐요. 연 사람·접속지·연 문의 번호를 접속기록에 남겨요(ADR-20).
+  app.get('/api/navi/inquiries/inbox', { preHandler: ctx.guards.user }, async (req): Promise<InquiryListResponse> => {
+    const res = await inquiries.inbox(req.deskUser!);
+    if (res.enabled) {
+      await ctx.access.record({
+        pseudonymId: req.deskUser!.pseudonymId,
+        action: 'inquiry.inbox',
+        subjectRefs: res.items.slice(0, 100).map((i) => `inquiry:${i.id}`),
+        ...accessFrom(req),
+      });
+    }
+    return res;
+  });
   app.get('/api/navi/inquiries/mine', { preHandler: ctx.guards.user }, async (req): Promise<InquiryListResponse> => inquiries.mine(req.deskUser!));
 
   app.post<{ Params: { id: string }; Body: { state: 'seen' | 'done' } }>(
@@ -178,6 +191,15 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
         body: { type: 'object', required: ['state'], additionalProperties: false, properties: { state: { enum: ['seen', 'done'] } } },
       },
     },
-    async (req) => inquiries.setState(req.deskUser!, req.params.id, req.body.state),
+    async (req) => {
+      const item = await inquiries.setState(req.deskUser!, req.params.id, req.body.state);
+      await ctx.access.record({
+        pseudonymId: req.deskUser!.pseudonymId,
+        action: 'inquiry.update',
+        subjectRefs: [`inquiry:${req.params.id}`],
+        ...accessFrom(req),
+      });
+      return item;
+    },
   );
 }

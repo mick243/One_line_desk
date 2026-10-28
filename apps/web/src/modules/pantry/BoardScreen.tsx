@@ -37,21 +37,27 @@ export function BoardScreen({
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      setData(await pantryApi.board(floor === me.floor ? undefined : floor));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof ApiFailure ? e.message : '판을 불러오지 못했어요');
-    }
-  }, [floor, me.floor]);
+  const load = useCallback(
+    async (background = false) => {
+      try {
+        setData(await pantryApi.board(floor === me.floor ? undefined : floor, background));
+        setError(null);
+      } catch (e) {
+        setError(e instanceof ApiFailure ? e.message : '판을 불러오지 못했어요');
+      }
+    },
+    [floor, me.floor],
+  );
 
   useEffect(() => {
     void load();
   }, [load, actions.version]);
 
   useEffect(() => {
-    const id = window.setInterval(() => void load(), REFRESH_MS);
+    // 탭이 가려져 있으면 새로 고치지 않아요. 자동 새로 고침은 배경 요청이에요(쉬는 시간, ADR-20).
+    const id = window.setInterval(() => {
+      if (!document.hidden) void load(true);
+    }, REFRESH_MS);
     return () => window.clearInterval(id);
   }, [load]);
 

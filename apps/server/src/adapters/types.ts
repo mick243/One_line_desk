@@ -17,13 +17,35 @@ export interface EmployeeProfile {
   email?: string;
 }
 
+/** ID 토큰이 알려 준 인증 근거(ADR-20). 값 뜻은 IdP마다 달라서 MFA 판정은 설정(mfaAmr·mfaAcr)으로 해요. */
+export interface LoginEvidence {
+  amr: string[];
+  acr?: string;
+  /** 인증 시각(ms, auth_time) */
+  authTime?: number;
+}
+
 /** 실제 IdP 리디렉트 로그인(OIDC 인가 코드 + PKCE). 모의 IdP에는 없어요. */
 export interface OidcLogin {
   /** 로그인 화면에 보여 줄 이름(예: "회사 계정") */
   label: string;
-  authorizationUrl(p: { state: string; nonce: string; codeChallenge: string; redirectUri: string }): Promise<string>;
-  /** 인가 코드를 토큰으로 바꾸고 ID 토큰을 검증해요. 맞지 않으면 null이에요. */
-  finishLogin(p: { code: string; codeVerifier: string; nonce: string; redirectUri: string }): Promise<EmployeeProfile | null>;
+  /** prompt=login·max_age: 쉬는 시간 뒤 다시 인증받기. acrValues: IdP에 MFA를 요청하는 값(선택). */
+  authorizationUrl(p: {
+    state: string;
+    nonce: string;
+    codeChallenge: string;
+    redirectUri: string;
+    prompt?: 'login';
+    maxAge?: number;
+    acrValues?: string;
+  }): Promise<string>;
+  /** 인가 코드를 토큰으로 바꾸고 ID 토큰을 검증해요. 맞지 않으면 null, IdP에 닿지 못하면 던져요. */
+  finishLogin(p: {
+    code: string;
+    codeVerifier: string;
+    nonce: string;
+    redirectUri: string;
+  }): Promise<{ profile: EmployeeProfile; evidence: LoginEvidence } | null>;
 }
 
 export interface IdpAdapter {

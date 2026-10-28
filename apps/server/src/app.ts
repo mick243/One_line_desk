@@ -7,6 +7,7 @@ import type { ServerConfig } from './config';
 import type { AppContext } from './context';
 import { AnthropicProvider } from './core/ai/anthropic-provider';
 import { AiGateway, FakeProvider, type LlmProvider } from './core/ai/gateway';
+import { AccessRecorder } from './core/access-record';
 import { AuditLog } from './core/audit';
 import { applyMigrations, type Db, openDb, pendingMigrations } from './core/db';
 import { DeskError } from './core/errors';
@@ -76,6 +77,7 @@ export async function buildApp(opts: BuildOptions) {
     dataAdapters: () => adapters.all(),
     sessions: new SessionStore(now),
     audit,
+    access: new AccessRecorder(db, now),
     ops,
     rateLimiter: new RateLimiter(now, () => settings().values.rateLimitPerMinute),
     gateway: new AiGateway(provider, config.noRetentionContractConfirmed, db),
@@ -146,9 +148,10 @@ export async function buildApp(opts: BuildOptions) {
     for (const module of modules) await module.seed?.();
   }
 
-  // 보관 기간 지우기(L-33): 화면을 열지 않아도 문의 90일·알림 30일이 지나면 지워요. 뜰 때 한 번, 그 뒤 한 시간마다예요.
+  // 보관 기간 지우기(L-33): 화면을 열지 않아도 문의 90일·알림 30일·접속기록 1년이 지나면 지워요. 뜰 때 한 번, 그 뒤 한 시간마다예요.
   const runRetention = async () => {
     await ctx.notify.purge();
+    await ctx.access.purge();
     for (const module of modules) await module.retention?.();
   };
   let retentionTimer: NodeJS.Timeout | undefined;

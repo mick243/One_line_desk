@@ -22,6 +22,11 @@ export interface OpsSettings {
     proposalTtlSeconds: number;
     planTtlSeconds: number;
     employmentRecheckSeconds: number;
+    /**
+     * 이만큼 쓰지 않으면 로그인이 끊겨요(안전성 확보조치 기준 제6조④, ADR-20). 기본 3시간: 점심을 넣은 정규 업무시간(9시간)에
+     * 다시 인증이 많아야 3번이에요(10/28 사용자 결정). 시간은 내부 관리계획에 적어요(안내서 74쪽, CD-31).
+     */
+    idleTimeoutMinutes: number;
     rateLimitPerMinute: number;
   };
 }
@@ -45,6 +50,7 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     planTtlSeconds: 600,
     // 퇴사 시 늦어도 10분 안에 끊겨야 해서 10분보다 짧게 둬요(ADR-13).
     employmentRecheckSeconds: 300,
+    idleTimeoutMinutes: 180,
     rateLimitPerMinute: 20,
   },
 };

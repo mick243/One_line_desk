@@ -24,13 +24,32 @@ function initial(name: string): string {
   return name.split(' ').at(-1)?.charAt(0) ?? '?';
 }
 
+/** IdP에서 돌아왔는데 로그인하지 못했을 때 주소에 붙는 이유(서버 routes/auth.ts loginErrorReason) → 화면 문구 */
+const LOGIN_FAILED: Record<string, string> = {
+  failed: '로그인하지 못했어요. 한 번 더 해 주세요.',
+  denied: '로그인을 취소했거나 회사 로그인이 허락하지 않았어요. 다시 하려면 아래 버튼을 눌러 주세요.',
+  'mfa-required': '추가 인증(MFA)을 마쳐야 들어올 수 있어요. 회사 로그인에서 추가 인증을 한 뒤 다시 해 주세요.',
+  'idp-unreachable': '지금 회사 로그인에 닿지 못했어요. 잠시 뒤에 다시 해 주세요. 계속 안 되면 IT 창구에 알려 주세요.',
+};
+
 // 1일 차 끝 기준이 "로그인 화면"이에요. 지금은 모의 OIDC로 가상 직원을 골라요.
-export function Login({ onLoggedIn, login, notice }: { onLoggedIn: () => void; login: PublicConfig['login']; notice?: string }) {
+// reauth: 쉬는 시간이 지나 끊겼으면 회사 로그인에 다시 인증을 요청해요(ADR-20).
+export function Login({
+  onLoggedIn,
+  login,
+  notice,
+  reauth = false,
+}: {
+  onLoggedIn: () => void;
+  login: PublicConfig['login'];
+  notice?: string;
+  reauth?: boolean;
+}) {
   const [users, setUsers] = useState<MockUser[]>([]);
-  // IdP에서 돌아왔는데 로그인하지 못했으면 주소에 login=failed가 붙어 와요.
-  const [error, setError] = useState(() =>
-    new URLSearchParams(window.location.search).get('login') === 'failed' ? '로그인하지 못했어요. 한 번 더 해 주세요.' : '',
-  );
+  const [error, setError] = useState(() => {
+    const reason = new URLSearchParams(window.location.search).get('login');
+    return reason ? (LOGIN_FAILED[reason] ?? LOGIN_FAILED.failed!) : '';
+  });
 
   useEffect(() => {
     if (login.kind === 'mock') void api.mockUsers().then(setUsers);
@@ -39,7 +58,7 @@ export function Login({ onLoggedIn, login, notice }: { onLoggedIn: () => void; l
   /** 회사 계정(IdP) 로그인: 지금 보던 주소로 돌아오게 해요(예: AI 앱 연결 동의 화면). */
   function startIdpLogin() {
     const back = window.location.pathname === '/' ? '/' : `${window.location.pathname}${window.location.search}`;
-    window.location.assign(`/api/auth/oidc/start?return=${encodeURIComponent(back)}`);
+    window.location.assign(`/api/auth/oidc/start?return=${encodeURIComponent(back)}${reauth ? '&reauth=idle' : ''}`);
   }
 
   async function choose(idpSubject: string) {

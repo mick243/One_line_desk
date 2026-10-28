@@ -1,6 +1,6 @@
 import type { AppDestination, Kind } from '@one-line-desk/shared';
 import { useCallback, useEffect, useState } from 'react';
-import { api, type Me, onSessionEnded, type PublicConfig, SESSION_ENDED_MESSAGE } from './api';
+import { api, IDLE_ENDED_MESSAGE, type Me, onSessionEnded, type PublicConfig, SESSION_ENDED_MESSAGE, sessionEndedByIdle } from './api';
 import { ActionHost } from './components/ActionHost';
 import { DemoBand } from './components/DemoBand';
 import { NotificationBell } from './components/NotificationBell';
@@ -45,6 +45,8 @@ export function App() {
     const next = await api.me();
     setMe(next);
     if (next) setEnded(false);
+    // 쉬는 시간으로 끊긴 뒤 새로 고쳐도 왜 로그인 화면인지 알려 줘요(ADR-20).
+    else if (sessionEndedByIdle()) setEnded(true);
   }, []);
   useEffect(
     () =>
@@ -120,7 +122,12 @@ export function App() {
     <div className='app'>
       <DemoBand items={config.demoData} />
       {me === null ? (
-        <Login onLoggedIn={refreshMe} login={config.login} notice={ended ? SESSION_ENDED_MESSAGE : undefined} />
+        <Login
+          onLoggedIn={refreshMe}
+          login={config.login}
+          notice={ended ? (sessionEndedByIdle() ? IDLE_ENDED_MESSAGE : SESSION_ENDED_MESSAGE) : undefined}
+          reauth={ended && sessionEndedByIdle()}
+        />
       ) : (
         <ActionHost onNavigate={navigate} InviteSheet={webModules.InviteSheet}>
           <div className='app-bar'>

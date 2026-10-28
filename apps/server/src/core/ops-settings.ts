@@ -26,6 +26,8 @@ export const OPS_VALUE_RANGE: Record<keyof OpsValues, readonly [number, number]>
   proposalTtlSeconds: [60, 3600],
   planTtlSeconds: [60, 3600],
   employmentRecheckSeconds: [30, 599],
+  // 3시간까지만 받아요. 안내서 74쪽은 "통상적이며 합리적인 수준"을 요구하고, 오래 늘린 채 두는 것을 미조치 예로 들어요.
+  idleTimeoutMinutes: [5, 180],
   rateLimitPerMinute: [1, 600],
 };
 

@@ -39,7 +39,10 @@ export function NotificationBell({ onNavigate }: { onNavigate: (to: AppDestinati
 
   useEffect(() => {
     void load();
-    const id = window.setInterval(() => void load(), POLL_MS);
+    // 탭이 가려져 있으면 부르지 않아요(ADR-20).
+    const id = window.setInterval(() => {
+      if (!document.hidden) void load();
+    }, POLL_MS);
     return () => window.clearInterval(id);
   }, [load, version]);
 

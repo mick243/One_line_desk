@@ -16,7 +16,8 @@ const floorQuery = (floor?: string) => (floor ? `?floor=${encodeURIComponent(flo
 
 export const pantryApi = {
   draft: (text: string) => apiRequest<PantryDraftResponse>('POST', '/api/pantry/draft', { text }),
-  board: (floor?: string) => apiRequest<BoardResponse>('GET', `/api/pantry/board${floorQuery(floor)}`),
+  /** background: 판 자동 새로 고침(쉬는 시간을 늘리지 않아요) */
+  board: (floor?: string, background = false) => apiRequest<BoardResponse>('GET', `/api/pantry/board${floorQuery(floor)}`, undefined, { background }),
   myRequests: () => apiRequest<MyRequestsResponse>('GET', '/api/pantry/my-requests'),
   collect: (floor: string) => apiRequest<SuggestionsResponse>('POST', '/api/pantry/suggestions/collect', { floor }),
   suggestions: (floor: string) => apiRequest<SuggestionsResponse>('GET', `/api/pantry/suggestions${floorQuery(floor)}`),

@@ -18,6 +18,7 @@ function retentionLines(s: { modules: Record<ModuleKind, ModuleSwitch>; roomsWri
     s.modules.navi === 'on' && '"틀렸어요"에서 고른 결과. 누가 골랐는지는 남지 않아요.',
     s.mcp && '연결한 AI 앱(앱 이름·연결한 날). 끊으면 지워져요.',
     '감사 기록(가명 ID·시각·동작 종류·결과). 내용은 남지 않아요.',
+    '접속기록(가명 ID·시각·접속한 곳의 IP·한 일·열어 본 문의 번호). 법에 따라 1년 두고 지워요. 글과 검색어는 남지 않아요.',
   ].filter((line): line is string => Boolean(line));
   const outside = [
     invites && '회의 초대를 그룹웨어 캘린더·Slack으로 보내면 부른 사람 이름·방·시간이 그 서비스에 남아요. 그쪽 보관 설정을 따라요.',
