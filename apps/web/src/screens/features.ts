@@ -15,7 +15,8 @@ export interface Feature {
   summary: string;
   placeholder: string;
   submit: string;
-  examples: string[];
+  /** 없으면 "이렇게 써 보세요" 줄을 그리지 않아요. 담당 찾기는 중요한 일이라 예시 없이 자기 상황을 쓰게 해요(10/28). */
+  examples?: string[];
 }
 
 export const FEATURES: Feature[] = [
@@ -28,7 +29,6 @@ export const FEATURES: Feature[] = [
     summary: '업무 분장표에서 담당 부서와 지금 할 일을 찾아 줘요.',
     placeholder: '예) 법인카드를 잃어버렸어요',
     submit: '담당 찾기',
-    examples: ['법인카드 잃어버렸어요', '명함 새로 만들고 싶어요', '재직증명서 어디서 떼요?'],
   },
   {
     module: 'rooms',

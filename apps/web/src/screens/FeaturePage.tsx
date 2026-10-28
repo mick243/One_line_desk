@@ -91,14 +91,18 @@ export function FeaturePage({
         onValueChange={setText}
         onSubmit={(masked) => ask(masked)}
       />
-      <p className='example-label'>이렇게 써 보세요</p>
-      <div className='chips scroll' aria-label='예시 문장'>
-        {feature.examples.map((ex) => (
-          <button key={ex} type='button' className='chip' onClick={() => setText(ex)}>
-            {ex}
-          </button>
-        ))}
-      </div>
+      {feature.examples?.length ? (
+        <>
+          <p className='example-label'>이렇게 써 보세요</p>
+          <div className='chips scroll' aria-label='예시 문장'>
+            {feature.examples.map((ex) => (
+              <button key={ex} type='button' className='chip' onClick={() => setText(ex)}>
+                {ex}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
 
       <section className='results' aria-live='polite' aria-busy={loading}>
         {loading && <div className='skeleton' aria-label='찾는 중' />}
