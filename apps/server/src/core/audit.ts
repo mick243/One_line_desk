@@ -37,6 +37,11 @@ export class AuditLog {
     ]);
   }
 
+  /** 보관 기간(7일, 10/28)이 지난 줄을 지워요. 서버가 한 시간마다 불러요. 법정 접속기록은 따로예요(core/access-record.ts). */
+  async purge(before: number): Promise<void> {
+    await this.db.query('delete from audit_log where at < $1', [new Date(before).toISOString()]);
+  }
+
   async recent(limit = 50): Promise<(AuditEntry & { at: string })[]> {
     const { rows } = await this.db.query<{
       at: Date;

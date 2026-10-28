@@ -1,10 +1,16 @@
-import { type DemoInboxResponse, formatKstDateTime, kstTime } from '@one-line-desk/shared';
+import { type DemoInboxResponse, formatKstDateTime, kstTime, recordCutoff } from '@one-line-desk/shared';
 import type { FastifyInstance } from 'fastify';
 import { MockGroupwareCalendar, MockMessenger } from '../adapters/mock/groupware';
 import type { AppContext } from '../context';
 
 // 시연 받은편지함(ADR-17): 모의 그룹웨어 캘린더·모의 Slack이 나에게 보낸 것만 보여 줘요. 실제 어댑터면 닫혀 있어요.
-const KEEP_DAYS = 30;
+
+/** 보관 기간(7일, 10/28)이 지난 시연 메시지와, 끝났거나 취소한 지 7일 지난 시연 일정을 지워요. 서버가 한 시간마다, 열 때도 불러요. */
+export async function purgeDemoInbox(ctx: Pick<AppContext, 'db' | 'now'>): Promise<void> {
+  const at = new Date(recordCutoff(ctx.now())).toISOString();
+  await ctx.db.query('delete from mock_messenger_messages where sent_at < $1', [at]);
+  await ctx.db.query('delete from mock_calendar_events where ends_at < $1 or (cancelled and updated_at < $1)', [at]);
+}
 
 export function registerDemoInboxRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/demo/inbox', { preHandler: ctx.guards.user }, async (req): Promise<DemoInboxResponse> => {
@@ -13,7 +19,7 @@ export function registerDemoInboxRoutes(app: FastifyInstance, ctx: AppContext) {
     const messengerMock = ctx.adapters.messenger instanceof MockMessenger;
     if ((!calendarMock && !messengerMock) || !user.email) return { enabled: false, calendar: [], messages: [] };
 
-    await ctx.db.query('delete from mock_messenger_messages where sent_at < $1', [new Date(ctx.now() - KEEP_DAYS * 86_400_000).toISOString()]);
+    await purgeDemoInbox(ctx);
     const calendar = calendarMock
       ? (
           await ctx.db.query<{ uid: string; title: string; start: number; end: number; location: string; cancelled: boolean }>(

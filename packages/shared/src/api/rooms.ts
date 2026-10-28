@@ -21,7 +21,7 @@ export interface RoomCandidate {
   start: string;
   end: string;
   matched: string[];
-  /** 정원·장비·설비(장부 값). 방을 고를 근거예요(10/26 MCP 베타 시험). */
+  /** 정원·장비·설비(장부 값). 회의실을 고를 근거예요(10/26 MCP 베타 시험). */
   capacity: number;
   equipment: Equipment[];
   facilities: string[];
@@ -77,6 +77,8 @@ export interface MyReservation {
   attendees: ReservationAttendee[];
   /** 캘린더 파일 받기 주소 */
   icsPath: string;
+  /** 이 회의에 붙여 빌린 장비 종류(ADR-19). 회의를 취소하면 함께 취소돼요. */
+  loans: string[];
 }
 
 /** GET /api/rooms/my-reservations. enabled가 거짓이면(회의실 끔·링크만·쓰기 끔) 내 예약 칸을 숨겨요(R4). */
@@ -134,9 +136,9 @@ export function parseRoomConditionFields(fields: { name: string; value: string }
   return query;
 }
 
-// ── 회의실 둘러보기(10/26): 방 카드 목록 → 방 자세히(설비·지금 상태·하루 일정·이 시간 예약) ──
+// ── 회의실 둘러보기(10/26): 회의실 카드 목록 → 회의실 자세히(설비·지금 상태·하루 일정·이 시간 예약) ──
 
-/** 방 한 칸. 예약자·회의 제목 칸은 타입에 아예 없어요(ADR-06). */
+/** 회의실 한 칸. 예약자·회의 제목 칸은 타입에 아예 없어요(ADR-06). */
 export interface RoomInfo {
   id: string;
   name: string;
@@ -145,13 +147,13 @@ export interface RoomInfo {
   capacity: number;
   /** 찾기 조건으로 쓰는 장비(정해진 목록) */
   equipment: Equipment[];
-  /** 방에 있는 설비 설명(빔프로젝터·화상회의 카메라 등). 장부가 주는 글이에요. */
+  /** 회의실에 있는 설비 설명(빔프로젝터·화상회의 카메라 등). 장부가 주는 글이에요. */
   facilities: string[];
-  /** 방 사진 주소. 시연에서는 그림이에요. 없으면 null이에요. */
+  /** 회의실 사진 주소. 시연에서는 그림이에요. 없으면 null이에요. */
   photoUrl: string | null;
 }
 
-/** 고른 날의 방 상태. 오늘이면 지금 시각 기준이에요. 누가 잡았는지는 없어요. */
+/** 고른 날의 회의실 상태. 오늘이면 지금 시각 기준이에요. 누가 잡았는지는 없어요. */
 export type RoomStatus =
   | { kind: 'free-now'; /** 오늘 다음 예약 시작(HH:MM). 없으면 null */ nextBusyAt: string | null }
   | { kind: 'busy-now'; /** 이어진 예약이 끝나 비는 시각(HH:MM, 자정이면 24:00) */ freeAt: string }
@@ -159,9 +161,11 @@ export type RoomStatus =
 
 export interface RoomListItem extends RoomInfo {
   status: RoomStatus;
+  /** 점검 중인 설비(ADR-19). equipment에는 쓸 수 있는 설비만 남아요. */
+  repairs: Equipment[];
 }
 
-/** GET /api/rooms/list?date=YYYY-MM-DD. 회의실이 "링크만"이면 방 대신 그룹웨어 링크만 와요(R4). */
+/** GET /api/rooms/list?date=YYYY-MM-DD. 회의실이 "링크만"이면 회의실 대신 그룹웨어 링크만 와요(R4). */
 export interface RoomListResponse {
   /** 현황 조회 시각(ISO) */
   checkedAt: string;
@@ -193,9 +197,63 @@ export interface RoomDayResponse {
   blocks: RoomDayBlock[];
 }
 
-/** POST /api/rooms/:id/slot 본문. 그 방 그 시간이 비면 [이 시간으로 예약] 카드, 차 있으면 같은 방 가까운 시간 대안이에요. 아무것도 쓰지 않아요. */
+/** POST /api/rooms/:id/slot 본문. 그 회의실 그 시간이 비면 [이 시간으로 예약] 카드, 차 있으면 같은 회의실 가까운 시간 대안이에요. 아무것도 쓰지 않아요. */
 export interface RoomSlotRequest {
   date: string;
   start: string;
   minutes: number;
+}
+
+// ── 회의실 채팅·장비 대여(10/28, ADR-19) ──────────────────────────────
+
+/** 빌릴 수 있는 이동식 장비 종류. 회의실에 붙은 설비(EQUIPMENT: 화면·화상회의·화이트보드)와 따로예요. */
+export const LOAN_KINDS = ['빔프로젝터', '노트북', '무선 마이크', '웹캠', '스피커폰', 'HDMI 젠더'] as const;
+export type LoanKind = (typeof LOAN_KINDS)[number];
+
+/** 사람별 하루 채팅 자동 실행 상한(ADR-19). 넘으면 카드로만 보여 줘요. */
+export const AUTO_DAILY_LIMIT = 5;
+
+/** 회의실 설비 상태(총무가 바꿔요). 점검 중인 설비는 찾기 조건에 맞지 않아요. */
+export type FacilityStatus = 'ok' | 'repair';
+
+/** 내 장비 대여 한 줄. 내 대여만 와요. */
+export interface MyLoan {
+  id: string;
+  kind: LoanKind;
+  /** "빔프로젝터 1" */
+  itemName: string;
+  /** 가져갈 곳(보관 위치) */
+  home: string;
+  start: string;
+  end: string;
+  when: string;
+  /** 회의에 붙여 빌렸으면 그 회의실 이름 */
+  roomName: string | null;
+  /** 시작 전이면 [대여 취소], 쓰는 중이면 [반납]. 확인 시트를 먼저 띄우는 고정 버튼이에요. */
+  endAction: CardAction;
+}
+
+/** GET /api/rooms/my-loans. enabled가 거짓이면(회의실 쓰기 끔) 칸을 숨겨요. */
+export interface MyLoansResponse {
+  enabled: boolean;
+  items: MyLoan[];
+}
+
+/** POST /api/rooms/chat 본문. 글은 이 요청의 메모리에서만 다루고 저장하지 않아요(R13). */
+export interface RoomChatRequest {
+  text: string;
+  /** 같은 요청이 두 번 와도 한 번만 실행해요(영수증). 보낼 때마다 새로 만들어요. */
+  requestId: string;
+  /** 다른 페이지에서 옮겨 와 사람이 보내기를 누르지 않은 문장이에요. 시키는 말이어도 자동으로 실행하지 않고 카드로만 보여 줘요. */
+  noAuto?: boolean;
+}
+
+export interface RoomChatResponse {
+  /** 말풍선 한 줄 */
+  reply: string;
+  cards: Card[];
+  /** 이 요청으로 예약·대여가 생겼는지(내 예약 목록을 다시 불러요) */
+  changed: boolean;
+  /** 모델이 실제로 해석했는지("AI 정리" 표시) */
+  aiParsed: boolean;
 }

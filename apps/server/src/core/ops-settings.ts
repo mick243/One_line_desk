@@ -8,11 +8,14 @@ import { DeskError } from './errors';
 // 서버 한 대 기준이에요. 뜰 때 한 번 읽고, 바꿀 때 표와 메모리를 같이 바꿔요(여러 대는 L-58).
 
 export type OpsValues = OpsSettings['values'];
+/** 운영 설정의 켜고 끄는 값 */
+export type OpsFlag = 'roomsWrite' | 'mcp' | 'autoActions';
 
 interface Overrides {
   modules?: Partial<Record<ModuleKind, ModuleSwitch>>;
   roomsWrite?: boolean;
   mcp?: boolean;
+  autoActions?: boolean;
   links?: Partial<Record<ModuleKind, string>>;
   values?: Partial<OpsValues>;
 }
@@ -23,6 +26,8 @@ export const OPS_VALUE_RANGE: Record<keyof OpsValues, readonly [number, number]>
   proposalTtlSeconds: [60, 3600],
   planTtlSeconds: [60, 3600],
   employmentRecheckSeconds: [30, 599],
+  // 3시간까지만 받아요. 안내서 74쪽은 "통상적이며 합리적인 수준"을 요구하고, 오래 늘린 채 두는 것을 미조치 예로 들어요.
+  idleTimeoutMinutes: [5, 180],
   rateLimitPerMinute: [1, 600],
 };
 
@@ -34,6 +39,7 @@ function merge(base: OpsSettings, o: Overrides): OpsSettings {
     modules: { ...base.modules, ...o.modules },
     roomsWrite: o.roomsWrite ?? base.roomsWrite,
     mcp: o.mcp ?? base.mcp,
+    autoActions: o.autoActions ?? base.autoActions,
     links: { ...base.links, ...o.links },
     values: { ...base.values, ...o.values },
   };
@@ -75,7 +81,7 @@ export class OpsSettingsStore {
     );
   }
 
-  async setFlag(operatorId: string, flag: 'roomsWrite' | 'mcp', value: boolean): Promise<OpsSettings> {
+  async setFlag(operatorId: string, flag: OpsFlag, value: boolean): Promise<OpsSettings> {
     return this.save({ ...this.overrides, [flag]: value }, { pseudonymId: operatorId, channel: 'ops', action: `${flag}.set`, result: String(value) });
   }
 

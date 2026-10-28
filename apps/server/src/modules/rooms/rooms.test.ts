@@ -103,7 +103,9 @@ describe('F2 회의실 찾기(읽기만)', () => {
     const me = await t.loginAs(MOCK.staff);
     const res = await ask(me);
     expect(res.kind).toBe('rooms');
-    const [cond, ...rest] = res.cards;
+    // 휴대폰에서 후보가 먼저 보이게 후보 → 조건 칩 순서예요. 하늘(3층)에게는 3층 회의실이 먼저예요(10/28 사용성 점검).
+    const cond = res.cards.at(-1);
+    const rest = res.cards.slice(0, -1);
     expect(cond).toMatchObject({ variant: 'rooms-conditions', label: '안내', headline: '이 조건으로 찾았어요' });
     expect(cond!.fields).toEqual([
       { name: '날짜', value: '2026-10-27(화)' },
@@ -114,18 +116,18 @@ describe('F2 회의실 찾기(읽기만)', () => {
       { name: '층', value: '상관없어요' },
     ]);
     expect(rest).toHaveLength(3);
-    expect(rest.map((c) => c.headline)).toEqual(['회의실 5B', '회의실 3C', '대회의실 5C']);
+    expect(rest.map((c) => c.headline)).toEqual(['회의실 3C', '회의실 5B', '대회의실 5C']);
     expect(rest[0]).toMatchObject({
       kind: 'rooms',
       label: '제안',
       fields: [
-        { name: '방·층', value: '회의실 5B · 5층' },
+        { name: '회의실·층', value: '회의실 3C · 3층' },
         { name: '날짜·시간', value: '10월 27일(화) 15:00~16:00' },
-        { name: '맞은 조건', value: '인원 6명 · 화면' },
+        { name: '맞은 조건', value: '인원 6명 · 화면 · 내 층' },
       ],
       // 가짜 공급자라 조건은 규칙으로 뽑았어요. 모델이 뽑지 않았으니 "AI 정리"가 없어요.
       evidence: { text: '현황 09:00 기준', aiSummarized: false },
-      actions: { primary: { type: 'propose', text: '이 방으로 예약' } },
+      actions: { primary: { type: 'propose', text: '이 회의실로 예약' } },
       tail: '아직 예약되지 않았어요',
     });
   });
@@ -141,8 +143,8 @@ describe('F2 회의실 찾기(읽기만)', () => {
 
     t.ctx.ops.patchValues({ defaultMeetingMinutes: 30 });
     const shorter = await ask(me);
-    expect(shorter.cards[0]!.fields).toContainEqual({ name: '길이', value: '30분' });
-    expect(shorter.cards[1]!.fields).toContainEqual({ name: '날짜·시간', value: '10월 27일(화) 15:00~15:30' });
+    expect(shorter.cards.at(-1)!.fields).toContainEqual({ name: '길이', value: '30분' });
+    expect(shorter.cards[0]!.fields).toContainEqual({ name: '날짜·시간', value: '10월 27일(화) 15:00~15:30' });
   });
 
   it('[F2-1] 지난 시간은 고쳐 달라고 해요', async () => {
@@ -152,20 +154,20 @@ describe('F2 회의실 찾기(읽기만)', () => {
     expect(res.cards).toMatchObject([{ variant: 'rooms-conditions', headline: '이미 지난 시간이에요. 날짜나 시작 시각을 고쳐 주세요' }]);
   });
 
-  it('[F2-3] 처음부터 빈 방이 없으면 안내 카드 "그 시간엔 빈 방이 없어요" + 가까운 시간 대안 최대 2개예요', async () => {
+  it('[F2-3] 처음부터 빈 방이 없으면 안내 카드 "그 시간엔 빈 회의실이 없어요" + 가까운 시간 대안 최대 2개예요', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.staff);
     // 20명 넘는 방은 대회의실 5C 하나이고, 내일 9~10시는 남의 예약이 있어요.
     const res = await ask(me, '내일 9시 20명 회의실');
     expect(res.cards.map((c) => [c.label, c.headline])).toEqual([
+      ['안내', '그 시간엔 빈 회의실이 없어요'],
+      ['제안', '대안: 대회의실 5C'],
+      ['제안', '대안: 대회의실 5C'],
       ['안내', '이 조건으로 찾았어요'],
-      ['안내', '그 시간엔 빈 방이 없어요'],
-      ['제안', '대안: 대회의실 5C'],
-      ['제안', '대안: 대회의실 5C'],
     ]);
-    expect(res.cards[1]!.fields).toContainEqual({ name: '대안', value: '가까운 대안 2개' });
-    expect(res.cards.slice(2).map((c) => c.fields.find((f) => f.name === '대안')?.value)).toEqual(['같은 방 60분 앞', '같은 방 60분 뒤']);
-    expect(res.cards.slice(2).map((c) => c.fields.find((f) => f.name === '날짜·시간')?.value)).toEqual([
+    expect(res.cards[0]!.fields).toContainEqual({ name: '대안', value: '가까운 대안 2개' });
+    expect(res.cards.slice(1, 3).map((c) => c.fields.find((f) => f.name === '대안')?.value)).toEqual(['같은 회의실 60분 앞', '같은 회의실 60분 뒤']);
+    expect(res.cards.slice(1, 3).map((c) => c.fields.find((f) => f.name === '날짜·시간')?.value)).toEqual([
       '10월 27일(화) 08:00~09:00',
       '10월 27일(화) 10:00~11:00',
     ]);
@@ -175,9 +177,9 @@ describe('F2 회의실 찾기(읽기만)', () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.staff);
     const res = await ask(me, '내일 3시 30명 회의실');
-    expect(res.cards.map((c) => c.headline)).toEqual(['이 조건으로 찾았어요', '그 시간엔 빈 방이 없어요']);
-    expect(res.cards[1]!.fields).toContainEqual({ name: '대안', value: '대안 없음' });
-    expect(res.cards[0]!.variant).toBe('rooms-conditions');
+    expect(res.cards.map((c) => c.headline)).toEqual(['그 시간엔 빈 회의실이 없어요', '이 조건으로 찾았어요']);
+    expect(res.cards[0]!.fields).toContainEqual({ name: '대안', value: '대안 없음' });
+    expect(res.cards[1]!.variant).toBe('rooms-conditions');
   });
 
   it('[F2-1] 조건 칩을 고쳐 다시 찾으면 새 후보를 주고, 아무것도 쓰지 않아요', async () => {
@@ -188,9 +190,9 @@ describe('F2 회의실 찾기(읽기만)', () => {
     expect(res.status).toBe(200);
     const body = res.body as RoomCardsResponse;
     expect(body.checkedAt).toBe('2026-10-26T09:00:00+09:00');
-    expect(body.cards[0]).toMatchObject({ headline: '고친 조건으로 다시 찾았어요', evidence: { aiSummarized: false } });
-    expect(body.cards.slice(1).map((c) => c.headline)).toEqual(['회의실 3A', '회의실 3C']);
-    expect(body.cards[1]!.fields).toContainEqual({ name: '맞은 조건', value: '인원 4명 · 3층' });
+    expect(body.cards.at(-1)).toMatchObject({ headline: '고친 조건으로 다시 찾았어요', evidence: { aiSummarized: false } });
+    expect(body.cards.slice(0, -1).map((c) => c.headline)).toEqual(['회의실 3A', '회의실 3C']);
+    expect(body.cards[0]!.fields).toContainEqual({ name: '맞은 조건', value: '인원 4명 · 3층' });
     expect(await dump(t.db)).toEqual(before);
 
     // 모르는 칸은 조용히 지우지 않고 거부해요(본문 스키마 additionalProperties: false).
@@ -208,7 +210,7 @@ describe('F2 회의실 찾기(읽기만)', () => {
 });
 
 describe('F2 확인 예약(쓰기 경계, ADR-03·06)', () => {
-  it('[F2-4·F2-7] [이 방으로 예약] → 확인 시트 → [예약하기] 한 번으로 예약되고 확정 카드에 다시 확인한 시각과 취소가 있어요', async () => {
+  it('[F2-4·F2-7] [이 회의실로 예약] → 확인 시트 → [예약하기] 한 번으로 예약되고 확정 카드에 다시 확인한 시각과 취소가 있어요', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.staff);
     const token = tokenOf(proposals((await ask(me)).cards)[0]);
@@ -217,8 +219,8 @@ describe('F2 확인 예약(쓰기 경계, ADR-03·06)', () => {
     expect(created).toMatchObject({
       status: 'sheet',
       sheet: {
-        title: '이 방으로 예약할까요?',
-        lines: ['회의실 5B · 5층', '10월 27일(화) 15:00~16:00', "내 이름으로 예약돼요. 다른 사람에게는 '예약됨'으로만 보여요."],
+        title: '이 회의실로 예약할까요?',
+        lines: ['회의실 3C · 3층', '10월 27일(화) 15:00~16:00', "내 이름으로 예약돼요. 다른 사람에게는 '예약됨'으로만 보여요."],
         confirmLabel: '예약하기',
       },
     });
@@ -233,24 +235,24 @@ describe('F2 확인 예약(쓰기 경계, ADR-03·06)', () => {
         label: '확정',
         headline: '예약했어요',
         fields: [
-          { name: '방·층', value: '회의실 5B · 5층' },
+          { name: '회의실·층', value: '회의실 3C · 3층' },
           { name: '날짜·시간', value: '10월 27일(화) 15:00~16:00' },
           { name: '상태', value: '내 예약' },
         ],
         evidence: { text: '09:02에 다시 확인하고 예약했어요', aiSummarized: false },
         actions: {
           // 확정 뒤 바로 참석자를 부를 수 있어요(ADR-17).
-          primary: { type: 'invite', text: '참석자 초대', roomName: '회의실 5B', when: '10월 27일(화) 15:00~16:00' },
+          primary: { type: 'invite', text: '참석자 초대', roomName: '회의실 3C', when: '10월 27일(화) 15:00~16:00' },
           secondary: [
             { type: 'link', text: '캘린더 파일 받기' },
             { type: 'fixed', text: '취소', method: 'DELETE', confirm: { confirmLabel: '취소하기' } },
           ],
         },
-        tail: '예약 기록이 남아요 · 내 예약은 내 것에서 봐요',
+        tail: '예약 기록이 남아요 · 내 예약은 마이 페이지에서 봐요',
       },
     });
     const rows = await appReservations(t.db);
-    expect(rows).toMatchObject([{ room_id: 'r-5b', plan_id: created.planId }]);
+    expect(rows).toMatchObject([{ room_id: 'r-3c', plan_id: created.planId }]);
   });
 
   it('[F2 완료·ADR-03 시험] plan 없이, 남의 plan_id로, 만료된 plan으로 실행해도 예약 0건이에요', async () => {
@@ -275,7 +277,7 @@ describe('F2 확인 예약(쓰기 경계, ADR-03·06)', () => {
     const expired = await confirm(staff, planId);
     expect(expired).toMatchObject({ status: 'expired', message: '시간이 지나 다시 찾았어요' });
     if (expired.status !== 'expired') throw new Error();
-    expect(expired.cards[0]).toMatchObject({ variant: 'rooms-conditions', headline: '같은 조건으로 다시 찾았어요' });
+    expect(expired.cards.at(-1)).toMatchObject({ variant: 'rooms-conditions', headline: '같은 조건으로 다시 찾았어요' });
     expect(proposals(expired.cards)).toHaveLength(3);
     expect(tokenOf(proposals(expired.cards)[0])).not.toBe(token);
     expect(await appReservations(t.db)).toHaveLength(0);
@@ -319,8 +321,10 @@ describe('F2 확인 예약(쓰기 경계, ADR-03·06)', () => {
     const t = await setup();
     const staff = await t.loginAs(MOCK.staff);
     const dev = await t.loginAs(MOCK.dev);
-    const staffPlan = await sheetFor(staff, tokenOf(proposals((await ask(staff)).cards)[0]));
-    const devPlan = await sheetFor(dev, tokenOf(proposals((await ask(dev)).cards)[0]));
+    // 층이 다르면 각자 내 층 회의실이 1순위라, 같은 회의실을 고르게 층을 말해요(10/28).
+    const text = '내일 3시 6명 화면 있는 5층 회의실';
+    const staffPlan = await sheetFor(staff, tokenOf(proposals((await ask(staff, text)).cards)[0]));
+    const devPlan = await sheetFor(dev, tokenOf(proposals((await ask(dev, text)).cards)[0]));
 
     const [a, b] = await Promise.all([confirm(staff, staffPlan), confirm(dev, devPlan)]);
     const outcomes = [a, b];
@@ -342,7 +346,7 @@ describe('F2 확인 예약(쓰기 경계, ADR-03·06)', () => {
       { type: 'propose', text: '대안으로 예약' },
       { type: 'propose', text: '대안으로 예약' },
     ]);
-    expect(blocked.alternatives.map((c) => c.fields.find((f) => f.name === '대안')?.value)).toEqual(['같은 방 60분 앞', '같은 방 60분 뒤']);
+    expect(blocked.alternatives.map((c) => c.fields.find((f) => f.name === '대안')?.value)).toEqual(['같은 회의실 60분 앞', '같은 회의실 60분 뒤']);
     expect(await appReservations(t.db)).toHaveLength(1);
 
     // 막힌 사람이 대안을 고르면 다시 확인 시트 한 번이에요
@@ -400,8 +404,8 @@ describe('F2 내 예약·취소', () => {
       enabled: true,
       items: [
         {
-          roomName: '회의실 5B',
-          floor: '5층',
+          roomName: '회의실 3C',
+          floor: '3층',
           start: '2026-10-27T15:00:00+09:00',
           end: '2026-10-27T16:00:00+09:00',
           when: '10월 27일(화) 15:00~16:00',
@@ -428,7 +432,7 @@ describe('F2 내 예약·취소', () => {
     expect((await call(me, 'GET', '/api/rooms/my-reservations')).body).toEqual({ enabled: true, items: [] });
     expect(await appReservations(t.db)).toHaveLength(0);
     const history = (await t.db.query<{ room_id: string }>('select room_id from room_reservation_history')).rows;
-    expect(history).toEqual([{ room_id: 'r-5b' }]);
+    expect(history).toEqual([{ room_id: 'r-3c' }]);
     const audit = (
       await t.db.query<{ module: string; action: string; result: string }>("select module, action, result from audit_log where channel = 'write' order by id")
     ).rows;
@@ -437,8 +441,8 @@ describe('F2 내 예약·취소', () => {
       { module: 'rooms', action: 'cancel', result: 'done' },
     ]);
 
-    // 취소한 방은 다시 비어요
-    expect(proposals((await ask(me)).cards)[0]!.headline).toBe('회의실 5B');
+    // 취소한 회의실은 다시 비어요
+    expect(proposals((await ask(me)).cards)[0]!.headline).toBe('회의실 3C');
   });
 });
 
@@ -576,12 +580,12 @@ describe('M3 앱 확인 링크 다시 확인(ADR-14)', () => {
     const body = res.body as RoomCardsResponse;
     expect(body.checkedAt).toBe('2026-10-26T09:01:00+09:00');
     expect(body.cards.map((c) => [c.label, c.headline])).toEqual([
-      ['안내', '이 조건으로 다시 확인했어요'],
       ['제안', '회의실 3C'],
+      ['안내', '이 조건으로 다시 확인했어요'],
     ]);
-    expect(body.cards[0]!.fields).toContainEqual({ name: '인원', value: '6명' });
-    expect(body.cards[1]).toMatchObject({ evidence: { text: '현황 09:01 기준' }, actions: { primary: { type: 'propose', text: '이 방으로 예약' } } });
-    const fresh = tokenOf(body.cards[1]);
+    expect(body.cards[1]!.fields).toContainEqual({ name: '인원', value: '6명' });
+    expect(body.cards[0]).toMatchObject({ evidence: { text: '현황 09:01 기준' }, actions: { primary: { type: 'propose', text: '이 회의실로 예약' } } });
+    const fresh = tokenOf(body.cards[0]);
     expect(fresh).not.toBe(token);
 
     // 예약은 그 다음의 확인 시트 한 번에서만 돼요
@@ -589,7 +593,7 @@ describe('M3 앱 확인 링크 다시 확인(ADR-14)', () => {
     expect(await confirm(me, await sheetFor(me, fresh))).toMatchObject({ status: 'done' });
   });
 
-  it('[M3·R5] 그사이 방이 찼으면 "그 시간엔 빈 방이 없어요" 안내 카드와 대안 최대 2개예요', async () => {
+  it('[M3·R5] 그사이 방이 찼으면 "그 시간엔 빈 회의실이 없어요" 안내 카드와 대안 최대 2개예요', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.staff);
     const token = await mcpToken(t, MOCK.staff, 'r-3c');
@@ -598,13 +602,13 @@ describe('M3 앱 확인 링크 다시 확인(ADR-14)', () => {
     );
     const body = (await call(me, 'POST', '/api/rooms/recheck', { proposalToken: token })).body as RoomCardsResponse;
     expect(body.cards.map((c) => [c.label, c.headline])).toEqual([
+      ['안내', '그 시간엔 빈 회의실이 없어요'],
+      ['제안', '대안: 회의실 3C'],
+      ['제안', '대안: 회의실 3C'],
       ['안내', '이 조건으로 다시 확인했어요'],
-      ['안내', '그 시간엔 빈 방이 없어요'],
-      ['제안', '대안: 회의실 3C'],
-      ['제안', '대안: 회의실 3C'],
     ]);
     // 14:30~15:30이 찼으니 15:30부터(30분 뒤), 앞으로는 13:30부터(90분 앞)가 가장 가까워요.
-    expect(body.cards.slice(2).map((c) => c.fields.find((f) => f.name === '대안')?.value)).toEqual(['같은 방 30분 뒤', '같은 방 90분 앞']);
+    expect(body.cards.slice(1, 3).map((c) => c.fields.find((f) => f.name === '대안')?.value)).toEqual(['같은 회의실 30분 뒤', '같은 회의실 90분 앞']);
   });
 
   it('[M3·F2-5] 만료된 링크는 같은 조건으로 다시 찾은 후보예요', async () => {
@@ -614,8 +618,8 @@ describe('M3 앱 확인 링크 다시 확인(ADR-14)', () => {
     t.advance(11 * 60 * 1000);
     const before = await dump(t.db);
     const body = (await call(me, 'POST', '/api/rooms/recheck', { proposalToken: token })).body as RoomCardsResponse;
-    expect(body.cards[0]).toMatchObject({ variant: 'rooms-conditions', headline: '시간이 지나 다시 찾았어요' });
-    expect(proposals(body.cards).map((c) => c.headline)).toEqual(['회의실 5B', '회의실 3C', '대회의실 5C']);
+    expect(body.cards.at(-1)).toMatchObject({ variant: 'rooms-conditions', headline: '시간이 지나 다시 찾았어요' });
+    expect(proposals(body.cards).map((c) => c.headline)).toEqual(['회의실 3C', '회의실 5B', '대회의실 5C']);
     expect(await dump(t.db)).toEqual(before);
   });
 
@@ -625,7 +629,7 @@ describe('M3 앱 확인 링크 다시 확인(ADR-14)', () => {
     const token = await mcpToken(t, MOCK.staff, 'r-3c');
     await (await asOperator(t)).call('PUT', '/api/ops/flag', { flag: 'roomsWrite', value: false });
     const body = (await call(me, 'POST', '/api/rooms/recheck', { proposalToken: token })).body as RoomCardsResponse;
-    expect(body.cards[1]!.actions.primary).toEqual({ type: 'link', text: '그룹웨어에서 예약하기', href: 'https://groupware.example.com/resources' });
+    expect(body.cards[0]!.actions.primary).toEqual({ type: 'link', text: '그룹웨어에서 예약하기', href: 'https://groupware.example.com/resources' });
   });
 });
 
@@ -655,7 +659,7 @@ describe('MCP용 services.rooms(ADR-14)', () => {
     expect(none.candidates).toEqual([]);
     expect(none.alternatives).toHaveLength(2);
     for (const c of none.alternatives) expect(Object.keys(c).sort()).toEqual(keys);
-    expect(none.emptyReason).toEqual({ code: 'all-booked', message: '조건에 맞는 방이 그 시간에 모두 예약돼 있어요. 가까운 시간 대안을 함께 보냈어요' });
+    expect(none.emptyReason).toEqual({ code: 'all-booked', message: '조건에 맞는 회의실이 그 시간에 모두 예약돼 있어요. 가까운 시간 대안을 함께 보냈어요' });
 
     await expect(rooms.findFree({ date: '내일', start: '15:00', minutes: 60, people: 6, equipment: [] })).rejects.toMatchObject({ status: 400 });
     // 도구 입력에서 길이·장비는 선택 칸이에요. 비면 운영 설정 기본 길이예요.
@@ -672,10 +676,13 @@ describe('MCP용 services.rooms(ADR-14)', () => {
       code: 'past',
       message: '이미 지난 시간이에요(현황 09:00 기준). 지금 이후 시각으로 다시 찾아 주세요',
     });
-    expect((await ask({ people: 30 })).emptyReason).toEqual({ code: 'too-many-people', message: '정원이 30명 이상인 방이 없어요. 가장 큰 방은 20명이에요' });
+    expect((await ask({ people: 30 })).emptyReason).toEqual({
+      code: 'too-many-people',
+      message: '정원이 30명 이상인 회의실이 없어요. 가장 큰 회의실은 20명이에요',
+    });
     expect((await ask({ people: 20, floor: '2층' })).emptyReason).toEqual({
       code: 'no-floor',
-      message: '2층에는 조건에 맞는 방이 없어요. 층을 빼고 다시 찾아 주세요',
+      message: '2층에는 조건에 맞는 회의실이 없어요. 층을 빼고 다시 찾아 주세요',
     });
     // 후보가 있으면 까닭 칸이 없어요.
     expect(Object.keys(await ask({}))).not.toContain('emptyReason');

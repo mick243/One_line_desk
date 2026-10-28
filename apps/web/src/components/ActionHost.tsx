@@ -11,7 +11,11 @@ import { Sheet } from './Sheet';
 interface Confirming {
   sheet: PlanSheet;
   run: () => Promise<PlanConfirmResponse | unknown>;
+  onResult?: ResultHandler;
 }
+
+/** 버튼을 누른 카드를 결과 카드로 바꿔 끼울 때 받는 함수(QA D-B01). 끝난 카드가 실행 전 모양으로 남지 않게 해요. */
+export type ResultHandler = (cards: Card[]) => void;
 
 interface Shown {
   title: string;
@@ -20,11 +24,14 @@ interface Shown {
 }
 
 interface ActionsApi {
-  run(action: CardAction, card?: Card): Promise<void>;
+  /** onResult: 실행이 끝나면 그 카드 자리에 들어갈 결과 카드(확정·취소·막힘+대안·다시 찾은 카드)를 받아요. */
+  run(action: CardAction, card?: Card, onResult?: ResultHandler): Promise<void>;
   /** 결과 카드를 시트로 보여 줘요(앱 확인 링크 진입 등). */
   show(shown: Shown): void;
   /** 쓰기가 끝날 때마다 올라가요. 목록 화면은 이 값이 바뀌면 다시 불러요. */
   version: number;
+  /** 카드 버튼 밖에서 쓰기가 끝났을 때(회의실 채팅 자동 실행, ADR-19) 목록을 다시 불러요. */
+  refresh(): void;
 }
 
 const ActionsContext = createContext<ActionsApi | null>(null);
@@ -64,7 +71,7 @@ export function ActionHost({
   }, []);
 
   const run = useCallback(
-    async (action: CardAction, card?: Card) => {
+    async (action: CardAction, card?: Card, onResult?: ResultHandler) => {
       try {
         switch (action.type) {
           case 'link':
@@ -90,23 +97,28 @@ export function ActionHost({
               return;
             }
             setShown(null);
-            setConfirming({ sheet: created.sheet, run: () => api.confirmPlan(created.planId) });
+            setConfirming({ sheet: created.sheet, run: () => api.confirmPlan(created.planId), onResult });
             return;
           }
-          case 'post':
-            showOutcome(await api.directPlan(action.proposalToken, { itemName: action.itemName }));
+          case 'post': {
+            const res = await api.directPlan(action.proposalToken, { itemName: action.itemName });
+            showOutcome(res);
+            onResult?.(resultCards(res));
             return;
+          }
           case 'fixed': {
             const call = () => apiRequest(action.method, action.path, action.body);
             if (action.confirm) {
-              setConfirming({ sheet: action.confirm, run: call });
+              setConfirming({ sheet: action.confirm, run: call, onResult });
               return;
             }
             const res = await call();
             // 결과 카드를 돌려주는 버튼(취소 등)은 카드를 보여 줘요. 카드 위 버튼(+1 등)은 카드가 그대로라 짧은 확인을 띄워요.
             // 판·목록 줄의 버튼은 목록이 바로 바뀌어서 따로 띄우지 않아요.
-            if (isOutcome(res)) showOutcome(res);
-            else {
+            if (isOutcome(res)) {
+              showOutcome(res);
+              onResult?.(resultCards(res));
+            } else {
               setVersion((v) => v + 1);
               if (card) setShown({ title: '결과', message: '반영했어요', cards: [] });
             }
@@ -120,7 +132,8 @@ export function ActionHost({
     [fail, onNavigate, showOutcome],
   );
 
-  const value = useMemo<ActionsApi>(() => ({ run, show: setShown, version }), [run, version]);
+  const refresh = useCallback(() => setVersion((v) => v + 1), []);
+  const value = useMemo<ActionsApi>(() => ({ run, show: setShown, version, refresh }), [run, version, refresh]);
 
   return (
     <ActionsContext.Provider value={value}>
@@ -133,8 +146,10 @@ export function ActionHost({
             try {
               const res = await confirming.run();
               setConfirming(null);
-              if (isOutcome(res)) showOutcome(res);
-              else setVersion((v) => v + 1);
+              if (isOutcome(res)) {
+                showOutcome(res);
+                confirming.onResult?.(resultCards(res));
+              } else setVersion((v) => v + 1);
             } catch (e) {
               setConfirming(null);
               fail(e);
@@ -183,6 +198,19 @@ export function ConfirmSheet({ sheet, onConfirm, onCancel }: { sheet: PlanSheet;
 
 function busyLabel(label: string): string {
   return label.endsWith('하기') ? `${label.slice(0, -2)}하는 중` : '처리하는 중';
+}
+
+/** 결과 → 그 카드 자리에 들어갈 카드. 확정·취소는 결과 카드, 막힘은 막힘 카드와 대안, 만료는 다시 찾은 카드예요. */
+function resultCards(res: PlanConfirmResponse): Card[] {
+  if (res.status === 'done') return [res.card];
+  if (res.status === 'blocked') return [res.card, ...res.alternatives];
+  return res.cards;
+}
+
+/** 목록에서 id 카드를 결과 카드로 바꿔요. 이미 목록에 있는 카드는 겹쳐 넣지 않아요. */
+export function replaceCard(list: Card[], id: string, next: Card[]): Card[] {
+  const kept = new Set(list.filter((c) => c.id !== id).map((c) => c.id));
+  return list.flatMap((c) => (c.id === id ? next.filter((n) => !kept.has(n.id)) : [c]));
 }
 
 function isOutcome(res: unknown): res is PlanConfirmResponse {

@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AdapterCapabilities } from '../adapters/types';
 import type { AppContext } from '../context';
 import { DeskError } from '../core/errors';
-import { OPS_VALUE_RANGE, type OpsValues } from '../core/ops-settings';
+import { type OpsFlag, OPS_VALUE_RANGE, type OpsValues } from '../core/ops-settings';
 import { listMcpTools } from '../core/tool-registry';
 
 export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demoAdapters: () => AdapterCapabilities[]) {
@@ -26,6 +26,7 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
       modules: s.modules,
       roomsWrite: s.roomsWrite,
       mcp: s.mcp,
+      autoActions: s.autoActions,
       standalone: isPantryStandalone(s),
       demoData: demoAdapters()
         .filter((a) => a.mock)
@@ -60,7 +61,7 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
     async (req) => ctx.ops.setModule(req.deskUser!.pseudonymId, req.body.module, req.body.value),
   );
 
-  app.put<{ Body: { flag: 'roomsWrite' | 'mcp'; value: boolean } }>(
+  app.put<{ Body: { flag: OpsFlag; value: boolean } }>(
     '/api/ops/flag',
     {
       preHandler: [ctx.guards.user, ctx.guards.role('operator')],
@@ -69,7 +70,7 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
           type: 'object',
           required: ['flag', 'value'],
           additionalProperties: false,
-          properties: { flag: { enum: ['roomsWrite', 'mcp'] }, value: { type: 'boolean' } },
+          properties: { flag: { enum: ['roomsWrite', 'mcp', 'autoActions'] }, value: { type: 'boolean' } },
         },
       },
     },

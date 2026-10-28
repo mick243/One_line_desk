@@ -11,6 +11,18 @@ export interface DeskSession {
   csrfToken: string;
   createdAt: number;
   lastEmploymentCheckAt: number;
+  /** 마지막으로 사람이 쓴 시각. 알림 폴링 같은 배경 요청은 세지 않아요. 운영 값 idleTimeoutMinutes를 넘으면 끊겨요(ADR-20, 안전성 확보조치 기준 제6조④). */
+  lastActiveAt: number;
+  /** 이 로그인이 MFA 근거(amr·acr)를 가졌는지. 시연 로그인은 거짓이에요(ADR-20). */
+  mfa: boolean;
+  /** IdP가 알려 준 인증 시각(ms). 다시 로그인 확인에 써요. 없으면 undefined예요. */
+  authTime?: number;
+}
+
+/** 로그인할 때 IdP에서 받은 인증 근거 */
+export interface LoginAssurance {
+  mfa: boolean;
+  authTime?: number;
 }
 
 export class SessionStore {
@@ -18,7 +30,7 @@ export class SessionStore {
 
   constructor(private readonly now: () => number) {}
 
-  create(idpSubject: string, pseudonymId: string): DeskSession {
+  create(idpSubject: string, pseudonymId: string, assurance: LoginAssurance = { mfa: false }): DeskSession {
     const at = this.now();
     const session: DeskSession = {
       id: randomBytes(32).toString('base64url'),
@@ -27,6 +39,9 @@ export class SessionStore {
       csrfToken: randomBytes(24).toString('base64url'),
       createdAt: at,
       lastEmploymentCheckAt: at,
+      lastActiveAt: at,
+      mfa: assurance.mfa,
+      ...(assurance.authTime !== undefined ? { authTime: assurance.authTime } : {}),
     };
     this.sessions.set(session.id, session);
     return session;

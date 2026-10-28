@@ -9,6 +9,7 @@ import {
   type InquiryItem,
   type InquiryListResponse,
   type InquiryRequest,
+  recordCutoff,
 } from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
 import { makeCard } from '../../core/cards';
@@ -25,7 +26,6 @@ import * as repo from './repo';
 // - 알림에는 글을 넣지 않고 "새 문의가 왔어요 · 업무 이름"만 넣어요. 글은 받은 문의함에서 부서를 확인한 뒤 보여 줘요.
 // - LLM은 부르지 않아요.
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const KST_MS = 9 * 60 * 60 * 1000;
 const kstIso = (at: number) => `${new Date(at + KST_MS).toISOString().slice(0, 19)}+09:00`;
 
@@ -86,10 +86,10 @@ function checked(text: string, max: number, what: string): string {
 }
 
 export function createInquiryService(ctx: AppContext) {
-  const purge = () => repo.purgeInquiries(ctx.db, ctx.now() - INQUIRY_KEEP_DAYS * DAY_MS);
+  const purge = () => repo.purgeInquiries(ctx.db, recordCutoff(ctx.now()));
 
   return {
-    /** 90일 지난 문의를 지워요. 서버가 한 시간마다, 목록을 열 때도 불러요(L-33). */
+    /** 7일(INQUIRY_KEEP_DAYS) 지난 문의를 지워요. 서버가 한 시간마다, 목록을 열 때도 불러요(L-33). */
     purge,
 
     /** 문의 보내기. 화면은 확인 시트를 먼저 띄우고, 같은 requestId로 두 번 와도 한 번만 들어가요. */

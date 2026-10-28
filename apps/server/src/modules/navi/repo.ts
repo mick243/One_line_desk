@@ -153,7 +153,12 @@ export async function insertInquiry(q: Queryable, i: Omit<InquiryRow, 'id' | 'st
   return rows[0]!;
 }
 
-/** 보관 기간이 지난 문의를 지워요(90일). */
+/** 보관 기간(7일)이 지난 "틀렸어요" 기록을 지워요. 분장표 주인은 최근 7일 기록만 봐요. */
+export async function purgeFeedback(q: Queryable, before: number): Promise<void> {
+  await q.query('delete from navi_feedback where at < $1', [new Date(before).toISOString()]);
+}
+
+/** 보관 기간이 지난 문의를 지워요(7일). */
 export async function purgeInquiries(q: Queryable, before: number): Promise<void> {
   await q.query('delete from navi_inquiries where created_at < $1', [new Date(before).toISOString()]);
 }

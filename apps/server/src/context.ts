@@ -3,6 +3,7 @@ import type { ResolvedAdapters } from './adapters';
 import type { AdapterCapabilities } from './adapters/types';
 import type { ServerConfig } from './config';
 import type { AiGateway } from './core/ai/gateway';
+import type { AccessRecorder } from './core/access-record';
 import type { AuditLog } from './core/audit';
 import type { Db } from './core/db';
 import type { FixedActions } from './core/fixed-action';
@@ -26,6 +27,8 @@ export interface AppContext {
   dataAdapters: () => AdapterCapabilities[];
   sessions: SessionStore;
   audit: AuditLog;
+  /** 접속기록(ADR-20). 감사 로그와 따로, 법이 요구하는 접속지·처리한 정보주체를 남겨요. */
+  access: AccessRecorder;
   ops: OpsSettingsStore;
   rateLimiter: RateLimiter;
   gateway: AiGateway;

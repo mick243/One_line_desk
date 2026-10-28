@@ -8,11 +8,13 @@ import { RoomConditionsCard } from './RoomConditionsCard';
 export { DemoInbox, InvitedMeetings } from './Invited';
 export { InviteSheet } from './InviteSheet';
 export { RoomDirectory } from './RoomDirectory';
+export { MyLoans, RoomChat } from './RoomChat';
 
 // F2 회의실 화면 부품.
 // - MyReservations: S1(compact, 짧은 목록)·S6 "내 예약" 칸. [취소]는 확인 시트를 거쳐요(ADR-03).
 // - roomsCardRenderers: S2 조건 칩 줄(카드 variant 'rooms-conditions'). registry에 붙이는 건 리드가 해요.
-// - RoomDirectory: 회의실 페이지 "모든 회의실" 방 카드와 방 자세히(10/26).
+// - RoomDirectory: 회의실 페이지 "모든 회의실" 회의실 카드와 회의실 자세히(10/26).
+// - RoomChat·MyLoans: 회의실 채팅(시키면 바로 예약·대여)과 "내 대여" 칸(10/28, ADR-19).
 
 const COMPACT_LIMIT = 2;
 
@@ -59,7 +61,7 @@ export function MyReservations({ compact }: { compact?: boolean }) {
     <section className='card' aria-label='내 예약'>
       <h2>내 예약</h2>
       {items.length === 0 ? (
-        <p className='empty'>{compact ? '다가오는 예약이 없어요.' : '예약이 없어요. 회의실 탭에서 빈 방을 찾아보세요.'}</p>
+        <p className='empty'>{compact ? '다가오는 예약이 없어요.' : '예약이 없어요. 회의실 탭에서 빈 회의실을 찾아보세요.'}</p>
       ) : (
         <ul className='plain my-reservations'>
           {items.map((r) => (
@@ -69,6 +71,7 @@ export function MyReservations({ compact }: { compact?: boolean }) {
                   <strong>{r.roomName}</strong> · {r.floor}
                 </p>
                 <p className='hint'>{r.when} · 내 예약</p>
+                {r.loans.length > 0 && <p className='hint'>같이 빌린 장비: {r.loans.join(' · ')}</p>}
                 {r.attendees.length > 0 && (
                   <p className='hint'>{r.attendees.map((a) => `${a.name.split(' ').at(-1)}(${INVITE_RESPONSE_LABEL[a.response]})`).join(' · ')}</p>
                 )}
@@ -95,7 +98,7 @@ export function MyReservations({ compact }: { compact?: boolean }) {
           ))}
         </ul>
       )}
-      {more > 0 && <p className='hint'>내 것에서 {more}건 더 볼 수 있어요.</p>}
+      {more > 0 && <p className='hint'>마이 페이지에서 {more}건 더 볼 수 있어요.</p>}
     </section>
   );
 }

@@ -1,7 +1,7 @@
 import { personNameWords } from '@one-line-desk/shared';
 import { createRemoteJWKSet, type JWTPayload, type JWTVerifyGetKey, jwtVerify } from 'jose';
 import { matchPeople } from './people';
-import type { AdapterCapabilities, DirectoryAdapter, EmployeeProfile, IdpAdapter, OidcLogin } from './types';
+import type { AdapterCapabilities, DirectoryAdapter, EmployeeProfile, IdpAdapter, LoginEvidence, OidcLogin } from './types';
 
 // 임시 IdP(Keycloak) 어댑터(10/26). 로그인은 OIDC 인가 코드 + PKCE, 직원 명단은 관리 API를 명단 읽기 전용 클라이언트로 읽어요.
 // 회사 IdP를 흉내 내요: 부서·층·역할은 그룹(/부서/개발팀, /층/5층, /역할/facilities)으로 받아요. 가상 직원이라 띠에는 시연 데이터로 떠요.
@@ -49,6 +49,16 @@ export function profileFromGroups(paths: string[]): Pick<EmployeeProfile, 'depar
   };
 }
 
+/** ID 토큰의 인증 근거(amr·acr·auth_time). 모양이 틀린 값은 버려요(ADR-20). */
+export function evidenceOf(claims: JWTPayload): LoginEvidence {
+  const amr = Array.isArray(claims.amr) ? claims.amr.filter((a): a is string => typeof a === 'string') : typeof claims.amr === 'string' ? [claims.amr] : [];
+  return {
+    amr,
+    ...(typeof claims.acr === 'string' ? { acr: claims.acr } : {}),
+    ...(typeof claims.auth_time === 'number' ? { authTime: claims.auth_time * 1000 } : {}),
+  };
+}
+
 /** 성 자리 + 이름(예: "가상 직원" + "도윤" → "가상 직원 도윤") */
 function displayNameOf(last: unknown, first: unknown, fallback: string): string {
   const name = [last, first].filter((x): x is string => typeof x === 'string' && x.trim() !== '').join(' ');
@@ -93,7 +103,7 @@ export class KeycloakAdapter implements IdpAdapter, DirectoryAdapter, OidcLogin 
     return this.discovery;
   }
 
-  async authorizationUrl(p: { state: string; nonce: string; codeChallenge: string; redirectUri: string }): Promise<string> {
+  async authorizationUrl(p: Parameters<OidcLogin['authorizationUrl']>[0]): Promise<string> {
     const url = new URL((await this.meta()).authorization_endpoint);
     url.search = new URLSearchParams({
       response_type: 'code',
@@ -104,17 +114,27 @@ export class KeycloakAdapter implements IdpAdapter, DirectoryAdapter, OidcLogin 
       nonce: p.nonce,
       code_challenge: p.codeChallenge,
       code_challenge_method: 'S256',
+      ...(p.prompt ? { prompt: p.prompt } : {}),
+      ...(p.maxAge !== undefined ? { max_age: String(p.maxAge) } : {}),
+      ...(p.acrValues ? { acr_values: p.acrValues } : {}),
     }).toString();
     return url.toString();
   }
 
-  async finishLogin(p: { code: string; codeVerifier: string; nonce: string; redirectUri: string }): Promise<EmployeeProfile | null> {
+  async finishLogin(p: {
+    code: string;
+    codeVerifier: string;
+    nonce: string;
+    redirectUri: string;
+  }): Promise<{ profile: EmployeeProfile; evidence: LoginEvidence } | null> {
     const meta = await this.meta();
     const res = await this.http(meta.token_endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: basic(this.cfg.clientId, this.cfg.clientSecret) },
       body: new URLSearchParams({ grant_type: 'authorization_code', code: p.code, redirect_uri: p.redirectUri, code_verifier: p.codeVerifier }),
     });
+    // 5xx는 IdP 문제라 던져요(화면이 "회사 로그인에 닿지 못했어요"를 보여요). 4xx는 이 로그인이 틀린 거예요.
+    if (res.status >= 500) throw new Error(`IdP 토큰 창구가 답하지 못했어요(${res.status})`);
     if (!res.ok) return null;
     const idToken = ((await res.json()) as { id_token?: unknown }).id_token;
     if (typeof idToken !== 'string') return null;
@@ -127,12 +147,13 @@ export class KeycloakAdapter implements IdpAdapter, DirectoryAdapter, OidcLogin 
     }
     if (claims.nonce !== p.nonce || typeof claims.sub !== 'string') return null;
     const groups = Array.isArray(claims.groups) ? claims.groups.filter((g): g is string => typeof g === 'string') : [];
-    return {
+    const profile: EmployeeProfile = {
       idpSubject: SUBJECT_PREFIX + claims.sub,
       displayName: displayNameOf(claims.family_name, claims.given_name, String(claims.preferred_username ?? '직원')),
       ...profileFromGroups(groups),
       ...(typeof claims.email === 'string' ? { email: claims.email } : {}),
     };
+    return { profile, evidence: evidenceOf(claims) };
   }
 
   // ---- 직원 명단(관리 API) ----

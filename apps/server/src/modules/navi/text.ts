@@ -107,6 +107,10 @@ const STOPWORDS = new Set([
   '되요',
 ]);
 
+// 여러 업무에 두루 쓰이는 말. 이 말만 맞으면 담당 카드를 만들지 않아요("대출 서류" → 연말정산 서류, "메일 용량" → 피싱 메일).
+// 후보에는 남겨서 AI 고르기·틀렸어요 후보로는 쓸 수 있어요(AI 접목 회의 QA 2차).
+export const GENERIC_WORDS = new Set(['서류', '메일', '신청', '예약', '지원', '양식', '요청', '출장']);
+
 export function normalize(text: string): string {
   return text.normalize('NFC').toLowerCase();
 }

@@ -1,22 +1,29 @@
 import {
+  checkInput,
   EQUIPMENT,
   INVITE_MAX,
   type InviteRequest,
   type RoomCardsResponse,
+  type RoomChatRequest,
+  type RoomChatResponse,
   type RoomDayResponse,
   type RoomListResponse,
   type RoomQuery,
   type RoomSlotRequest,
+  type Equipment,
+  type FacilityStatus,
 } from '@one-line-desk/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../../context';
 import { DeskError } from '../../core/errors';
 import { linkCard } from '../../core/router';
 import { kstIso } from './search';
+import type { RoomChat } from './chat';
+import type { RoomEquipment } from './equipment';
 import type { RoomDesk } from './service';
 
 // 회의실 경로(F2, M3). 읽기 경로(찾기·다시 확인·내 예약)는 DB에 쓰지 않아요.
-// 쓰기는 /api/plans(확인 시트)와 아래 DELETE(고정 버튼, 확인 시트 뒤)뿐이에요(ADR-03).
+// 쓰기는 /api/plans(확인 시트), 아래 DELETE·PUT(고정 버튼, 확인 시트 뒤), 채팅 명령(자동 실행 허용 목록, ADR-19)뿐이에요(ADR-03).
 
 const QUERY_SCHEMA = {
   type: 'object',
@@ -31,7 +38,7 @@ const QUERY_SCHEMA = {
   },
 } as const;
 
-export function registerRoomRoutes(app: FastifyInstance, ctx: AppContext, desk: RoomDesk): void {
+export function registerRoomRoutes(app: FastifyInstance, ctx: AppContext, desk: RoomDesk, equipment: RoomEquipment, chat: RoomChat): void {
   // 조건 칩을 고친 뒤 다시 찾기. 아무것도 쓰지 않아요. 길이가 비면 운영 설정 기본값이에요.
   app.post<{ Body: { query: Partial<RoomQuery> } }>(
     '/api/rooms/search',
@@ -180,4 +187,66 @@ export function registerRoomRoutes(app: FastifyInstance, ctx: AppContext, desk: 
       .header('cache-control', 'no-store')
       .send(file.body);
   });
+
+  // ── 회의실 채팅·장비 대여(ADR-19) ─────────────────────────────
+
+  // 채팅 한 줄. 글은 이 요청의 메모리에서만 다루고 저장하지 않아요(R13). 시킨 예약·대여만 바로 실행해요.
+  app.post<{ Body: RoomChatRequest }>(
+    '/api/rooms/chat',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['text', 'requestId'],
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string', minLength: 1, maxLength: 500 },
+            requestId: { type: 'string', pattern: '^[A-Za-z0-9_-]{8,64}$' },
+            noAuto: { type: 'boolean' },
+          },
+        },
+      },
+    },
+    async (req, reply): Promise<RoomChatResponse | undefined> => {
+      const user = req.deskUser!;
+      if (!ctx.rateLimiter.hit(user.pseudonymId, 'ask')) {
+        return reply.code(429).send({ error: 'rate-limited', message: '요청이 많아요. 잠시 뒤에 다시 보내 주세요.' });
+      }
+      // 브라우저와 같은 규칙으로 다시 검사해요. 걸리면 내용 없이 버리고 "잠김"만 남겨요(ADR-11).
+      const checked = checkInput(req.body.text);
+      if (checked.locks.length > 0) {
+        await ctx.audit.record({ pseudonymId: user.pseudonymId, channel: 'ask', module: 'rooms', action: 'chat', result: 'locked' });
+        return reply.code(422).send({ error: 'locked', message: checked.locks[0]!.message, locks: checked.locks, rulesVersion: checked.rulesVersion });
+      }
+      const { code, ...answer } = await chat.reply(user, checked.text, req.body.requestId, { noAuto: req.body.noAuto === true });
+      await ctx.audit.record({ pseudonymId: user.pseudonymId, channel: 'ask', module: 'rooms', action: 'chat', result: code });
+      return answer;
+    },
+  );
+
+  app.get('/api/rooms/my-loans', { preHandler: ctx.guards.user }, async (req) => equipment.myLoans(req.deskUser!));
+
+  // [대여 취소](시작 전)·[반납](쓰는 중). 화면이 확인 시트를 먼저 띄워요.
+  app.delete<{ Params: { id: string } }>('/api/rooms/loans/:id', { preHandler: ctx.guards.user, schema: { params: ID_PARAMS } }, async (req) =>
+    equipment.endLoan(req.deskUser!, req.params.id),
+  );
+
+  // 회의실 설비 상태(정상·점검 중). 총무만 바꿔요.
+  app.put<{ Params: { id: string }; Body: { facility: Equipment; status: FacilityStatus } }>(
+    '/api/rooms/:id/facilities',
+    {
+      preHandler: [ctx.guards.user, ctx.guards.role('facilities')],
+      schema: {
+        params: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: ROOM_ID } },
+        body: {
+          type: 'object',
+          required: ['facility', 'status'],
+          additionalProperties: false,
+          properties: { facility: { enum: [...EQUIPMENT] }, status: { enum: ['ok', 'repair'] } },
+        },
+      },
+    },
+    async (req) => equipment.setFacility(req.deskUser!, req.params.id, req.body.facility, req.body.status),
+  );
 }

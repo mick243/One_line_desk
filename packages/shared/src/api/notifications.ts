@@ -11,7 +11,7 @@ export interface DeskNotification {
   read: boolean;
 }
 
-/** GET /api/notifications. 최근 30일, 최대 30개예요. */
+/** GET /api/notifications. 최근 7일(RECORD_KEEP_DAYS), 최대 30개예요. */
 export interface NotificationsResponse {
   unread: number;
   items: DeskNotification[];

@@ -15,7 +15,8 @@ export interface Feature {
   summary: string;
   placeholder: string;
   submit: string;
-  examples: string[];
+  /** 없으면 "이렇게 써 보세요" 줄을 그리지 않아요. 담당 찾기는 중요한 일이라 예시 없이 자기 상황을 쓰게 해요(10/28). */
+  examples?: string[];
 }
 
 export const FEATURES: Feature[] = [
@@ -28,17 +29,16 @@ export const FEATURES: Feature[] = [
     summary: '업무 분장표에서 담당 부서와 지금 할 일을 찾아 줘요.',
     placeholder: '예) 법인카드를 잃어버렸어요',
     submit: '담당 찾기',
-    examples: ['법인카드 잃어버렸어요', '명함 새로 만들고 싶어요', '재직증명서 어디서 떼요?'],
   },
   {
     module: 'rooms',
     page: 'rooms',
     title: '회의실',
-    question: '언제, 몇 명이 쓰나요?',
-    short: '빈 방을 찾고 확인 한 번으로 예약해요',
-    summary: '한 줄로 쓰면 빈 방을 찾아요. 확인 한 번이면 예약돼요.',
+    question: '회의실, 무엇을 할까요?',
+    short: '빈 회의실 찾기·예약·장비 대여를 한 줄로 해요',
+    summary: '물어보면 빈 회의실을 찾고, "잡아 줘"처럼 시키면 바로 예약해요. 직접 고르려면 아래 모든 회의실을 봐요.',
     placeholder: '예) 내일 3시 6명',
-    submit: '빈 방 찾기',
+    submit: '빈 회의실 찾기',
     examples: ['내일 3시 6명', '다음 주 화요일 10시부터 2시간 4명', '금요일 오전 11시 화상회의 8명'],
   },
   {
@@ -73,15 +73,21 @@ const LINK_COPY: Record<ModuleKind, Pick<Feature, 'short' | 'summary'>> = {
   pantry: { short: '비품 요청은 그룹웨어에서 해요', summary: '지금은 비품 요청을 그룹웨어에서 해요. 한 줄로 쓰면 그룹웨어로 가는 길을 알려 줘요.' },
 };
 const ROOMS_READ_ONLY: Pick<Feature, 'short' | 'summary'> = {
-  short: '빈 방을 찾아 줘요. 예약은 그룹웨어에서 해요',
-  summary: '한 줄로 쓰면 빈 방을 찾아요. 예약은 그룹웨어에서 해요.',
+  short: '빈 회의실을 찾아 줘요. 예약은 그룹웨어에서 해요',
+  summary: '한 줄로 쓰면 빈 회의실과 장비 현황을 찾아요. 예약·대여는 그룹웨어에서 해요.',
+};
+/** 채팅 자동 실행이 꺼졌을 때(ADR-19): 시켜도 바로 예약하지 않고 카드에서 확인해요. */
+const ROOMS_CONFIRM: Pick<Feature, 'short' | 'summary'> = {
+  short: '빈 회의실을 찾고 확인 한 번으로 예약해요',
+  summary: '한 줄로 쓰면 빈 회의실을 찾아요. 카드에서 확인 한 번이면 예약돼요. 직접 고르려면 아래 모든 회의실을 봐요.',
 };
 
-/** 지금 스위치에 맞춘 기능 소개. 켬이면 그대로, 링크만·회의실 쓰기 끔이면 "그룹웨어에서 해요"로 바꿔요. */
-export function featureFor(feature: Feature, switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean }): Feature {
+/** 지금 스위치에 맞춘 기능 소개. 켬이면 그대로, 링크만·회의실 쓰기 끔이면 "그룹웨어에서 해요", 채팅 자동 실행 끔이면 "확인 한 번으로"로 바꿔요. */
+export function featureFor(feature: Feature, switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; autoActions?: boolean }): Feature {
   const value = switches.modules[feature.module];
   if (value === 'link') return { ...feature, ...LINK_COPY[feature.module] };
   if (feature.module === 'rooms' && value === 'on' && !switches.roomsWrite) return { ...feature, ...ROOMS_READ_ONLY };
+  if (feature.module === 'rooms' && value === 'on' && switches.autoActions === false) return { ...feature, ...ROOMS_CONFIRM };
   return feature;
 }
 

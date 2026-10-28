@@ -14,7 +14,7 @@ export function Home({
   onOpen,
 }: {
   me: Me;
-  switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean };
+  switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; autoActions: boolean };
   onOpen: (page: AppDestination, text?: string) => void;
 }) {
   const { MyReservations, MyRequests } = webModules;

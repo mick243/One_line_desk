@@ -179,8 +179,8 @@ export function ConsentScreen({ me }: ScreenProps) {
   }
 
   const backToApp = (
-    <button type='button' className='secondary small' onClick={() => void actions.run({ type: 'navigate', text: '내 것으로 가기', to: 'mine' })}>
-      내 것으로 가기
+    <button type='button' className='secondary small' onClick={() => void actions.run({ type: 'navigate', text: '마이 페이지로 가기', to: 'mine' })}>
+      마이 페이지로 가기
     </button>
   );
 
@@ -211,7 +211,7 @@ export function ConsentScreen({ me }: ScreenProps) {
       <section className='card'>
         <h2>읽는 것</h2>
         <ul className='plain'>
-          {tools.includes('rooms.read') && <li>빈 회의실 찾기: 방·층·시간·인원·장비만{roomsWrite ? '' : ' · 예약은 그룹웨어에서 해요'}</li>}
+          {tools.includes('rooms.read') && <li>빈 회의실 찾기: 회의실·층·시간·인원·장비만{roomsWrite ? '' : ' · 예약은 그룹웨어에서 해요'}</li>}
           {tools.includes('notices.read') && <li>공지 찾기: 허용 게시판 공지의 제목·게시일·원문 링크만</li>}
         </ul>
       </section>
@@ -226,7 +226,7 @@ export function ConsentScreen({ me }: ScreenProps) {
       </section>
 
       <p className='mask-line'>찾은 결과는 {appName}의 AI 모델로 보내져요</p>
-      <p className='hint'>끊는 곳: 내 것 &gt; 연결된 AI 앱</p>
+      <p className='hint'>끊는 곳: 마이 페이지 &gt; 연결된 AI 앱</p>
 
       <div className='actions' role='group' aria-label='연결 동의'>
         <button type='button' className='secondary' disabled={busy} onClick={() => void decide('allow', appName)}>
@@ -237,7 +237,7 @@ export function ConsentScreen({ me }: ScreenProps) {
         </button>
       </div>
       <p className='hint'>
-        부른 도구와 시각만 남아요. 무엇을 찾았는지는 남지 않아요 · 언제든 내 것 &gt; 연결된 AI 앱에서 끊을 수 있어요. 퇴사하면 자동으로 끊겨요
+        부른 도구와 시각만 남아요. 무엇을 찾았는지는 남지 않아요 · 언제든 마이 페이지 &gt; 연결된 AI 앱에서 끊을 수 있어요. 퇴사하면 자동으로 끊겨요
       </p>
     </div>
   );
@@ -247,7 +247,7 @@ type LinkView = { kind: 'loading' } | { kind: 'ok'; checkedAt: string; cards: Ca
 
 /**
  * 앱 확인 링크로 들어온 S2(M3). 로그인 뒤 회의실 쓰기 경로가 토큰 주인을 검사하고 지금 다시 조회해요.
- * 링크를 연 건 확인이 아니에요. [이 방으로 예약] → 확인 시트 [예약하기]가 유일한 확인이에요(R2).
+ * 링크를 연 건 확인이 아니에요. [이 회의실로 예약] → 확인 시트 [예약하기]가 유일한 확인이에요(R2).
  */
 export function LinkEntry({ token }: ScreenProps & { token: string }) {
   const actions = useActions();
@@ -285,7 +285,7 @@ export function LinkEntry({ token }: ScreenProps & { token: string }) {
   }
 
   const checked = Date.parse(view.checkedAt);
-  // 링크를 연 사람은 고른 방을 먼저 봐야 해요. 조건 고치기 카드는 방 카드 뒤로 보내요(10/26 MCP 베타 시험).
+  // 링크를 연 사람은 고른 회의실을 먼저 봐야 해요. 조건 고치기 카드는 회의실 카드 뒤로 보내요(10/26 MCP 베타 시험).
   const ordered = [...view.cards.filter((c) => c.variant !== ROOM_CONDITIONS_VARIANT), ...view.cards.filter((c) => c.variant === ROOM_CONDITIONS_VARIANT)];
   return (
     <div className='ask' aria-label='Claude에서 가져온 후보'>

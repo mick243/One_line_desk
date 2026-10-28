@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMockAdapters, type Adapters } from './adapters';
 import { buildApp } from './app';
-import { loadConfig } from './config';
+import { loadConfig, nodeSupportsEnvProxy } from './config';
 import { createTestDb } from './core/db/test-db';
 
 // 운영 설정이 실수하면 닫히게(L-15)와 mock 판정 한 곳(L-16). 비밀 값은 시험용 가짜 값이에요.
@@ -112,5 +112,69 @@ describe('mock 판정 한 곳(L-16)', () => {
     } finally {
       await db.close();
     }
+  });
+});
+
+describe('사내망·밖 접속 설정 검사(10/28 망 회의, C-3)', () => {
+  const NODE24 = { node: '24.11.0', execArgv: [] };
+
+  it.each([
+    [{ TRUST_PROXY: 'true' }, 'TRUST_PROXY=true는 위조한 접속 IP를 믿어요'],
+    [{ TRUST_PROXY: '1' }, 'TRUST_PROXY에 숫자(단계 수)는 쓸 수 없어요'],
+    [{ TRUST_PROXY: '10.0.3.11,uniquelocal' }, 'TRUST_PROXY에 이름 대역은 너무 넓어요'],
+    [{ HTTPS_PROXY: 'http://proxy.corp:8080' }, 'HTTPS_PROXY이 있지만 Node가 쓰지 않아요'],
+    [{ NODE_TLS_REJECT_UNAUTHORIZED: '0' }, 'NODE_TLS_REJECT_UNAUTHORIZED=0을 지워 주세요'],
+    [{ PUBLIC_BASE_URL: 'https://desk.example.com/' }, 'PUBLIC_BASE_URL은 https://이름 모양이어야 해요'],
+    [{ PUBLIC_BASE_URL: 'https://example.com/desk' }, 'PUBLIC_BASE_URL은 https://이름 모양이어야 해요'],
+    [{ ANTHROPIC_BASE_URL: 'http://ai-gateway.corp' }, 'ANTHROPIC_BASE_URL은 https 주소여야 해요'],
+  ])('운영에서 %o → 뜨지 않아요', (patch, reason) => {
+    expect(problemsOf({ ...PROD, ...patch })).toContain(reason);
+  });
+
+  it('관문 주소 하나, 프록시를 켠 사내 출구, 일부러 끈 프록시는 받아요', () => {
+    expect(loadConfig({ ...PROD, TRUST_PROXY: '10.0.3.11' }, NODE24).trustProxy).toBe('10.0.3.11');
+    expect(() => loadConfig({ ...PROD, HTTPS_PROXY: 'http://proxy.corp:8080', NODE_USE_ENV_PROXY: '1' }, NODE24)).not.toThrow();
+    expect(() =>
+      loadConfig({ ...PROD, HTTPS_PROXY: 'http://proxy.corp:8080', NODE_OPTIONS: '--max-old-space-size=512 --use-env-proxy' }, NODE24),
+    ).not.toThrow();
+    expect(() => loadConfig({ ...PROD, HTTPS_PROXY: 'http://proxy.corp:8080' }, { node: '24.11.0', execArgv: ['--use-env-proxy'] })).not.toThrow();
+    expect(() => loadConfig({ ...PROD, HTTPS_PROXY: 'http://proxy.corp:8080', NODE_USE_ENV_PROXY: '0' }, NODE24)).not.toThrow();
+  });
+
+  it('프록시 기능이 없는 Node 판이면 뜨지 않아요(22.21·24.0부터)', () => {
+    const env = { ...PROD, HTTPS_PROXY: 'http://proxy.corp:8080', NODE_USE_ENV_PROXY: '1' };
+    expect(() => loadConfig(env, { node: '22.20.0', execArgv: [] })).toThrow('NODE_USE_ENV_PROXY가 없어요');
+    expect(
+      [
+        ['22.20.0', false],
+        ['22.21.0', true],
+        ['23.11.0', false],
+        ['24.0.0', true],
+        ['v24.18.0', true],
+      ].map(([v]) => nodeSupportsEnvProxy(v as string)),
+    ).toEqual([false, true, false, true, true]);
+  });
+
+  it('"prod"·"Production" 같은 NODE_ENV는 개발 모드로 뜨지 않고 멈춰요', () => {
+    for (const value of ['prod', 'Production', 'staging']) expect(problemsOf({ ...PROD, NODE_ENV: value })).toContain('NODE_ENV는');
+    expect(problemsOf({ NODE_ENV: 'test' })).toBe('');
+  });
+
+  it('시연 깃발이 실제 연결 설정과 섞이면 뜨지 않아요(QA-47)', () => {
+    const demo = { NODE_ENV: 'production', DESK_MOCK_LOGIN: 'true', PUBLIC_BASE_URL: 'https://demo.example.com', ...SECRETS };
+    expect(problemsOf({ ...PROD, DESK_MOCK_LOGIN: 'true' })).toContain('시연 배포(DESK_MOCK_LOGIN=true)에 실제 연결 설정이 있어요(DESK_IDP)');
+    expect(problemsOf({ ...demo, SLACK_BOT_TOKEN: 'xoxb-test' })).toContain('SLACK_BOT_TOKEN');
+    expect(problemsOf({ ...demo, DATABASE_URL: 'postgres://desk@db.example.com/demo' })).toContain('시연 배포가 DATABASE_URL을 써요');
+    expect(loadConfig({ ...demo, DATABASE_URL: 'postgres://desk@db.example.com/demo', DESK_DEMO_DATABASE: 'true' })).toMatchObject({ demo: true });
+  });
+
+  it('MFA 정책 값은 정해진 것만 받아요', () => {
+    expect(loadConfig({})).toMatchObject({ requireMfa: 'off', mfaAmr: ['mfa', 'otp', 'hwk', 'swk'], mfaAcr: [] });
+    expect(loadConfig({ DESK_REQUIRE_MFA: 'always', DESK_IDP_MFA_AMR: 'mfa, fido', DESK_IDP_MFA_ACR: 'gold' })).toMatchObject({
+      requireMfa: 'always',
+      mfaAmr: ['mfa', 'fido'],
+      mfaAcr: ['gold'],
+    });
+    expect(() => loadConfig({ DESK_REQUIRE_MFA: 'sometimes' })).toThrow('DESK_REQUIRE_MFA는');
   });
 });

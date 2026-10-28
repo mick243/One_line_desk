@@ -9,6 +9,8 @@ export interface OpsSettings {
   roomsWrite: boolean;
   /** MCP 전체 스위치(M5). 해당 모듈이 켬일 때만 그 도구가 나와요. */
   mcp: boolean;
+  /** 채팅 자동 실행(ADR-19). 끄면 채팅도 카드와 확인 시트로만 예약·대여해요. */
+  autoActions: boolean;
   /** 이번 2주는 고정이에요(M6). */
   noticeSummary: false;
   s5Mode: 'list-only';
@@ -20,6 +22,11 @@ export interface OpsSettings {
     proposalTtlSeconds: number;
     planTtlSeconds: number;
     employmentRecheckSeconds: number;
+    /**
+     * 이만큼 쓰지 않으면 로그인이 끊겨요(안전성 확보조치 기준 제6조④, ADR-20). 기본 3시간: 점심을 넣은 정규 업무시간(9시간)에
+     * 다시 인증이 많아야 3번이에요(10/28 사용자 결정). 시간은 내부 관리계획에 적어요(안내서 74쪽, CD-31).
+     */
+    idleTimeoutMinutes: number;
     rateLimitPerMinute: number;
   };
 }
@@ -28,6 +35,7 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
   modules: { navi: 'on', notices: 'on', rooms: 'on', pantry: 'on' },
   roomsWrite: true,
   mcp: false,
+  autoActions: true,
   noticeSummary: false,
   s5Mode: 'list-only',
   links: {
@@ -42,12 +50,13 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     planTtlSeconds: 600,
     // 퇴사 시 늦어도 10분 안에 끊겨야 해서 10분보다 짧게 둬요(ADR-13).
     employmentRecheckSeconds: 300,
+    idleTimeoutMinutes: 180,
     rateLimitPerMinute: 20,
   },
 };
 
-/** 출시(운영) 기본값(CD-14): 회의실 쓰기·MCP는 끈 채로 시작해요. 운영자가 바꾸면 운영 설정 표에 남아요. */
-export const LAUNCH_OPS_SETTINGS: OpsSettings = { ...DEFAULT_OPS_SETTINGS, roomsWrite: false, mcp: false };
+/** 출시(운영) 기본값(CD-14): 회의실 쓰기·MCP·채팅 자동 실행은 끈 채로 시작해요. 운영자가 바꾸면 운영 설정 표에 남아요. */
+export const LAUNCH_OPS_SETTINGS: OpsSettings = { ...DEFAULT_OPS_SETTINGS, roomsWrite: false, mcp: false, autoActions: false };
 
 /** "같이 채워요 단독" 모드 = navi·notices·rooms 모두 끔. 묻기 탭을 숨기고 같이 채워요 탭이 첫 화면이에요. */
 export function isPantryStandalone(settings: OpsSettings): boolean {

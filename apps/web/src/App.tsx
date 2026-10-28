@@ -1,6 +1,6 @@
 import type { AppDestination, Kind } from '@one-line-desk/shared';
 import { useCallback, useEffect, useState } from 'react';
-import { api, type Me, onSessionEnded, type PublicConfig, SESSION_ENDED_MESSAGE } from './api';
+import { api, IDLE_ENDED_MESSAGE, type Me, onSessionEnded, type PublicConfig, SESSION_ENDED_MESSAGE, sessionEndedByIdle } from './api';
 import { ActionHost } from './components/ActionHost';
 import { DemoBand } from './components/DemoBand';
 import { NotificationBell } from './components/NotificationBell';
@@ -38,6 +38,8 @@ export function App() {
   // 다른 페이지로 옮겨 가는 문장(예시 문장, "종류가 달라요", [담당 찾기로 옮기기]). 앱 메모리에만 둬요(R13).
   // auto: 다른 기능에서 옮겨 온 문장이면 그 페이지에서 바로 찾아요. 홈 예시 문장은 채우기만 해요.
   const [handoff, setHandoff] = useState<{ to: View; text: string; at: number; auto: boolean } | null>(null);
+  // 회의실 입력 칸의 최근 쓴 문장(최대 5개). 이 창 메모리에만 있어요. 저장소·서버에는 두지 않아요(R13).
+  const [roomRecent, setRoomRecent] = useState<string[]>([]);
 
   // 로그인이 풀리면 로그인 화면으로 돌려요. 알림 새로 불러오기 같은 반복 요청도 화면과 함께 멈춰요(L-46).
   const [ended, setEnded] = useState(false);
@@ -45,6 +47,8 @@ export function App() {
     const next = await api.me();
     setMe(next);
     if (next) setEnded(false);
+    // 쉬는 시간으로 끊긴 뒤 새로 고쳐도 왜 로그인 화면인지 알려 줘요(ADR-20).
+    else if (sessionEndedByIdle()) setEnded(true);
   }, []);
   useEffect(
     () =>
@@ -54,6 +58,14 @@ export function App() {
       }),
     [],
   );
+  // 로그인이 풀리거나 로그아웃하면 보던 페이지와 옮기던 문장을 비워요. 같은 PC로 다음 사람이 들어와도
+  // 앞사람 문장이 칸에 남거나 다음 사람 이름으로 찾아지지 않고, 홈에서 시작해요(QA D-A01·D-A05, R13).
+  useEffect(() => {
+    if (me !== null) return;
+    setView('home');
+    setHandoff(null);
+    setRoomRecent([]);
+  }, [me]);
 
   const load = useCallback(async () => {
     setOffline(false);
@@ -100,15 +112,32 @@ export function App() {
   const pageKey = `${current}-${handoff?.to === current ? handoff.at : 0}`;
   const found = FEATURES.find((f) => f.page === current);
   const feature = found && featureFor(found, config);
-  const { BoardScreen, OpsScreen, ChartScreen, ConsentScreen, LinkEntry, MyReservations, RoomDirectory, InquiryInbox, MyInquiries, InvitedMeetings } =
-    webModules;
+  const {
+    BoardScreen,
+    OpsScreen,
+    ChartScreen,
+    ConsentScreen,
+    LinkEntry,
+    MyReservations,
+    MyLoans,
+    RoomChat,
+    RoomDirectory,
+    InquiryInbox,
+    MyInquiries,
+    InvitedMeetings,
+  } = webModules;
   const isChartOwner = me?.roles.includes('chart-owner') ?? false;
 
   return (
     <div className='app'>
       <DemoBand items={config.demoData} />
       {me === null ? (
-        <Login onLoggedIn={refreshMe} login={config.login} notice={ended ? SESSION_ENDED_MESSAGE : undefined} />
+        <Login
+          onLoggedIn={refreshMe}
+          login={config.login}
+          notice={ended ? (sessionEndedByIdle() ? IDLE_ENDED_MESSAGE : SESSION_ENDED_MESSAGE) : undefined}
+          reauth={ended && sessionEndedByIdle()}
+        />
       ) : (
         <ActionHost onNavigate={navigate} InviteSheet={webModules.InviteSheet}>
           <div className='app-bar'>
@@ -120,12 +149,34 @@ export function App() {
             {entry?.kind === 'link' && <LinkEntry me={me} token={entry.token} />}
             {!entry && current === 'home' && <Home me={me} switches={config} onOpen={go} />}
             {!entry && feature && current !== 'board' && (
-              <FeaturePage key={pageKey} feature={feature} initialText={initial} autoRun={autoRun} onMove={move}>
+              <FeaturePage
+                key={pageKey}
+                feature={feature}
+                initialText={initial}
+                autoRun={autoRun}
+                onMove={move}
+                // 회의실이 켜져 있으면 빈 회의실 찾기와 회의실 채팅을 한 입력 칸으로 써요(10/28 통합 개편). 링크만이면 공통 입력이 링크 카드를 줘요.
+                input={
+                  current === 'rooms' && config.modules.rooms === 'on'
+                    ? (p) => (
+                        <RoomChat
+                          auto={config.autoActions && config.roomsWrite}
+                          write={config.roomsWrite}
+                          recent={roomRecent}
+                          onSent={(text) => setRoomRecent((list) => [text, ...list.filter((x) => x !== text)].slice(0, 5))}
+                          onRemoveRecent={(text) => setRoomRecent((list) => list.filter((x) => x !== text))}
+                          {...p}
+                        />
+                      )
+                    : undefined
+                }
+              >
                 {current === 'rooms' && (
                   <>
                     <InvitedMeetings />
                     <RoomDirectory me={me} />
                     <MyReservations />
+                    <MyLoans />
                   </>
                 )}
                 {current === 'navi' && (

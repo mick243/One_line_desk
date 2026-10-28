@@ -1,4 +1,4 @@
-import type { AppDestination, NotificationsResponse } from '@one-line-desk/shared';
+import { type AppDestination, type NotificationsResponse, RECORD_KEEP_DAYS } from '@one-line-desk/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { apiRequest } from '../api';
@@ -16,7 +16,7 @@ function when(iso: string): string {
 }
 
 export function NotificationBell({ onNavigate }: { onNavigate: (to: AppDestination) => void }) {
-  const { version } = useActions();
+  const { version, refresh } = useActions();
   const [data, setData] = useState<NotificationsResponse | null>(null);
   const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -28,18 +28,25 @@ export function NotificationBell({ onNavigate }: { onNavigate: (to: AppDestinati
       // 처음 불러온 것 말고, 새로 온 읽지 않은 알림만 토스트로 알려요.
       if (seen.current) {
         const fresh = res.items.find((i) => !i.read && !seen.current!.has(i.id));
-        if (fresh) setToast(fresh.title);
+        if (fresh) {
+          setToast(fresh.title);
+          // 새 알림이 오면 화면의 목록(내 문의·받은 문의함·나를 부른 회의·내 예약)도 다시 불러요(QA D-A03).
+          refresh();
+        }
       }
       seen.current = new Set(res.items.map((i) => i.id));
       setData(res);
     } catch {
       // 알림을 못 불러와도 화면은 그대로 써요.
     }
-  }, []);
+  }, [refresh]);
 
   useEffect(() => {
     void load();
-    const id = window.setInterval(() => void load(), POLL_MS);
+    // 탭이 가려져 있으면 부르지 않아요(ADR-20).
+    const id = window.setInterval(() => {
+      if (!document.hidden) void load();
+    }, POLL_MS);
     return () => window.clearInterval(id);
   }, [load, version]);
 
@@ -87,6 +94,7 @@ export function NotificationBell({ onNavigate }: { onNavigate: (to: AppDestinati
                         void read([n.id]);
                         setOpen(false);
                         onNavigate(n.page);
+                        refresh();
                       }}
                     >
                       <span>{n.title}</span>
@@ -95,7 +103,7 @@ export function NotificationBell({ onNavigate }: { onNavigate: (to: AppDestinati
                   </li>
                 ))}
               </ul>
-              <p className='hint'>알림에는 내용이 없어요. 누르면 그 페이지에서 볼 수 있어요. 30일 지나면 지워져요.</p>
+              <p className='hint'>알림에는 내용이 없어요. 누르면 그 페이지에서 볼 수 있어요. {RECORD_KEEP_DAYS}일 지나면 지워져요.</p>
             </>
           )}
         </Sheet>

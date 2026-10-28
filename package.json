@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "engines": {
-    "node": ">=22"
+    "node": "^22.21.0 || >=24.0.0"
   },
   "scripts": {
     "dev": "concurrently -k -n server,web -c blue,green \"npm run dev -w @one-line-desk/server\" \"npm run dev -w @one-line-desk/web\"",

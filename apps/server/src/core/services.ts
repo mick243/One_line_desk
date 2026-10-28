@@ -5,7 +5,7 @@ import type { DeskUser } from './user';
 // 제공하는 모듈이 자기 팩토리에서 ctx.services에 넣고, 쓰는 쪽(MCP 등)은 여기서 꺼내요.
 
 export interface RoomsService {
-  /** 빈 방 후보 최대 3개와 대안. 읽기만 하고 예약자·회의 제목은 없어요(ADR-06·14). */
+  /** 빈 회의실 후보 최대 3개와 대안. 읽기만 하고 예약자·회의 제목은 없어요(ADR-06·14). */
   findFree(query: RoomQuery): Promise<RoomSearchResult>;
   /** 후보 하나로 앱 확인 링크용 제안 토큰을 만들어요(M3). */
   proposeReservation(user: Pick<DeskUser, 'pseudonymId'>, candidate: { roomId: string; start: string; end: string; query: RoomQuery }): string;

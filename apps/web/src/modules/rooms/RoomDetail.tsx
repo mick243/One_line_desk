@@ -1,18 +1,31 @@
-import type { Card, RoomCardsResponse, RoomDayResponse } from '@one-line-desk/shared';
+import type { Card, Equipment, RoomCardsResponse, RoomDayResponse } from '@one-line-desk/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
-import { useActions } from '../../components/ActionHost';
+import { replaceCard, useActions } from '../../components/ActionHost';
 import { CardView } from '../../components/CardView';
 import { Sheet } from '../../components/Sheet';
 import { dateLabel, dayChips, fromMinutes, splitCheckedAt, statusText, toMinutes } from './roomText';
 
-// 방 자세히(10/26): 그림·정원·설비 · 지금 상태 · 하루 일정(30분 칸) · 빈 시간을 골라 [이 시간 확인] → 확인 시트로 예약.
+// 회의실 자세히(10/26): 그림·정원·설비 · 지금 상태 · 하루 일정(30분 칸) · 빈 시간을 골라 [이 시간 확인] → 확인 시트로 예약.
 // 남의 예약은 "예약됨"으로만 보이고, 내 예약에만 [취소]가 있어요(ADR-06). 확인 시트 전에는 아무것도 쓰지 않아요.
 
 const STEP = 30;
 const LENGTHS = [30, 60, 90, 120];
 
-export function RoomDetail({ roomId, today, initialDate, onClose }: { roomId: string; today: string; initialDate: string; onClose: () => void }) {
+export function RoomDetail({
+  roomId,
+  today,
+  initialDate,
+  canEditFacilities = false,
+  onClose,
+}: {
+  roomId: string;
+  today: string;
+  initialDate: string;
+  /** 총무만 설비 점검 상태를 바꿔요(ADR-19). */
+  canEditFacilities?: boolean;
+  onClose: () => void;
+}) {
   const actions = useActions();
   const [date, setDate] = useState(initialDate);
   const [day, setDay] = useState<RoomDayResponse | null>(null);
@@ -56,6 +69,20 @@ export function RoomDetail({ roomId, today, initialDate, onClose }: { roomId: st
     return list;
   }, [day]);
 
+  // 설비 점검 상태 바꾸기(총무). 고정 버튼이라 바로 반영하고 일정을 다시 불러요.
+  async function setFacility(facility: Equipment, status: 'ok' | 'repair') {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await apiRequest('PUT', `/api/rooms/${roomId}/facilities`, { facility, status });
+      actions.refresh();
+    } catch (e) {
+      setError(e instanceof ApiFailure ? e.message : '지금 바꾸지 못했어요');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function check() {
     if (!start || busy) return;
     setBusy(true);
@@ -92,6 +119,32 @@ export function RoomDetail({ roomId, today, initialDate, onClose }: { roomId: st
 
           <section aria-label='설비'>
             <h3>설비</h3>
+            {(room.equipment.length > 0 || room.repairs.length > 0) && (
+              <ul className='room-equipment-status'>
+                {room.equipment.map((e) => (
+                  <li key={e}>
+                    <span>{e}</span>
+                    <span className='hint'>정상</span>
+                    {canEditFacilities && (
+                      <button type='button' className='neutral small' disabled={busy} onClick={() => void setFacility(e, 'repair')}>
+                        점검 중으로
+                      </button>
+                    )}
+                  </li>
+                ))}
+                {room.repairs.map((e) => (
+                  <li key={e} className='repair'>
+                    <span>{e}</span>
+                    <span className='room-repair'>점검 중</span>
+                    {canEditFacilities && (
+                      <button type='button' className='neutral small' disabled={busy} onClick={() => void setFacility(e, 'ok')}>
+                        정상으로
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
             {room.facilities.length ? (
               <ul className='room-facilities'>
                 {room.facilities.map((f) => (
@@ -107,7 +160,13 @@ export function RoomDetail({ roomId, today, initialDate, onClose }: { roomId: st
             <h3>예약 현황 · {dateLabel(date)}</h3>
             <div className='chips scroll' role='group' aria-label='날짜'>
               {dayChips(today).map((c) => (
-                <button key={c.date} type='button' className={c.date === date ? 'chip selected' : 'chip'} onClick={() => setDate(c.date)}>
+                <button
+                  key={c.date}
+                  type='button'
+                  className={c.date === date ? 'chip selected' : 'chip'}
+                  aria-pressed={c.date === date}
+                  onClick={() => setDate(c.date)}
+                >
                   {c.label}
                 </button>
               ))}
@@ -164,7 +223,11 @@ export function RoomDetail({ roomId, today, initialDate, onClose }: { roomId: st
               {busy ? '확인하는 중' : start ? `${start}~${selectedEnd} 예약할 수 있는지 보기` : '예약할 수 있는지 보기'}
             </button>
             {cards?.map((card) => (
-              <CardView key={card.id} card={card} onAction={(action) => actions.run(action, card)} />
+              <CardView
+                key={card.id}
+                card={card}
+                onAction={(action) => actions.run(action, card, (next) => setCards((list) => (list ? replaceCard(list, card.id, next) : next)))}
+              />
             ))}
           </section>
         </div>

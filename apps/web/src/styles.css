@@ -286,6 +286,29 @@ a {
 .chips.scroll::-webkit-scrollbar {
   display: none;
 }
+/* 옆으로 넘기는 칩 줄(ScrollChips, 10/28). 넘칠 때만 아직 안 보이는 쪽 가장자리를 흐리게 해서 "옆에 더 있어요"를 보여 줘요.
+   마우스(PC)에서는 얇은 막대도 보여요. 손가락 화면은 막대 없이 밀어서 넘겨요. */
+.chips.scroll-x {
+  --fade-start: 0px;
+  --fade-end: 0px;
+  overscroll-behavior-x: contain;
+}
+.chips.scroll-x[data-overflow='true'] {
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent 100%);
+}
+.chips.scroll-x[data-overflow='true'][data-start='false'] {
+  --fade-start: 32px;
+}
+.chips.scroll-x[data-overflow='true'][data-end='false'] {
+  --fade-end: 32px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .chips.scroll-x[data-overflow='true'] {
+    padding-bottom: 6px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--surface-3) transparent;
+  }
+}
 .chip {
   flex: none;
   display: inline-flex;
@@ -983,7 +1006,7 @@ button.chip:active {
   color: var(--text-quiet);
 }
 
-/* 회의실 둘러보기(10/26): 방 카드 목록과 방 자세히 */
+/* 회의실 둘러보기(10/26): 회의실 카드 목록과 회의실 자세히 */
 .room-directory {
   display: flex;
   flex-direction: column;
@@ -1068,6 +1091,39 @@ button.chip:active {
 .room-status.busy-now {
   background: var(--warn-bg);
   color: var(--warn-text);
+}
+.room-repair {
+  align-self: flex-start;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+.room-equipment-status {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.room-equipment-status li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: var(--radius-s);
+  padding: 8px 10px;
+  background: var(--surface-2);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.room-equipment-status li button {
+  margin-left: auto;
+}
+.room-equipment-status .room-repair {
+  align-self: center;
 }
 .room-detail {
   display: flex;
@@ -1400,7 +1456,7 @@ select {
   color: var(--ok-text);
 }
 
-/* 내 것: 맨 위 내 정보 */
+/* 마이 페이지: 맨 위 내 정보 */
 .profile {
   display: flex;
   align-items: center;
@@ -1497,7 +1553,7 @@ select {
   margin-top: 6px;
 }
 
-/* 내 것 > 무엇을 남기나요(L-42): 세 갈래 목록 */
+/* 마이 페이지 > 무엇을 남기나요(L-42): 세 갈래 목록 */
 .retention h3 {
   margin: 4px 0 0;
   font-size: 0.9375rem;
@@ -1511,4 +1567,157 @@ select {
   gap: 4px;
   color: var(--text-2);
   font-size: 0.9375rem;
+}
+
+/* 회의실 입력 칸(10/28 통합 개편, ADR-19). 빈 회의실 찾기와 회의실 채팅을 한 칸으로 써요.
+   입력 칸 아래 한 줄이 지금 동작(바로 예약 / 찾기만 / 그룹웨어)을 알려 주고, 대화는 구분선 안 대화창에 순서대로 쌓여요. */
+.room-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mode-line {
+  margin: 0;
+  border-radius: var(--radius-s);
+  padding: 8px 12px;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.mode-line.warn {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-weight: 600;
+}
+/* 대화가 있을 때만 위(최근 쓴 문장과)·아래(모든 회의실과) 구분선이 생겨요. 대화창은 길어지면 창 안에서 스크롤돼요. */
+.room-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0 16px;
+}
+.room-chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.room-chat-head .example-label {
+  margin: 0;
+}
+.room-log {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: min(68vh, 640px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-3) transparent;
+}
+.room-log:focus-visible {
+  outline-offset: 4px;
+}
+.room-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.chat-bubble {
+  margin: 0;
+  max-width: 85%;
+  align-self: flex-start;
+  border-radius: var(--radius-m);
+  padding: 10px 14px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.chat-bubble.mine {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.chat-ai {
+  margin-left: 8px;
+  border-radius: 6px;
+  padding: 1px 6px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+/* 최근 쓴 문장 칩: 글자를 누르면 칸에 채우고, 오른쪽 [×]로 그 문장만 지워요. */
+.chip.removable {
+  gap: 0;
+  padding: 0 4px 0 0;
+}
+.chip-fill {
+  align-self: stretch;
+  border: 0;
+  padding: 0 6px 0 14px;
+  background: none;
+}
+.chip-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: none;
+  color: var(--text-quiet);
+}
+.chip-remove:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+/* 모든 회의실 필터(10/28 정리). 켜고 끄는 칩은 연한 파랑 + ✓로, 하나 고르는 칩(흰 바탕)과 모양이 달라요. 층별 묶음 제목이 있어요. */
+.chip.toggle[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1.5px var(--accent-text);
+}
+.chip.toggle[aria-pressed='true']::before {
+  content: '✓';
+}
+.room-count {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.room-floor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.room-floor h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 1rem;
+}
+.room-floor-mine {
+  border-radius: 6px;
+  padding: 2px 8px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 0.75rem;
+  font-weight: 700;
 }

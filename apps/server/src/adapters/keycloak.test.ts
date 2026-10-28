@@ -38,7 +38,8 @@ const USERS = [
 async function fakeIdp() {
   const { privateKey, publicKey } = await generateKeyPair('RS256');
   const jwk: JWK = { ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256' };
-  const state = { nonce: '', calls: [] as string[] };
+  // claims: ID 토큰에 더 넣을 값(amr·acr·auth_time). down: IdP에 닿지 못하는 상황(망 막힘).
+  const state = { nonce: '', calls: [] as string[], claims: {} as Record<string, unknown>, down: false };
   const sign = (claims: Record<string, unknown>, aud = CFG.clientId) =>
     new SignJWT(claims)
       .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
@@ -50,6 +51,7 @@ async function fakeIdp() {
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
+    if (state.down) throw new TypeError('fetch failed');
     state.calls.push(`${init?.method ?? 'GET'} ${url.pathname}`);
     if (url.pathname.endsWith('/.well-known/openid-configuration')) {
       return json({ issuer: ISSUER, authorization_endpoint: `${ISSUER}/auth`, token_endpoint: `${ISSUER}/token`, jwks_uri: `${ISSUER}/certs` });
@@ -66,6 +68,7 @@ async function fakeIdp() {
             family_name: '가상 직원',
             email: 'doyun@corp.example',
             groups: ['/부서/개발팀', '/층/5층', '/역할/facilities'],
+            ...state.claims,
           }),
         });
       }
@@ -101,13 +104,19 @@ describe('임시 IdP 어댑터', () => {
     state.nonce = 'n-1';
     const p = { codeVerifier: 'v', nonce: 'n-1', redirectUri: 'http://app.test/api/auth/oidc/callback' };
     expect(await adapter.finishLogin({ ...p, code: 'good' })).toEqual({
-      idpSubject: 'kc|u-doyun',
-      displayName: '가상 직원 도윤',
-      department: '개발팀',
-      floor: '5층',
-      groups: ['facilities'],
-      email: 'doyun@corp.example',
+      profile: {
+        idpSubject: 'kc|u-doyun',
+        displayName: '가상 직원 도윤',
+        department: '개발팀',
+        floor: '5층',
+        groups: ['facilities'],
+        email: 'doyun@corp.example',
+      },
+      evidence: { amr: [] },
     });
+    state.claims = { amr: ['pwd', 'otp'], acr: 'gold', auth_time: NOW / 1000 - 30 };
+    expect((await adapter.finishLogin({ ...p, code: 'good' }))?.evidence).toEqual({ amr: ['pwd', 'otp'], acr: 'gold', authTime: NOW - 30_000 });
+    state.claims = {};
     expect(await adapter.finishLogin({ ...p, code: 'good', nonce: 'other' })).toBeNull();
     expect(await adapter.finishLogin({ ...p, code: 'other-audience' })).toBeNull();
     expect(await adapter.finishLogin({ ...p, code: 'bad' })).toBeNull();
@@ -139,26 +148,132 @@ describe('IdP 로그인 경로(OIDC 인가 코드 + PKCE)', () => {
     return { t, state };
   }
 
+  type T = Awaited<ReturnType<typeof setup>>['t'];
+  type IdpState = Awaited<ReturnType<typeof setup>>['state'];
+
+  /** 시작 → IdP 주소와 그 브라우저에 묶인 쿠키(state·nonce·검증 값) */
+  async function start(t: T, state: IdpState, query = '') {
+    const res = await t.app.inject({ method: 'GET', url: `/api/auth/oidc/start${query}` });
+    expect(res.statusCode).toBe(302);
+    const auth = new URL(String(res.headers.location));
+    state.nonce = auth.searchParams.get('nonce') ?? '';
+    const cookie = String(res.headers['set-cookie'] ?? '').split(';')[0]!;
+    return { auth, cookie, state: auth.searchParams.get('state') ?? '' };
+  }
+
+  /** IdP에서 돌아오기. cookie가 없으면 다른 브라우저에서 돌아온 거예요. */
+  const callback = (t: T, s: string, cookie?: string, code = 'good') =>
+    t.app.inject({ method: 'GET', url: `/api/auth/oidc/callback?code=${code}&state=${s}`, headers: cookie ? { cookie } : {} });
+
+  const sessionCookie = (res: { headers: Record<string, unknown> }) =>
+    String(res.headers['set-cookie'] ?? '')
+      .split(/,(?=\s*\w+=)/)
+      .map((c) => c.trim().split(';')[0]!)
+      .find((c) => c.startsWith('desk_sid='));
+
   it('시작하면 state·nonce·S256 검증 값을 붙여 IdP로 보내고, 돌아오면 세션을 열고 원래 화면으로 가요', async () => {
     const { t, state } = await setup();
-    const start = await t.app.inject({ method: 'GET', url: '/api/auth/oidc/start?return=%2Foauth%2Fconsent%3Freq%3Dabc' });
-    expect(start.statusCode).toBe(302);
-    const auth = new URL(String(start.headers.location));
-    expect(auth.origin + auth.pathname).toBe(`${ISSUER}/auth`);
-    expect(auth.searchParams.get('code_challenge_method')).toBe('S256');
-    expect(auth.searchParams.get('redirect_uri')).toBe('http://localhost:5190/api/auth/oidc/callback');
-    state.nonce = auth.searchParams.get('nonce')!;
+    const s = await start(t, state, '?return=%2Foauth%2Fconsent%3Freq%3Dabc');
+    expect(s.auth.origin + s.auth.pathname).toBe(`${ISSUER}/auth`);
+    expect(s.auth.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(s.auth.searchParams.get('redirect_uri')).toBe('http://localhost:5190/api/auth/oidc/callback');
+    expect(s.auth.searchParams.get('prompt')).toBeNull();
+    // 진행 값은 서명 쿠키에만 있어요(HttpOnly·SameSite=Lax·10분).
+    expect(s.cookie).toMatch(/^desk_oidc_[\w-]{8}=/);
 
-    const back = await t.app.inject({ method: 'GET', url: `/api/auth/oidc/callback?code=good&state=${auth.searchParams.get('state')}` });
+    const back = await callback(t, s.state, s.cookie);
     expect(back.statusCode).toBe(302);
     expect(back.headers.location).toBe('/oauth/consent?req=abc');
-    const cookie = String(back.headers['set-cookie']).split(';')[0]!;
+    const cookie = sessionCookie(back)!;
     const me = (await t.app.inject({ method: 'GET', url: '/api/me', headers: { cookie } })).json();
     expect(me).toMatchObject({ displayName: '가상 직원 도윤', department: '개발팀', floor: '5층', roles: expect.arrayContaining(['facilities']) });
+    expect((await t.ctx.audit.recent(1))[0]).toMatchObject({ channel: 'auth', action: 'login', result: 'ok' });
 
-    // 같은 state는 한 번만 써요.
-    const replay = await t.app.inject({ method: 'GET', url: `/api/auth/oidc/callback?code=good&state=${auth.searchParams.get('state')}` });
-    expect(replay.headers.location).toBe('/?login=failed');
+    // 같은 쿠키·state는 한 번만 써요.
+    expect((await callback(t, s.state, s.cookie)).headers.location).toBe('/?login=failed');
+  });
+
+  it('남이 시작한 로그인은 내 브라우저로 끝낼 수 없고, 시작을 아무리 많이 불러도 다른 사람 로그인은 지워지지 않아요(C-5)', async () => {
+    const { t, state } = await setup();
+    const mine = await start(t, state);
+    // 로그인 CSRF: 쿠키 없는 브라우저(남의 링크를 누른 사람)로 돌아오면 세션을 만들지 않아요.
+    const csrf = await callback(t, mine.state);
+    expect(csrf.headers.location).toBe('/?login=failed');
+    expect(sessionCookie(csrf)).toBeUndefined();
+
+    const real = await start(t, state);
+    for (let i = 0; i < 1001; i += 1) await t.app.inject({ method: 'GET', url: '/api/auth/oidc/start' });
+    state.nonce = real.auth.searchParams.get('nonce')!;
+    const back = await callback(t, real.state, real.cookie);
+    expect(back.headers.location).toBe('/');
+    expect(sessionCookie(back)).toBeDefined();
+
+    // 10분이 지나면 쿠키가 있어도 받지 않아요.
+    const late = await start(t, state);
+    t.advance(11 * 60_000);
+    expect((await callback(t, late.state, late.cookie)).headers.location).toBe('/?login=failed');
+  });
+
+  it('IdP 오류와 IdP에 닿지 못할 때는 JSON 대신 로그인 화면으로 이유를 들고 가요(C-5)', async () => {
+    const { t, state } = await setup();
+    const s = await start(t, state);
+    const denied = await t.app.inject({ method: 'GET', url: `/api/auth/oidc/callback?error=access_denied&state=${s.state}`, headers: { cookie: s.cookie } });
+    expect(denied.headers.location).toBe('/?login=denied');
+    expect((await t.app.inject({ method: 'GET', url: '/api/auth/oidc/callback?error=temporarily_unavailable&state=x' })).headers.location).toBe(
+      '/?login=idp-unreachable',
+    );
+
+    // 시작한 뒤 IdP가 막히면 돌아오기(토큰 교환)에서 알아요.
+    const before = await start(t, state);
+    state.down = true;
+    expect((await callback(t, before.state, before.cookie)).headers.location).toBe('/?login=idp-unreachable');
+
+    // 서버가 뜬 뒤 한 번도 IdP 설정을 받지 못했으면 시작에서 알아요.
+    const fresh = await setup();
+    fresh.state.down = true;
+    const startDown = await fresh.t.app.inject({ method: 'GET', url: '/api/auth/oidc/start' });
+    expect(startDown.statusCode).toBe(302);
+    expect(startDown.headers.location).toBe('/?login=idp-unreachable');
+  });
+
+  it('MFA 정책이 always면 ID 토큰에 MFA 근거가 있을 때만 세션을 열어요(C-6)', async () => {
+    const { t, state } = await setup();
+    t.ctx.config.requireMfa = 'always';
+    state.claims = { amr: ['pwd'] };
+    let s = await start(t, state);
+    const weak = await callback(t, s.state, s.cookie);
+    expect(weak.headers.location).toBe('/?login=mfa-required');
+    expect(sessionCookie(weak)).toBeUndefined();
+    expect((await t.ctx.audit.recent(1))[0]).toMatchObject({ channel: 'auth', action: 'login', result: 'mfa-required' });
+
+    state.claims = { amr: ['pwd', 'otp'] };
+    s = await start(t, state);
+    expect(sessionCookie(await callback(t, s.state, s.cookie))).toBeDefined();
+    expect((await t.ctx.audit.recent(1))[0]).toMatchObject({ action: 'login', result: 'ok-mfa' });
+
+    // acr로도 받아요. 설정한 값만이에요.
+    t.ctx.config.mfaAcr = ['gold'];
+    state.claims = { amr: ['pwd'], acr: 'gold' };
+    s = await start(t, state);
+    expect(sessionCookie(await callback(t, s.state, s.cookie))).toBeDefined();
+  });
+
+  it('쉬는 시간 뒤 다시 로그인은 IdP에 지금 다시 인증을 요청하고, 오래된 인증이면 받지 않아요(C-1)', async () => {
+    const { t, state } = await setup();
+    let s = await start(t, state, '?reauth=idle');
+    expect(s.auth.searchParams.get('prompt')).toBe('login');
+    expect(s.auth.searchParams.get('max_age')).toBe('0');
+    state.claims = { auth_time: (NOW - 2 * 3_600_000) / 1000 };
+    expect((await callback(t, s.state, s.cookie)).headers.location).toBe('/?login=failed');
+    state.claims = {};
+    s = await start(t, state, '?reauth=idle');
+    expect((await callback(t, s.state, s.cookie)).headers.location).toBe('/?login=failed');
+
+    state.claims = { auth_time: NOW / 1000 };
+    s = await start(t, state, '?reauth=idle');
+    const back = await callback(t, s.state, s.cookie);
+    expect(back.headers.location).toBe('/');
+    expect(sessionCookie(back)).toBeDefined();
   });
 
   it('다른 사이트로는 돌려보내지 않고, 모의 로그인은 닫혀 있어요', async () => {
@@ -167,10 +282,8 @@ describe('IdP 로그인 경로(OIDC 인가 코드 + PKCE)', () => {
     const bads = ['//evil.example/x', 'https://evil.example', '/\\evil', '/api/me', '/\t/evil.example', '/\n/evil.example', '/\r/evil.example'];
     bads.push('/%5cevil', '/%2fevil.example', '/%2F%2Fevil', '/／evil.example', '/./api/me', '/a/../api/me', '/..//evil.example', '/ x');
     for (const bad of bads) {
-      const start = await t.app.inject({ method: 'GET', url: `/api/auth/oidc/start?return=${encodeURIComponent(bad)}` });
-      const auth = new URL(String(start.headers.location)).searchParams;
-      state.nonce = auth.get('nonce')!;
-      const back = await t.app.inject({ method: 'GET', url: `/api/auth/oidc/callback?code=good&state=${auth.get('state')}` });
+      const s = await start(t, state, `?return=${encodeURIComponent(bad)}`);
+      const back = await callback(t, s.state, s.cookie);
       expect(back.statusCode, bad).toBe(302);
       expect(back.headers.location, bad).toBe('/');
     }

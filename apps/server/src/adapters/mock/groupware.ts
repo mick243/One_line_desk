@@ -1,7 +1,7 @@
 import type { Db } from '../../core/db';
 import type { AdapterCapabilities, CalendarAdapter, CalendarEvent, MessengerAdapter } from '../types';
 
-// 모의 그룹웨어 캘린더·모의 Slack(10/26, ADR-17). 실제 서비스 대신 DB 표에 적고, "내 것"의 시연 받은편지함에서 보여 줘요.
+// 모의 그룹웨어 캘린더·모의 Slack(10/26, ADR-17). 실제 서비스 대신 DB 표에 적고, "마이 페이지"의 시연 받은편지함에서 보여 줘요.
 // 가상 직원 메일만 들어와요. 실제 어댑터(그룹웨어 API·Slack 봇)로 바꿔도 부르는 쪽은 그대로예요(ADR-05).
 
 export class MockGroupwareCalendar implements CalendarAdapter {

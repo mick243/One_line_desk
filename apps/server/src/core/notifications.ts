@@ -1,4 +1,4 @@
-import type { AppDestination, DeskNotification, ModuleKind, NotificationsResponse } from '@one-line-desk/shared';
+import { type AppDestination, type DeskNotification, type ModuleKind, type NotificationsResponse, recordCutoff } from '@one-line-desk/shared';
 import type { Db, Queryable } from './db';
 import type { DeskUser } from './user';
 
@@ -11,9 +11,7 @@ export interface NotifyInput {
   page: AppDestination;
 }
 
-const KEEP_DAYS = 30;
 const LIST_LIMIT = 30;
-const DAY_MS = 24 * 60 * 60 * 1000;
 const KST_MS = 9 * 60 * 60 * 1000;
 const kstIso = (at: number) => `${new Date(at + KST_MS).toISOString().slice(0, 19)}+09:00`;
 
@@ -46,13 +44,13 @@ export class Notifier {
     ]);
   }
 
-  /** 30일 지난 알림을 지워요(읽음 표시도 같이 지워져요). 서버가 한 시간마다, 목록을 열 때도 불러요(L-33). */
+  /** 7일(RECORD_KEEP_DAYS) 지난 알림을 지워요(읽음 표시도 같이 지워져요). 서버가 한 시간마다, 목록을 열 때도 불러요(L-33). */
   async purge(): Promise<void> {
-    const cutoff = new Date(this.now() - KEEP_DAYS * DAY_MS).toISOString();
+    const cutoff = new Date(recordCutoff(this.now())).toISOString();
     await this.db.query('delete from notifications where created_at < $1', [cutoff]);
   }
 
-  /** 내 알림(나에게 온 것 + 내 부서에 온 것). 30일 지난 알림은 먼저 지워요. */
+  /** 내 알림(나에게 온 것 + 내 부서에 온 것). 7일 지난 알림은 먼저 지워요. */
   async list(user: Pick<DeskUser, 'pseudonymId' | 'department'>): Promise<NotificationsResponse> {
     await this.purge();
     const { rows } = await this.db.query<{ id: string; title: string; page: DeskNotification['page']; created: number; read: boolean }>(
