@@ -49,6 +49,7 @@ import {
   insertLedger,
   insertReservation,
   listRooms,
+  loanKindsByReservation,
   moveToHistory,
   myUpcoming,
   type ReservationRow,
@@ -165,6 +166,7 @@ function toListItem(r: RoomRow, busy: BusyRow[], date: string, now: number): Roo
     facilities: [...r.facilities],
     photoUrl: r.photoUrl,
     status: roomStatus(r.id, busy, date, now),
+    repairs: [...r.repairs],
   };
 }
 
@@ -410,6 +412,27 @@ export class RoomDesk {
     };
   }
 
+  /**
+   * 채팅 자동 예약(ADR-19)에 쓸 방 하나. 방을 말했으면 그 방이 조건에 맞고 비었을 때만, 아니면 서버가 고른 1순위 후보예요.
+   * 빈 방이 없으면 null이에요. 다른 시간·방을 자동으로 잡지 않아요. 아무것도 쓰지 않아요.
+   */
+  async pickForAuto(partial: Partial<RoomQuery>, roomId: string | null, now = this.ctx.now()): Promise<ReserveParams | null> {
+    const check = checkQuery(partial, now);
+    if (!check.ok) return null;
+    const q = check.query;
+    const { rooms, busy } = await this.load(this.ctx.db, q.date);
+    let slot: Slot | undefined;
+    if (roomId) {
+      const room = rooms.find((r) => r.id === roomId);
+      const fits = room && room.capacity >= q.people && q.equipment.every((e) => room.equipment.includes(e));
+      if (room && fits && isFree(busy, room.id, check.start, check.end)) slot = makeSlot(room, check.start, check.end, q);
+    } else {
+      slot = searchSlots({ rooms, busy, query: q, start: check.start, end: check.end, now }).candidates[0];
+    }
+    if (!slot) return null;
+    return ReserveParamsSchema.parse({ roomId: slot.room.id, start: kstIso(slot.start), end: kstIso(slot.end), query: q });
+  }
+
   // ── 쓰기: 확인 시트 한 번(plan)과 [취소] 고정 버튼 ─────────────────
 
   /** 'rooms:reserve' plan 처리기(ADR-03). 실행은 plan 트랜잭션 q로만 해요. */
@@ -419,6 +442,8 @@ export class RoomDesk {
       action: 'reserve',
       schema: ReserveParamsSchema,
       enabled: roomsWriteEnabled,
+      // 채팅 명령("내일 3시 6명 잡아 줘")이면 확인 시트 없이 실행해요(ADR-19).
+      autoAllowed: true,
       sheet: async (p) => {
         const room = await getRoom(this.ctx.db, p.roomId);
         return {
@@ -471,6 +496,10 @@ export class RoomDesk {
     const enabled = roomsWriteEnabled(this.ctx.ops.get());
     if (!enabled) return { enabled, items: [] };
     const rows = await myUpcoming(this.ctx.db, user.pseudonymId, this.ctx.now());
+    const loans = await loanKindsByReservation(
+      this.ctx.db,
+      rows.map((r) => r.id),
+    );
     const items = [];
     for (const r of rows) {
       items.push({
@@ -484,6 +513,7 @@ export class RoomDesk {
         invite: inviteAction(r),
         attendees: await this.invites.attendees(r.id),
         icsPath: icsPath(r.id),
+        loans: loans.get(r.id) ?? [],
       });
     }
     return { enabled, items };
@@ -501,10 +531,12 @@ export class RoomDesk {
       async run(q, now) {
         // 참석자에게 먼저 알리고(같은 트랜잭션), 예약을 옮기면 참석자 줄은 함께 지워져요(ADR-17).
         const notice = await invites.beforeCancel(q, id, user);
+        // 회의에 붙여 빌린 장비는 예약과 함께 지워져요(ADR-19). 카드에 알리려고 먼저 읽어요.
+        const loans = (await loanKindsByReservation(q, [id])).get(id) ?? [];
         const moved = await moveToHistory(q, id, user.pseudonymId, now);
         if (!moved) throw new DeskError('not-found', 404, '취소할 예약을 찾지 못했어요');
         followUp = notice;
-        return { status: 'done', card: cancelledCard(moved, now) };
+        return { status: 'done', card: cancelledCard(moved, now, loans) };
       },
     });
     // 트랜잭션이 끝난 뒤 그룹웨어 캘린더·Slack으로 취소를 알려요. 실패해도 취소는 그대로예요.

@@ -25,6 +25,8 @@ interface ActionsApi {
   show(shown: Shown): void;
   /** 쓰기가 끝날 때마다 올라가요. 목록 화면은 이 값이 바뀌면 다시 불러요. */
   version: number;
+  /** 카드 버튼 밖에서 쓰기가 끝났을 때(회의실 채팅 자동 실행, ADR-19) 목록을 다시 불러요. */
+  refresh(): void;
 }
 
 const ActionsContext = createContext<ActionsApi | null>(null);
@@ -120,7 +122,8 @@ export function ActionHost({
     [fail, onNavigate, showOutcome],
   );
 
-  const value = useMemo<ActionsApi>(() => ({ run, show: setShown, version }), [run, version]);
+  const refresh = useCallback(() => setVersion((v) => v + 1), []);
+  const value = useMemo<ActionsApi>(() => ({ run, show: setShown, version, refresh }), [run, version, refresh]);
 
   return (
     <ActionsContext.Provider value={value}>

@@ -1,4 +1,4 @@
-import type { Card, RoomCardsResponse, RoomDayResponse } from '@one-line-desk/shared';
+import type { Card, Equipment, RoomCardsResponse, RoomDayResponse } from '@one-line-desk/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
 import { useActions } from '../../components/ActionHost';
@@ -12,7 +12,20 @@ import { dateLabel, dayChips, fromMinutes, splitCheckedAt, statusText, toMinutes
 const STEP = 30;
 const LENGTHS = [30, 60, 90, 120];
 
-export function RoomDetail({ roomId, today, initialDate, onClose }: { roomId: string; today: string; initialDate: string; onClose: () => void }) {
+export function RoomDetail({
+  roomId,
+  today,
+  initialDate,
+  canEditFacilities = false,
+  onClose,
+}: {
+  roomId: string;
+  today: string;
+  initialDate: string;
+  /** 총무만 설비 점검 상태를 바꿔요(ADR-19). */
+  canEditFacilities?: boolean;
+  onClose: () => void;
+}) {
   const actions = useActions();
   const [date, setDate] = useState(initialDate);
   const [day, setDay] = useState<RoomDayResponse | null>(null);
@@ -56,6 +69,20 @@ export function RoomDetail({ roomId, today, initialDate, onClose }: { roomId: st
     return list;
   }, [day]);
 
+  // 설비 점검 상태 바꾸기(총무). 고정 버튼이라 바로 반영하고 일정을 다시 불러요.
+  async function setFacility(facility: Equipment, status: 'ok' | 'repair') {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await apiRequest('PUT', `/api/rooms/${roomId}/facilities`, { facility, status });
+      actions.refresh();
+    } catch (e) {
+      setError(e instanceof ApiFailure ? e.message : '지금 바꾸지 못했어요');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function check() {
     if (!start || busy) return;
     setBusy(true);
@@ -92,6 +119,32 @@ export function RoomDetail({ roomId, today, initialDate, onClose }: { roomId: st
 
           <section aria-label='설비'>
             <h3>설비</h3>
+            {(room.equipment.length > 0 || room.repairs.length > 0) && (
+              <ul className='room-equipment-status'>
+                {room.equipment.map((e) => (
+                  <li key={e}>
+                    <span>{e}</span>
+                    <span className='hint'>정상</span>
+                    {canEditFacilities && (
+                      <button type='button' className='neutral small' disabled={busy} onClick={() => void setFacility(e, 'repair')}>
+                        점검 중으로
+                      </button>
+                    )}
+                  </li>
+                ))}
+                {room.repairs.map((e) => (
+                  <li key={e} className='repair'>
+                    <span>{e}</span>
+                    <span className='room-repair'>점검 중</span>
+                    {canEditFacilities && (
+                      <button type='button' className='neutral small' disabled={busy} onClick={() => void setFacility(e, 'ok')}>
+                        정상으로
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
             {room.facilities.length ? (
               <ul className='room-facilities'>
                 {room.facilities.map((f) => (

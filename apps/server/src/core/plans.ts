@@ -1,5 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { type Card, checkInput, type ModuleKind, type OpsSettings, type PlanConfirmResponse, type PlanCreateResponse } from '@one-line-desk/shared';
+import {
+  AUTO_DAILY_LIMIT,
+  type Card,
+  checkInput,
+  kstDate,
+  kstToEpoch,
+  type ModuleKind,
+  type OpsSettings,
+  type PlanConfirmResponse,
+  type PlanCreateResponse,
+} from '@one-line-desk/shared';
 import type { AuditLog } from './audit';
 import type { Db, Queryable } from './db';
 import { DeskError } from './errors';
@@ -11,6 +21,7 @@ import type { DeskUser } from './user';
 // - create: 제안 토큰 → plan 저장 → 확인 시트
 // - confirm: plan_id만 받아 "proposed일 때만 executing으로" 바꾸고 실행(한 번만 이겨요)
 // - direct: 공개 미리보기 [올리기]. 토큰 ID가 멱등 키예요
+// - auto: 채팅 명령(ADR-19). 허용 목록 처리기만, 요청 ID가 멱등 키이고 사람별 하루 상한이 있어요
 
 interface PlanRow {
   id: string;
@@ -24,6 +35,12 @@ interface PlanRow {
 }
 
 type StoredOutcome = { status: 'done'; card: Card } | { status: 'blocked'; card: Card; alternatives: Card[] };
+
+/** 채팅 자동 실행 결과. limit = 오늘 상한을 넘음, off = 운영 스위치 꺼짐. 둘 다 아무것도 쓰지 않았어요. */
+export type AutoOutcome = StoredOutcome | { status: 'limit' } | { status: 'off' };
+
+const REQUEST_ID = /^[A-Za-z0-9_-]{8,64}$/;
+const STEP = /^[a-z0-9-]{1,20}$/;
 
 const EXPIRED_MESSAGE = '시간이 지나 다시 찾았어요';
 
@@ -145,6 +162,80 @@ export class PlanService {
       );
       return result;
     });
+  }
+
+  /**
+   * 채팅 자동 실행(ADR-19). 사람이 채팅으로 직접 시킨 명령 한 번을 실행 한 번으로 봐요.
+   * 허용 목록(autoAllowed) 처리기만 받고, 매개변수는 서버가 계산한 값이에요(LLM이 만든 값이 아니에요).
+   * 같은 요청 ID로 두 번 와도 한 번만 실행하고, 사람별 하루 상한을 넘으면 아무것도 쓰지 않아요.
+   * 한 요청에서 여러 번 실행하면(예약하고 장비 둘 빌리기) step으로 나눠요. 하루 상한은 요청 하나를 한 번으로 세요.
+   */
+  async auto(user: DeskUser, module: ModuleKind, action: string, params: unknown, requestId: string, step = action): Promise<AutoOutcome> {
+    const handler = this.handlerFor(module, action);
+    if (!handler.autoAllowed) throw new DeskError('bad-request', 400, '자동으로 실행할 수 없는 일이에요');
+    if (!REQUEST_ID.test(requestId) || !STEP.test(step)) throw new DeskError('bad-request', 400, '요청 ID 형식이 맞지 않아요');
+    const parsed = handler.schema.parse(params);
+
+    const receiptKey = `auto:${user.pseudonymId}:${requestId}:${step}`;
+    const prior = await this.receipt(receiptKey);
+    if (prior) return prior;
+    if (!this.settings().autoActions) return { status: 'off' };
+
+    return this.db.tx(async (q): Promise<AutoOutcome> => {
+      // 사람 단위로 잠가요. 같은 요청이 겹쳐 와도 한 번만, 하루 상한도 동시에 넘지 않아요.
+      await q.query('select pg_advisory_xact_lock(hashtext($1))', [`auto:${user.pseudonymId}`]);
+      const raced = await this.receipt(receiptKey, q);
+      if (raced) return raced;
+      if ((await this.autoCountToday(user, requestId, q)) >= AUTO_DAILY_LIMIT) return { status: 'limit' };
+
+      const planId = randomUUID();
+      const now = this.now();
+      await q.query("insert into plans (id, pseudonym_id, module, action, params, expires_at, state) values ($1, $2, $3, $4, $5, $6, 'executing')", [
+        planId,
+        user.pseudonymId,
+        handler.module,
+        handler.action,
+        JSON.stringify(parsed),
+        new Date(now + this.settings().values.planTtlSeconds * 1000).toISOString(),
+      ]);
+      const result = await this.runHandler(q, handler, parsed, user, planId);
+      await this.finish(q, planId, handler, parsed, result);
+      // 영수증 시각은 서버 시계로 남겨요. 하루 상한을 이 시각으로 세요.
+      await q.query('insert into action_receipts (idempotency_key, pseudonym_id, module, action, result, created_at) values ($1, $2, $3, $4, $5, $6)', [
+        receiptKey,
+        user.pseudonymId,
+        handler.module,
+        handler.action,
+        JSON.stringify(result),
+        new Date(now).toISOString(),
+      ]);
+      await this.audit.record(
+        { pseudonymId: user.pseudonymId, channel: 'write', module: handler.module, action: `auto-${handler.action}`, planId, result: result.status },
+        q,
+      );
+      return result;
+    });
+  }
+
+  /** 이 요청 ID로 이미 자동 실행한 결과(실행 순서대로). 같은 요청이 다시 오면 다시 해석하지 않고 이걸 돌려줘요. */
+  async autoReceipts(user: Pick<DeskUser, 'pseudonymId'>, requestId: string): Promise<StoredOutcome[]> {
+    const { rows } = await this.db.query<{ result: StoredOutcome }>(
+      'select result from action_receipts where starts_with(idempotency_key, $1) order by created_at, idempotency_key',
+      [`auto:${user.pseudonymId}:${requestId}:`],
+    );
+    return rows.map((r) => r.result);
+  }
+
+  /** 오늘(한국 날짜) 채팅으로 자동 실행한 요청 수. exceptRequestId는 세지 않아요(예약하고 장비도 빌린 한 번은 한 번이에요). */
+  async autoCountToday(user: Pick<DeskUser, 'pseudonymId'>, exceptRequestId = '', q: Queryable = this.db): Promise<number> {
+    const since = kstToEpoch(kstDate(this.now()), '00:00');
+    const { rows } = await q.query<{ n: number }>(
+      `select count(distinct split_part(idempotency_key, ':', 3))::int as n
+         from action_receipts
+        where starts_with(idempotency_key, $1) and created_at >= $2 and split_part(idempotency_key, ':', 3) <> $3`,
+      [`auto:${user.pseudonymId}:`, new Date(since).toISOString(), exceptRequestId],
+    );
+    return rows[0]?.n ?? 0;
   }
 
   private open(user: DeskUser, token: string): { payload: ProposalPayload; handler: PlanHandler<unknown>; expired: boolean } {

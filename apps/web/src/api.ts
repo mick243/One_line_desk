@@ -4,6 +4,8 @@ export interface PublicConfig {
   modules: Record<ModuleKind, ModuleSwitch>;
   roomsWrite: boolean;
   mcp: boolean;
+  /** 채팅 자동 실행(ADR-19) */
+  autoActions: boolean;
   standalone: boolean;
   demoData: string[];
   rulesVersion: number;

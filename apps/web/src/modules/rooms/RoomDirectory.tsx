@@ -107,7 +107,9 @@ export function RoomDirectory({ me }: ScreenProps) {
       </ul>
       <p className='hint'>현황 {data.checkedAt.slice(11, 16)} 기준 · 그림은 시연용이에요</p>
 
-      {open && <RoomDetail roomId={open} today={today} initialDate={shownDate} onClose={() => setOpen(null)} />}
+      {open && (
+        <RoomDetail roomId={open} today={today} initialDate={shownDate} canEditFacilities={me.roles.includes('facilities')} onClose={() => setOpen(null)} />
+      )}
     </section>
   );
 }
@@ -128,6 +130,7 @@ function RoomCard({ room, onOpen }: { room: RoomListItem; onOpen: () => void }) 
         </span>
         <span className={`room-status ${room.status.kind}`}>{statusText(room.status)}</span>
         {room.equipment.length > 0 && <span className='room-equip'>{room.equipment.join(' · ')}</span>}
+        {room.repairs.length > 0 && <span className='room-repair'>점검 중: {room.repairs.join(' · ')}</span>}
       </span>
     </button>
   );

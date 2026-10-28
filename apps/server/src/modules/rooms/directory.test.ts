@@ -44,7 +44,7 @@ describe('회의실 둘러보기', () => {
     const big = body.rooms.find((r) => r.id === 'r-5c')!;
     expect(big).toMatchObject({ name: '대회의실 5C', capacity: 20, photoUrl: '/rooms/r-5c.svg' });
     expect(big.facilities).toContain('빔프로젝터 2대');
-    expect(Object.keys(big).sort()).toEqual(['capacity', 'equipment', 'facilities', 'floor', 'id', 'name', 'photoUrl', 'status']);
+    expect(Object.keys(big).sort()).toEqual(['capacity', 'equipment', 'facilities', 'floor', 'id', 'name', 'photoUrl', 'repairs', 'status']);
   });
 
   it('[회의실 둘러보기] 오늘은 지금 상태(비어 있음·다음 예약 / 사용 중·비는 시각), 다른 날은 예약 수예요', async () => {

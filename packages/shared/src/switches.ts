@@ -9,6 +9,8 @@ export interface OpsSettings {
   roomsWrite: boolean;
   /** MCP 전체 스위치(M5). 해당 모듈이 켬일 때만 그 도구가 나와요. */
   mcp: boolean;
+  /** 채팅 자동 실행(ADR-19). 끄면 채팅도 카드와 확인 시트로만 예약·대여해요. */
+  autoActions: boolean;
   /** 이번 2주는 고정이에요(M6). */
   noticeSummary: false;
   s5Mode: 'list-only';
@@ -28,6 +30,7 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
   modules: { navi: 'on', notices: 'on', rooms: 'on', pantry: 'on' },
   roomsWrite: true,
   mcp: false,
+  autoActions: true,
   noticeSummary: false,
   s5Mode: 'list-only',
   links: {
@@ -46,8 +49,8 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
   },
 };
 
-/** 출시(운영) 기본값(CD-14): 회의실 쓰기·MCP는 끈 채로 시작해요. 운영자가 바꾸면 운영 설정 표에 남아요. */
-export const LAUNCH_OPS_SETTINGS: OpsSettings = { ...DEFAULT_OPS_SETTINGS, roomsWrite: false, mcp: false };
+/** 출시(운영) 기본값(CD-14): 회의실 쓰기·MCP·채팅 자동 실행은 끈 채로 시작해요. 운영자가 바꾸면 운영 설정 표에 남아요. */
+export const LAUNCH_OPS_SETTINGS: OpsSettings = { ...DEFAULT_OPS_SETTINGS, roomsWrite: false, mcp: false, autoActions: false };
 
 /** "같이 채워요 단독" 모드 = navi·notices·rooms 모두 끔. 묻기 탭을 숨기고 같이 채워요 탭이 첫 화면이에요. */
 export function isPantryStandalone(settings: OpsSettings): boolean {

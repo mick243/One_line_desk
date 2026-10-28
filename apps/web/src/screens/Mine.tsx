@@ -13,7 +13,7 @@ function retentionLines(s: { modules: Record<ModuleKind, ModuleSwitch>; roomsWri
   const keep = [
     s.modules.navi === 'on' && '담당 팀에 보낸 문의·사유와 내 이름·부서. 받는 팀이 보고, 90일 뒤 지워져요.',
     '앱 안 알림. 내용 없이 무슨 일인지만 남고, 30일 뒤 지워져요.',
-    invites && '예약 기록과 회의 초대(부른 사람·참석자·답). 예약을 취소하면 초대도 같이 지워져요.',
+    invites && '예약·장비 대여 기록과 회의 초대(부른 사람·참석자·답). 예약을 취소하면 초대와 같이 빌린 장비도 함께 지워져요.',
     s.modules.pantry !== 'off' && '내가 올린 품목 이름과 표. 누가 표를 줬는지는 화면 어디에도 안 보여요.',
     s.modules.navi === 'on' && '"틀렸어요"에서 고른 결과. 누가 골랐는지는 남지 않아요.',
     s.mcp && '연결한 AI 앱(앱 이름·연결한 날). 끊으면 지워져요.',
@@ -115,7 +115,7 @@ export function Mine({
         )}
         <h3>남기지 않는 것</h3>
         <ul>
-          <li>담당 찾기·회의실·공지 입력 칸에 쓴 문장</li>
+          <li>담당 찾기·회의실·공지 입력 칸과 회의실 채팅에 쓴 문장</li>
         </ul>
       </section>
 

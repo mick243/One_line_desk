@@ -77,6 +77,8 @@ export interface MyReservation {
   attendees: ReservationAttendee[];
   /** 캘린더 파일 받기 주소 */
   icsPath: string;
+  /** 이 회의에 붙여 빌린 장비 종류(ADR-19). 회의를 취소하면 함께 취소돼요. */
+  loans: string[];
 }
 
 /** GET /api/rooms/my-reservations. enabled가 거짓이면(회의실 끔·링크만·쓰기 끔) 내 예약 칸을 숨겨요(R4). */
@@ -159,6 +161,8 @@ export type RoomStatus =
 
 export interface RoomListItem extends RoomInfo {
   status: RoomStatus;
+  /** 점검 중인 설비(ADR-19). equipment에는 쓸 수 있는 설비만 남아요. */
+  repairs: Equipment[];
 }
 
 /** GET /api/rooms/list?date=YYYY-MM-DD. 회의실이 "링크만"이면 방 대신 그룹웨어 링크만 와요(R4). */
@@ -198,4 +202,56 @@ export interface RoomSlotRequest {
   date: string;
   start: string;
   minutes: number;
+}
+
+// ── 회의실 채팅·장비 대여(10/28, ADR-19) ──────────────────────────────
+
+/** 빌릴 수 있는 이동식 장비 종류. 방에 붙은 설비(EQUIPMENT: 화면·화상회의·화이트보드)와 따로예요. */
+export const LOAN_KINDS = ['빔프로젝터', '노트북', '무선 마이크', '웹캠', '스피커폰', 'HDMI 젠더'] as const;
+export type LoanKind = (typeof LOAN_KINDS)[number];
+
+/** 사람별 하루 채팅 자동 실행 상한(ADR-19). 넘으면 카드로만 보여 줘요. */
+export const AUTO_DAILY_LIMIT = 5;
+
+/** 방 설비 상태(총무가 바꿔요). 점검 중인 설비는 찾기 조건에 맞지 않아요. */
+export type FacilityStatus = 'ok' | 'repair';
+
+/** 내 장비 대여 한 줄. 내 대여만 와요. */
+export interface MyLoan {
+  id: string;
+  kind: LoanKind;
+  /** "빔프로젝터 1" */
+  itemName: string;
+  /** 가져갈 곳(보관 위치) */
+  home: string;
+  start: string;
+  end: string;
+  when: string;
+  /** 회의에 붙여 빌렸으면 그 방 이름 */
+  roomName: string | null;
+  /** 시작 전이면 [대여 취소], 쓰는 중이면 [반납]. 확인 시트를 먼저 띄우는 고정 버튼이에요. */
+  endAction: CardAction;
+}
+
+/** GET /api/rooms/my-loans. enabled가 거짓이면(회의실 쓰기 끔) 칸을 숨겨요. */
+export interface MyLoansResponse {
+  enabled: boolean;
+  items: MyLoan[];
+}
+
+/** POST /api/rooms/chat 본문. 글은 이 요청의 메모리에서만 다루고 저장하지 않아요(R13). */
+export interface RoomChatRequest {
+  text: string;
+  /** 같은 요청이 두 번 와도 한 번만 실행해요(영수증). 보낼 때마다 새로 만들어요. */
+  requestId: string;
+}
+
+export interface RoomChatResponse {
+  /** 말풍선 한 줄 */
+  reply: string;
+  cards: Card[];
+  /** 이 요청으로 예약·대여가 생겼는지(내 예약 목록을 다시 불러요) */
+  changed: boolean;
+  /** 모델이 실제로 해석했는지("AI 정리" 표시) */
+  aiParsed: boolean;
 }

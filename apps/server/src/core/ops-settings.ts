@@ -8,11 +8,14 @@ import { DeskError } from './errors';
 // 서버 한 대 기준이에요. 뜰 때 한 번 읽고, 바꿀 때 표와 메모리를 같이 바꿔요(여러 대는 L-58).
 
 export type OpsValues = OpsSettings['values'];
+/** 운영 설정의 켜고 끄는 값 */
+export type OpsFlag = 'roomsWrite' | 'mcp' | 'autoActions';
 
 interface Overrides {
   modules?: Partial<Record<ModuleKind, ModuleSwitch>>;
   roomsWrite?: boolean;
   mcp?: boolean;
+  autoActions?: boolean;
   links?: Partial<Record<ModuleKind, string>>;
   values?: Partial<OpsValues>;
 }
@@ -34,6 +37,7 @@ function merge(base: OpsSettings, o: Overrides): OpsSettings {
     modules: { ...base.modules, ...o.modules },
     roomsWrite: o.roomsWrite ?? base.roomsWrite,
     mcp: o.mcp ?? base.mcp,
+    autoActions: o.autoActions ?? base.autoActions,
     links: { ...base.links, ...o.links },
     values: { ...base.values, ...o.values },
   };
@@ -75,7 +79,7 @@ export class OpsSettingsStore {
     );
   }
 
-  async setFlag(operatorId: string, flag: 'roomsWrite' | 'mcp', value: boolean): Promise<OpsSettings> {
+  async setFlag(operatorId: string, flag: OpsFlag, value: boolean): Promise<OpsSettings> {
     return this.save({ ...this.overrides, [flag]: value }, { pseudonymId: operatorId, channel: 'ops', action: `${flag}.set`, result: String(value) });
   }
 

@@ -27,7 +27,7 @@ export const RoomQuerySchema = z.strictObject({
     .optional(),
 });
 
-const KST_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+09:00$/;
+export const KST_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+09:00$/;
 
 /** 'rooms:reserve' plan 매개변수. 하루 안의 한 구간만(반복·여러 날 없음, F2-8). 자유 문장 칸은 없어요. */
 export const ReserveParamsSchema = z

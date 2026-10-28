@@ -55,6 +55,10 @@ export interface WebModules {
   DemoInbox: ComponentType;
   /** 홈·회의실·내 것의 "내 예약" 칸 */
   MyReservations: ComponentType<{ compact?: boolean }>;
+  /** 회의실 페이지 "내 대여" 칸(ADR-19) */
+  MyLoans: ComponentType;
+  /** 회의실 페이지 채팅: 시키면 바로 예약·대여, 물으면 카드(ADR-19). auto는 채팅 자동 실행이 켜졌는지예요. */
+  RoomChat: ComponentType<{ auto: boolean }>;
   /** 홈·내 것의 "내 요청" 칸 */
   MyRequests: ComponentType<{ compact?: boolean }>;
   /** S6 "연결된 AI 앱" 칸 */

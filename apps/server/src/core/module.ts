@@ -37,6 +37,7 @@ export interface ExecContext {
  * plan 처리기(ADR-03). 쓰기 한 종류마다 하나예요.
  * - propose 흐름: 카드 주 버튼 → sheet()로 확인 시트 → 확인 → execute()
  * - direct 흐름(게시): 공개 미리보기 [올리기] → 바로 execute()
+ * - auto 흐름(채팅 명령, ADR-19): autoAllowed 처리기만, 사람이 채팅으로 직접 시킨 명령 → 바로 execute()
  */
 export interface PlanHandler<P> {
   module: ModuleKind;
@@ -45,6 +46,8 @@ export interface PlanHandler<P> {
   schema: z.ZodType<P>;
   /** 공개 미리보기에서 사용자가 고칠 수 있는 칸 */
   editableKeys?: string[];
+  /** 채팅 자동 실행 허용 목록(ADR-19). 참이면 사람이 채팅으로 직접 시킨 명령을 확인 시트 없이 PlanService.auto로 실행해요. */
+  autoAllowed?: boolean;
   sheet?(params: P, user: DeskUser): Promise<PlanSheet>;
   /** 확인 순간 다시 검사하고 실행해요. 겹침은 막힘으로 돌려줘요(R5). */
   /** 트랜잭션 ex.q 안에서 쓰기만 해요. 여기서 LLM(ctx.gateway)을 부르지 않아요. 게이트웨이가 ctx.db에 비용 행을 써서 PGlite(연결 하나)에서는 서로 기다리다 멈춰요. AI 판단은 제안 때 해서 토큰에 담아요. */

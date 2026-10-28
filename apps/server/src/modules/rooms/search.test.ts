@@ -8,10 +8,10 @@ const DATE = '2026-10-27';
 const at = (hhmm: string) => kstToEpoch(DATE, hhmm);
 
 const rooms: RoomRow[] = [
-  { id: 'a', name: 'A', floor: '3층', capacity: 6, equipment: ['화면'], facilities: [], photoUrl: null },
-  { id: 'b', name: 'B', floor: '3층', capacity: 8, equipment: ['화면'], facilities: [], photoUrl: null },
-  { id: 'c', name: 'C', floor: '5층', capacity: 10, equipment: ['화면', '화상회의'], facilities: [], photoUrl: null },
-  { id: 'd', name: 'D', floor: '3층', capacity: 4, equipment: [], facilities: [], photoUrl: null },
+  { id: 'a', name: 'A', floor: '3층', capacity: 6, equipment: ['화면'], repairs: [], facilities: [], photoUrl: null },
+  { id: 'b', name: 'B', floor: '3층', capacity: 8, equipment: ['화면'], repairs: [], facilities: [], photoUrl: null },
+  { id: 'c', name: 'C', floor: '5층', capacity: 10, equipment: ['화면', '화상회의'], repairs: [], facilities: [], photoUrl: null },
+  { id: 'd', name: 'D', floor: '3층', capacity: 4, equipment: [], repairs: [], facilities: [], photoUrl: null },
 ];
 const query: RoomQuery = { date: DATE, start: '15:00', minutes: 60, people: 6, equipment: ['화면'] };
 const busy = (roomId: string, from: string, to: string): BusyRow => ({ roomId, start: at(from), end: at(to) });

@@ -100,8 +100,20 @@ export function App() {
   const pageKey = `${current}-${handoff?.to === current ? handoff.at : 0}`;
   const found = FEATURES.find((f) => f.page === current);
   const feature = found && featureFor(found, config);
-  const { BoardScreen, OpsScreen, ChartScreen, ConsentScreen, LinkEntry, MyReservations, RoomDirectory, InquiryInbox, MyInquiries, InvitedMeetings } =
-    webModules;
+  const {
+    BoardScreen,
+    OpsScreen,
+    ChartScreen,
+    ConsentScreen,
+    LinkEntry,
+    MyReservations,
+    MyLoans,
+    RoomChat,
+    RoomDirectory,
+    InquiryInbox,
+    MyInquiries,
+    InvitedMeetings,
+  } = webModules;
   const isChartOwner = me?.roles.includes('chart-owner') ?? false;
 
   return (
@@ -123,9 +135,11 @@ export function App() {
               <FeaturePage key={pageKey} feature={feature} initialText={initial} autoRun={autoRun} onMove={move}>
                 {current === 'rooms' && (
                   <>
+                    {config.modules.rooms === 'on' && <RoomChat auto={config.autoActions && config.roomsWrite} />}
                     <InvitedMeetings />
                     <RoomDirectory me={me} />
                     <MyReservations />
+                    <MyLoans />
                   </>
                 )}
                 {current === 'navi' && (
