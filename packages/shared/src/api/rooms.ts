@@ -244,6 +244,8 @@ export interface RoomChatRequest {
   text: string;
   /** 같은 요청이 두 번 와도 한 번만 실행해요(영수증). 보낼 때마다 새로 만들어요. */
   requestId: string;
+  /** 다른 페이지에서 옮겨 와 사람이 보내기를 누르지 않은 문장이에요. 시키는 말이어도 자동으로 실행하지 않고 카드로만 보여 줘요. */
+  noAuto?: boolean;
 }
 
 export interface RoomChatResponse {

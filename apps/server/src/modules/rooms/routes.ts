@@ -203,6 +203,7 @@ export function registerRoomRoutes(app: FastifyInstance, ctx: AppContext, desk: 
           properties: {
             text: { type: 'string', minLength: 1, maxLength: 500 },
             requestId: { type: 'string', pattern: '^[A-Za-z0-9_-]{8,64}$' },
+            noAuto: { type: 'boolean' },
           },
         },
       },
@@ -218,7 +219,7 @@ export function registerRoomRoutes(app: FastifyInstance, ctx: AppContext, desk: 
         await ctx.audit.record({ pseudonymId: user.pseudonymId, channel: 'ask', module: 'rooms', action: 'chat', result: 'locked' });
         return reply.code(422).send({ error: 'locked', message: checked.locks[0]!.message, locks: checked.locks, rulesVersion: checked.rulesVersion });
       }
-      const { code, ...answer } = await chat.reply(user, checked.text, req.body.requestId);
+      const { code, ...answer } = await chat.reply(user, checked.text, req.body.requestId, { noAuto: req.body.noAuto === true });
       await ctx.audit.record({ pseudonymId: user.pseudonymId, channel: 'ask', module: 'rooms', action: 'chat', result: code });
       return answer;
     },

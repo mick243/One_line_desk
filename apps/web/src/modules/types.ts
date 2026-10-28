@@ -58,7 +58,17 @@ export interface WebModules {
   /** 회의실 페이지 "내 대여" 칸(ADR-19) */
   MyLoans: ComponentType;
   /** 회의실 페이지 채팅: 시키면 바로 예약·대여, 물으면 카드(ADR-19). auto는 채팅 자동 실행이 켜졌는지예요. */
-  RoomChat: ComponentType<{ auto: boolean; write: boolean }>;
+  RoomChat: ComponentType<{
+    auto: boolean;
+    write: boolean;
+    initialText?: string;
+    autoRun?: boolean;
+    onMove?: (kind: Kind, text: string) => void;
+    /** 최근 쓴 문장(이 창 메모리에만) */
+    recent?: string[];
+    onSent?: (text: string) => void;
+    onClearRecent?: () => void;
+  }>;
   /** 홈·내 것의 "내 요청" 칸 */
   MyRequests: ComponentType<{ compact?: boolean }>;
   /** S6 "연결된 AI 앱" 칸 */

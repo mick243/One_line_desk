@@ -38,6 +38,8 @@ export function App() {
   // 다른 페이지로 옮겨 가는 문장(예시 문장, "종류가 달라요", [담당 찾기로 옮기기]). 앱 메모리에만 둬요(R13).
   // auto: 다른 기능에서 옮겨 온 문장이면 그 페이지에서 바로 찾아요. 홈 예시 문장은 채우기만 해요.
   const [handoff, setHandoff] = useState<{ to: View; text: string; at: number; auto: boolean } | null>(null);
+  // 회의실 입력 칸의 최근 쓴 문장(최대 5개). 이 창 메모리에만 있어요. 저장소·서버에는 두지 않아요(R13).
+  const [roomRecent, setRoomRecent] = useState<string[]>([]);
 
   // 로그인이 풀리면 로그인 화면으로 돌려요. 알림 새로 불러오기 같은 반복 요청도 화면과 함께 멈춰요(L-46).
   const [ended, setEnded] = useState(false);
@@ -62,6 +64,7 @@ export function App() {
     if (me !== null) return;
     setView('home');
     setHandoff(null);
+    setRoomRecent([]);
   }, [me]);
 
   const load = useCallback(async () => {
@@ -146,10 +149,30 @@ export function App() {
             {entry?.kind === 'link' && <LinkEntry me={me} token={entry.token} />}
             {!entry && current === 'home' && <Home me={me} switches={config} onOpen={go} />}
             {!entry && feature && current !== 'board' && (
-              <FeaturePage key={pageKey} feature={feature} initialText={initial} autoRun={autoRun} onMove={move}>
+              <FeaturePage
+                key={pageKey}
+                feature={feature}
+                initialText={initial}
+                autoRun={autoRun}
+                onMove={move}
+                // 회의실이 켜져 있으면 빈 방 찾기와 회의실 채팅을 한 입력 칸으로 써요(10/28 통합 개편). 링크만이면 공통 입력이 링크 카드를 줘요.
+                input={
+                  current === 'rooms' && config.modules.rooms === 'on'
+                    ? (p) => (
+                        <RoomChat
+                          auto={config.autoActions && config.roomsWrite}
+                          write={config.roomsWrite}
+                          recent={roomRecent}
+                          onSent={(text) => setRoomRecent((list) => [text, ...list.filter((x) => x !== text)].slice(0, 5))}
+                          onClearRecent={() => setRoomRecent([])}
+                          {...p}
+                        />
+                      )
+                    : undefined
+                }
+              >
                 {current === 'rooms' && (
                   <>
-                    {config.modules.rooms === 'on' && <RoomChat auto={config.autoActions && config.roomsWrite} write={config.roomsWrite} />}
                     <InvitedMeetings />
                     <RoomDirectory me={me} />
                     <MyReservations />

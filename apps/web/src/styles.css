@@ -1546,41 +1546,42 @@ select {
   font-size: 0.9375rem;
 }
 
-/* 회의실 채팅(10/28, ADR-19). 내 말은 오른쪽 파랑, 데스크 답은 왼쪽 회색이에요. 답 아래에 카드가 이어져요. */
-.room-chat {
+/* 회의실 입력 칸(10/28 통합 개편, ADR-19). 빈 방 찾기와 회의실 채팅을 한 칸으로 써요.
+   입력 칸 아래 한 줄이 지금 동작(바로 예약 / 찾기만 / 그룹웨어)을 알려 주고, 결과는 최신 답 하나를 크게, 지난 대화는 접어요. */
+.room-ask {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
-.room-chat-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.room-chat-head h2 {
+.mode-line {
   margin: 0;
+  border-radius: var(--radius-s);
+  padding: 8px 12px;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  background: var(--surface-2);
+  color: var(--text-2);
 }
-.chat-thread {
+.mode-line.warn {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-weight: 600;
+}
+.room-results {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 560px;
-  overflow-y: auto;
-  padding: 2px;
 }
-.chat-turn {
+.room-turn {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
 }
-.chat-turn.me {
-  align-items: flex-end;
-}
 .chat-bubble {
   margin: 0;
   max-width: 85%;
+  align-self: flex-start;
   border-radius: var(--radius-m);
   padding: 10px 14px;
   background: var(--surface-2);
@@ -1589,7 +1590,8 @@ select {
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.chat-turn.me .chat-bubble {
+.chat-bubble.mine {
+  align-self: flex-end;
   background: var(--accent);
   color: var(--on-accent);
 }
@@ -1602,4 +1604,32 @@ select {
   font-size: 0.6875rem;
   font-weight: 700;
   white-space: nowrap;
+}
+.room-history {
+  border-radius: var(--radius-m);
+  padding: 8px 12px;
+  background: var(--surface-2);
+}
+.room-history summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.room-history[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.room-results > .link {
+  align-self: flex-start;
+}
+.recent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.recent-head .example-label {
+  margin: 0;
 }

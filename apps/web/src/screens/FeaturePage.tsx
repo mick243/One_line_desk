@@ -14,6 +14,7 @@ export function FeaturePage({
   initialText = '',
   autoRun = false,
   onMove,
+  input,
   children,
 }: {
   feature: Feature;
@@ -22,6 +23,8 @@ export function FeaturePage({
   autoRun?: boolean;
   /** "종류가 달라요"·"담당 찾기에서 찾기": 같은 문장을 다른 기능 페이지로 옮겨요. */
   onMove: (kind: Kind, text: string) => void;
+  /** 기능이 자기 입력 칸을 쓰면(회의실 통합 입력 칸, 10/28) 공통 입력·결과 대신 이걸 그려요. 옮겨 온 문장도 넘겨요. */
+  input?: (p: { initialText: string; autoRun: boolean; onMove: (kind: Kind, text: string) => void }) => ReactNode;
   children?: ReactNode;
 }) {
   const actions = useActions();
@@ -50,20 +53,34 @@ export function FeaturePage({
   // 개발 모드(StrictMode)는 효과를 두 번 돌려서 한 번만 보내게 막아요.
   const autoSent = useRef(false);
   useEffect(() => {
-    if (!autoRun || !initialText || autoSent.current) return;
+    if (input || !autoRun || !initialText || autoSent.current) return;
     autoSent.current = true;
     const checked = checkInput(initialText);
     if (checked.locks.length === 0) void ask(checked.text);
     // 처음 열릴 때 한 번만 돌아요(페이지는 옮겨 올 때마다 새로 그려져요).
   }, []);
 
+  const pageHead = (
+    <header className='page-head'>
+      <p className='eyebrow'>{feature.title}</p>
+      <h1>{feature.question}</h1>
+      <p className='lead'>{feature.summary}</p>
+    </header>
+  );
+
+  if (input) {
+    return (
+      <div className='feature-page'>
+        {pageHead}
+        {input({ initialText, autoRun, onMove })}
+        {children}
+      </div>
+    );
+  }
+
   return (
     <div className='feature-page'>
-      <header className='page-head'>
-        <p className='eyebrow'>{feature.title}</p>
-        <h1>{feature.question}</h1>
-        <p className='lead'>{feature.summary}</p>
-      </header>
+      {pageHead}
 
       <CheckedInput
         scope='나만 보여요'

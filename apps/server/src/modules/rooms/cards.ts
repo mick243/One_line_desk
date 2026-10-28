@@ -372,7 +372,7 @@ export function myReservationCard(r: MyReservation): Card {
  * 채팅으로 할 수 있는 일. auto = 시키면 바로, confirm = 자동 실행 끔(카드 확인 시트로), read-only = 회의실 쓰기 끔(보기만, 예약·대여는 그룹웨어).
  * 회의실 쓰기가 꺼지면 카드에도 예약·대여 버튼이 없어서 "카드에서 하세요"라고 하지 않아요(QA D-C03).
  */
-export function chatHelpCard(o: { mode: 'auto' | 'confirm' | 'read-only' }): Card {
+export function chatHelpCard(o: { mode: 'auto' | 'confirm' | 'read-only'; navi?: boolean }): Card {
   const readOnly = o.mode === 'read-only';
   return makeCard({
     id: 'rooms-chat-help',
@@ -390,6 +390,8 @@ export function chatHelpCard(o: { mode: 'auto' | 'confirm' | 'read-only' }): Car
       { name: '장비 현황', value: '3C 장비 뭐 있어? · 노트북 남았어?' },
     ],
     evidence: { text: '회의실 채팅', aiSummarized: false },
+    // 회의실 일이 아니면 담당 찾기로 같은 문장을 옮겨요(통합 입력 칸, 10/28).
+    ...(o.navi ? { secondary: [{ type: 'reask' as const, text: '담당 찾기에서 찾기', kind: 'navi' as const }] } : {}),
     tail:
       o.mode === 'auto'
         ? '"잡아 줘·빌려 줘"처럼 시키면 바로 예약·대여하고, 물어보면 카드로만 보여 줘요'

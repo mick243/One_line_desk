@@ -1,121 +1,211 @@
-import type { Card, MyLoansResponse, RoomChatResponse } from '@one-line-desk/shared';
+import { type Card, checkInput, type Kind, type MyLoansResponse, type RoomChatPreview, type RoomChatResponse, roomChatPreview } from '@one-line-desk/shared';
 import { useEffect, useRef, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
 import { replaceCard, useActions } from '../../components/ActionHost';
 import { CardView } from '../../components/CardView';
 import { CheckedInput } from '../../components/CheckedInput';
 
-// 회의실 채팅(10/28, ADR-19). "내일 3시 6명 잡아 줘"처럼 시키면 바로 예약·대여하고, 물어보면 카드로만 보여 줘요.
-// 대화는 이 페이지 메모리에만 있어요. 저장소·주소에는 두지 않아요(R13). 수동 예약(빈 방 찾기·모든 회의실)은 그대로예요.
+// 회의실 입력 칸(10/28 통합 개편, ADR-19). 빈 방 찾기와 회의실 채팅을 한 칸으로 합쳤어요.
+// - 묻는 말("내일 3시 6명", "빈 방 있어?")은 찾기만 하고, 시키는 말("잡아 줘·빌려 줘")은 조건이 다 있으면 바로 예약·대여해요.
+// - 보내기 전에 같은 규칙(공유 패키지 roomChatPreview)으로 "바로 예약돼요 / 찾기만 해요"를 미리 보여 주고, 버튼 이름도 바꿔요.
+// - 다른 페이지에서 옮겨 온 문장은 사람이 보내기를 누르지 않았으니 자동 실행하지 않아요(noAuto).
+// - 결과는 최신 답 하나를 크게, 지난 대화는 접어요. 대화는 이 페이지 메모리에만 있어요(R13). 수동 예약(모든 회의실)은 그대로예요.
 
-const EXAMPLES = ['내일 3시 6명 회의실 잡아 줘', '내일 3시 회의에 빔프로젝터 빌려 줘', '지금 빈 방 있어?', '3C 장비 뭐 있어?', '내 예약 보여 줘'];
+/** 시키면 바로 실행되는 상태에서 찾기와 예약의 차이를 보여 주는 예시예요. */
+const AUTO_EXAMPLES = ['내일 3시 6명', '내일 3시 6명 잡아 줘', '내일 3시 회의에 빔프로젝터 빌려 줘', '지금 빈 방 있어?', '3C 장비 뭐 있어?', '내 예약 보여 줘'];
+/** 자동 실행이 꺼졌을 때(카드에서 확인하고 예약) */
+const CONFIRM_EXAMPLES = ['내일 3시 6명', '다음 주 화요일 10시부터 2시간 4명', '지금 빈 방 있어?', '노트북 남았어?', '내 예약 보여 줘'];
 /** 회의실 쓰기가 꺼졌을 때는 보기만 되는 예시예요(QA D-C03). */
 const READ_ONLY_EXAMPLES = ['지금 빈 방 있어?', '오늘 회의실 현황', '3C 장비 뭐 있어?', '노트북 남았어?'];
-/** 화면에 남기는 말풍선 수. 넘으면 오래된 것부터 지워요. */
+/** 화면에 남기는 대화 수. 넘으면 오래된 것부터 지워요. */
 const KEEP = 20;
 
-interface Message {
+interface Turn {
   id: number;
-  who: 'me' | 'desk';
   text: string;
+  reply?: string;
   cards: Card[];
   aiParsed?: boolean;
   failed?: boolean;
 }
 
-/** auto: 채팅 자동 실행이 켜졌는지. write: 회의실 쓰기가 켜졌는지(꺼지면 예약·대여는 그룹웨어에서 해요). */
-export function RoomChat({ auto, write }: { auto: boolean; write: boolean }) {
+type Mode = 'auto' | 'confirm' | 'read-only';
+
+/** 입력 칸 아래 한 줄과 버튼 이름. 지금 스위치와 친 문장으로 정해요. */
+function guide(mode: Mode, text: string): { line: string; tone: 'quiet' | 'warn'; submit: string } {
+  if (mode === 'read-only') return { line: '지금은 예약·대여를 그룹웨어에서 해요. 빈 방·장비 현황은 여기서 볼 수 있어요.', tone: 'quiet', submit: '찾기' };
+  if (mode === 'confirm') return { line: '지금은 확인 후 예약해요. 카드의 [이 방으로 예약]으로 한 번 더 확인해요.', tone: 'quiet', submit: '찾기' };
+  if (!text.trim()) return { line: '"잡아 줘·빌려 줘"처럼 시키면 바로 예약·대여해요. 물어보면 찾기만 해요.', tone: 'quiet', submit: '보내기' };
+  const preview: RoomChatPreview = roomChatPreview(text);
+  if (preview === 'may-run-reserve')
+    return { line: '시키는 말이에요 · 날짜·시각·인원이 다 있으면 바로 예약돼요. 끝나면 [취소]로 되돌릴 수 있어요.', tone: 'warn', submit: '예약하기' };
+  if (preview === 'may-run-rent')
+    return { line: '시키는 말이에요 · 언제 쓸지 정해져 있으면 바로 빌려요. 끝나면 [대여 취소]로 되돌릴 수 있어요.', tone: 'warn', submit: '빌리기' };
+  if (preview === 'cancel') return { line: '취소·반납은 카드의 버튼으로 한 번 더 확인하고 해요.', tone: 'quiet', submit: '보내기' };
+  return { line: '묻는 말이라 찾기만 해요. 예약은 카드에서 한 번 더 확인해요.', tone: 'quiet', submit: '찾기' };
+}
+
+/**
+ * auto: 채팅 자동 실행이 켜졌는지. write: 회의실 쓰기가 켜졌는지(꺼지면 예약·대여는 그룹웨어에서 해요).
+ * initialText·autoRun: 다른 페이지에서 옮겨 온 문장. autoRun이면 열리자마자 찾되 자동 실행은 하지 않아요.
+ * onMove: 회의실 일이 아니면 같은 문장을 다른 기능 페이지로 옮겨요.
+ * recent·onSent·onClearRecent: 최근 쓴 문장. 앱이 이 창 메모리에만 두고, 로그아웃·새로 고침이면 지워져요(R13).
+ */
+export function RoomChat({
+  auto,
+  write,
+  initialText = '',
+  autoRun = false,
+  onMove,
+  recent = [],
+  onSent,
+  onClearRecent,
+}: {
+  auto: boolean;
+  write: boolean;
+  initialText?: string;
+  autoRun?: boolean;
+  onMove?: (kind: Kind, text: string) => void;
+  recent?: string[];
+  onSent?: (text: string) => void;
+  onClearRecent?: () => void;
+}) {
   const actions = useActions();
-  const [text, setText] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
+  const mode: Mode = !write ? 'read-only' : auto ? 'auto' : 'confirm';
+  const [text, setText] = useState(autoRun ? '' : initialText);
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [waiting, setWaiting] = useState(false);
   const next = useRef(0);
-  const end = useRef<HTMLDivElement>(null);
+  const g = guide(mode, text);
 
-  useEffect(() => {
-    end.current?.scrollIntoView({ block: 'nearest' });
-  }, [messages.length, waiting]);
-
-  const push = (m: Omit<Message, 'id'>) => setMessages((list) => [...list, { ...m, id: ++next.current }].slice(-KEEP));
-
-  async function send(masked: string) {
-    push({ who: 'me', text: masked, cards: [] });
+  async function send(masked: string, opts: { noAuto?: boolean } = {}) {
+    const id = ++next.current;
+    setTurns((list) => [...list, { id, text: masked, cards: [] }].slice(-KEEP));
+    onSent?.(masked);
     setText('');
     setWaiting(true);
+    const done = (patch: Partial<Turn>) => setTurns((list) => list.map((t) => (t.id === id ? { ...t, ...patch } : t)));
     try {
       // 보낼 때마다 새 요청 ID예요. 같은 요청이 두 번 가도 서버가 한 번만 실행해요.
-      const res = await apiRequest<RoomChatResponse>('POST', '/api/rooms/chat', { text: masked, requestId: crypto.randomUUID() });
-      push({ who: 'desk', text: res.reply, cards: res.cards, aiParsed: res.aiParsed });
+      const res = await apiRequest<RoomChatResponse>('POST', '/api/rooms/chat', {
+        text: masked,
+        requestId: crypto.randomUUID(),
+        ...(opts.noAuto ? { noAuto: true } : {}),
+      });
+      done({ reply: res.reply, cards: res.cards, aiParsed: res.aiParsed });
       if (res.changed) actions.refresh();
     } catch (e) {
-      push({ who: 'desk', text: e instanceof ApiFailure ? e.message : '지금 답하지 못했어요. 잠시 뒤에 다시 보내 주세요', cards: [], failed: true });
+      done({ reply: e instanceof ApiFailure ? e.message : '지금 답하지 못했어요. 잠시 뒤에 다시 보내 주세요', failed: true });
     } finally {
       setWaiting(false);
     }
   }
 
-  return (
-    <section className='card room-chat' aria-label='회의실 채팅'>
-      <div className='room-chat-head'>
-        <h2>회의실 채팅</h2>
-        {messages.length > 0 && (
-          <button type='button' className='neutral small' onClick={() => setMessages([])}>
-            대화 지우기
-          </button>
+  // 옮겨 온 문장은 한 번만, 자동 실행 없이 보내요. 걸리는 글자가 있으면 보내지 않고 칸에만 둬요(ADR-11).
+  // 개발 모드(StrictMode)는 효과를 두 번 돌려서 한 번만 보내게 막아요.
+  const handedOff = useRef(false);
+  useEffect(() => {
+    if (!autoRun || !initialText || handedOff.current) return;
+    handedOff.current = true;
+    const checked = checkInput(initialText);
+    if (checked.locks.length === 0) void send(checked.text, { noAuto: true });
+    else setText(initialText);
+    // 처음 열릴 때 한 번만 돌아요(페이지는 옮겨 올 때마다 새로 그려져요).
+  }, []);
+
+  const latest = turns.at(-1);
+  const older = turns.slice(0, -1);
+
+  function renderTurn(t: Turn) {
+    return (
+      <div key={t.id} className='room-turn'>
+        <p className='chat-bubble mine'>{t.text}</p>
+        {t.reply !== undefined && (
+          <p className={t.failed ? 'chat-bubble lock-line' : 'chat-bubble'}>
+            {t.reply}
+            {t.aiParsed && <span className='chat-ai'>AI 해석</span>}
+          </p>
         )}
+        {t.cards.map((card) => (
+          <CardView
+            key={card.id}
+            card={card}
+            onResults={(cards) => setTurns((list) => list.map((x) => (x.id === t.id ? { ...x, cards } : x)))}
+            onAction={(action) => {
+              // 회의실 일이 아니면(도움말 카드) 같은 문장을 담당 찾기로 옮겨요.
+              if (action.type === 'reask') return onMove?.(action.kind, t.text);
+              // 끝난 카드는 결과 카드로 바꿔요(예약 → 확정, 취소 → 취소됨). 지난 버튼이 남지 않게 해요(QA D-B01).
+              return actions.run(action, card, (cards) =>
+                setTurns((list) => list.map((x) => (x.id === t.id ? { ...x, cards: replaceCard(x.cards, card.id, cards) } : x))),
+              );
+            }}
+          />
+        ))}
       </div>
-      <p className='hint'>
-        {!write
-          ? '지금은 예약·대여를 그룹웨어에서 해요. 채팅으로는 빈 방·장비 현황을 볼 수 있어요.'
-          : auto
-            ? '"잡아 줘·빌려 줘"처럼 시키면 바로 예약·대여해요. 물어보면 카드로만 보여 줘요. 취소는 늘 한 번 더 확인해요.'
-            : '지금은 채팅 자동 실행이 꺼져 있어요. 채팅은 카드로 보여 주고, 예약·대여는 카드에서 한 번 더 확인해요.'}
-      </p>
+    );
+  }
 
-      {messages.length > 0 && (
-        <div className='chat-thread' aria-live='polite' aria-busy={waiting}>
-          {messages.map((m) => (
-            <div key={m.id} className={`chat-turn ${m.who}`}>
-              <p className={m.failed ? 'chat-bubble lock-line' : 'chat-bubble'}>
-                {m.text}
-                {m.aiParsed && <span className='chat-ai'>AI 해석</span>}
-              </p>
-              {m.cards.map((card) => (
-                <CardView
-                  key={card.id}
-                  card={card}
-                  onResults={(cards) => setMessages((list) => list.map((x) => (x.id === m.id ? { ...x, cards } : x)))}
-                  onAction={(action) =>
-                    // 끝난 카드는 결과 카드로 바꿔요(예약 → 확정, 취소 → 취소됨). 지난 버튼이 남지 않게 해요(QA D-B01).
-                    actions.run(action, card, (next) =>
-                      setMessages((list) => list.map((x) => (x.id === m.id ? { ...x, cards: replaceCard(x.cards, card.id, next) } : x))),
-                    )
-                  }
-                />
-              ))}
-            </div>
-          ))}
-          {waiting && <div className='skeleton' aria-label='답을 만드는 중' />}
-          <div ref={end} />
-        </div>
-      )}
-
+  return (
+    <section className='room-ask' aria-label='회의실 입력'>
       <CheckedInput
         scope='나만 보여요'
-        label='회의실 채팅'
-        placeholder={write ? '예) 내일 3시 6명 회의실 잡아 줘' : '예) 지금 빈 방 있어?'}
-        submitLabel='보내기'
+        label='회의실, 무엇을 할까요?'
+        placeholder={mode === 'read-only' ? '예) 지금 빈 방 있어?' : mode === 'auto' ? '예) 내일 3시 6명 · 내일 3시 6명 잡아 줘' : '예) 내일 3시 6명'}
+        submitLabel={g.submit}
         value={text}
         onValueChange={setText}
         onSubmit={(masked) => send(masked)}
       />
-      <div className='chips scroll' aria-label='채팅 예시'>
-        {(write ? EXAMPLES : READ_ONLY_EXAMPLES).map((ex) => (
-          <button key={ex} type='button' className='chip' onClick={() => setText(ex)}>
-            {ex}
+      <p className={`mode-line ${g.tone}`} role='status'>
+        {g.line}
+      </p>
+      {/* 최근 쓴 문장이 있으면 그걸, 아직 없으면(처음 쓸 때) 예시 문장을 보여 줘요. 누르면 칸에 채우기만 하고 보내지 않아요. */}
+      {recent.length > 0 ? (
+        <>
+          <div className='recent-head'>
+            <p className='example-label'>최근 쓴 문장 · 이 창에서만 기억해요</p>
+            {onClearRecent && (
+              <button type='button' className='link' onClick={onClearRecent}>
+                지우기
+              </button>
+            )}
+          </div>
+          <div className='chips scroll' aria-label='최근 쓴 문장'>
+            {recent.map((ex) => (
+              <button key={ex} type='button' className='chip' onClick={() => setText(ex)}>
+                {ex}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <p className='example-label'>이렇게 써 보세요</p>
+          <div className='chips scroll' aria-label='예시 문장'>
+            {(mode === 'auto' ? AUTO_EXAMPLES : mode === 'confirm' ? CONFIRM_EXAMPLES : READ_ONLY_EXAMPLES).map((ex) => (
+              <button key={ex} type='button' className='chip' onClick={() => setText(ex)}>
+                {ex}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {latest && (
+        <section className='results room-results' aria-live='polite' aria-busy={waiting}>
+          {renderTurn(latest)}
+          {waiting && latest.reply === undefined && <div className='skeleton' aria-label='답을 만드는 중' />}
+          {older.length > 0 && (
+            <details className='room-history'>
+              <summary>이전 대화 {older.length}개</summary>
+              {[...older].reverse().map(renderTurn)}
+            </details>
+          )}
+          <button type='button' className='link' onClick={() => setTurns([])}>
+            대화 지우기
           </button>
-        ))}
-      </div>
+        </section>
+      )}
     </section>
   );
 }

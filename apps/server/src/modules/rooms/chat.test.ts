@@ -2,7 +2,8 @@ import type { Card, CardAction, PlanConfirmResponse, PlanCreateResponse, RoomCha
 import { afterEach, describe, expect, it } from 'vitest';
 import { pseudonymize } from '../../core/pseudonym';
 import { createTestApp, MOCK } from '../../testing';
-import { interpretByRules, isCommand, loanKindsIn, mentionedRoom } from './chat';
+import { isCommand, loanKindsIn } from '@one-line-desk/shared';
+import { interpretByRules, mentionedRoom } from './chat';
 import { listRooms } from './repo';
 
 // 회의실 채팅·장비 대여(ADR-19). 시계는 2026-10-26(월) 09:00이에요. "내일"은 10월 27일(화)이에요.
@@ -215,6 +216,27 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
     expect(help.cards[0]!.tail).toBe('지금은 예약·대여를 그룹웨어에서 해요. 채팅으로는 빈 방·장비 현황을 볼 수 있어요');
     expect(help.cards[0]!.fields.map((f) => f.name)).not.toContain('예약');
     expect(await appReservations(t)).toHaveLength(0);
+  });
+
+  it('다른 페이지에서 옮겨 온 문장(noAuto)은 시키는 말이어도 자동으로 예약하지 않아요(통합 입력 칸)', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.staff);
+    const res = await me.call('POST', '/api/rooms/chat', { text: '내일 3시 6명 회의실 잡아 줘', requestId: newRequestId(), noAuto: true });
+    expect(res.status).toBe(200);
+    const out = res.body as RoomChatResponse;
+    expect(out.changed).toBe(false);
+    expect(out.cards.some((c) => c.actions.primary?.type === 'propose')).toBe(true);
+    expect(await appReservations(t)).toHaveLength(0);
+    // 같은 문장을 사람이 직접 보내면 바로 예약해요.
+    expect((await chat(me, '내일 3시 6명 회의실 잡아 줘')).changed).toBe(true);
+  });
+
+  it('회의실 일이 아닌 문장은 도움말과 [담당 찾기에서 찾기]를 줘요', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.staff);
+    const out = await chat(me, '법인카드 잃어버렸어요');
+    expect(out.cards[0]!.id).toBe('rooms-chat-help');
+    expect(out.cards[0]!.actions.secondary).toEqual([{ type: 'reask', text: '담당 찾기에서 찾기', kind: 'navi' }]);
   });
 
   it('빠진 조건을 되물을 때 "알려 주면 바로 예약"이라고 약속하지 않고 한 문장으로 다시 말해 달라고 해요(QA D-B02)', async () => {

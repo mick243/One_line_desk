@@ -15,3 +15,4 @@ export * from './api/notifications';
 export * from './api/pantry';
 export * from './api/mcp';
 export * from './api/pantry-order';
+export * from './rooms-chat';
