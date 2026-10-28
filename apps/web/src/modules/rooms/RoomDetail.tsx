@@ -1,7 +1,7 @@
 import type { Card, Equipment, RoomCardsResponse, RoomDayResponse } from '@one-line-desk/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
-import { useActions } from '../../components/ActionHost';
+import { replaceCard, useActions } from '../../components/ActionHost';
 import { CardView } from '../../components/CardView';
 import { Sheet } from '../../components/Sheet';
 import { dateLabel, dayChips, fromMinutes, splitCheckedAt, statusText, toMinutes } from './roomText';
@@ -217,7 +217,11 @@ export function RoomDetail({
               {busy ? '확인하는 중' : start ? `${start}~${selectedEnd} 예약할 수 있는지 보기` : '예약할 수 있는지 보기'}
             </button>
             {cards?.map((card) => (
-              <CardView key={card.id} card={card} onAction={(action) => actions.run(action, card)} />
+              <CardView
+                key={card.id}
+                card={card}
+                onAction={(action) => actions.run(action, card, (next) => setCards((list) => (list ? replaceCard(list, card.id, next) : next)))}
+              />
             ))}
           </section>
         </div>

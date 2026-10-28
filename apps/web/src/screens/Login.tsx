@@ -48,7 +48,9 @@ export function Login({
   const [users, setUsers] = useState<MockUser[]>([]);
   const [error, setError] = useState(() => {
     const reason = new URLSearchParams(window.location.search).get('login');
-    return reason ? (LOGIN_FAILED[reason] ?? LOGIN_FAILED.failed!) : '';
+    // 표에 있는 이유만 받아요. "__proto__"·"constructor" 같은 값이 객체 원형을 꺼내 화면이 멈추지 않게 해요(QA D-A04).
+    if (!reason) return '';
+    return Object.hasOwn(LOGIN_FAILED, reason) ? LOGIN_FAILED[reason]! : LOGIN_FAILED.failed!;
   });
 
   useEffect(() => {

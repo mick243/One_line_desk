@@ -1,4 +1,4 @@
-import { type Card, GRADE, kstDate } from '@one-line-desk/shared';
+import { type Card, GRADE, kstDate, personNameWords } from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { LeaveRecord } from '../../adapters/types';
 import type { AppContext } from '../../context';
@@ -360,11 +360,26 @@ export function leaveCard(balance: LeaveBalance | null, q: LeaveQuestion, today:
 }
 
 /** 휴가 질문이면 본인 연차 카드를, 아니면 null을 돌려줘요. 연차 자료는 본인 것만 읽고, 남의 연차를 물으면 읽지 않아요. */
-export async function myLeaveCard(ctx: AppContext, user: Pick<DeskUser, 'idpSubject' | 'email'>, text: string): Promise<Card | null> {
+/**
+ * 직원 명단 이름이 연차 말 바로 앞에 있으면 남의 연차 질문이에요("도윤 연차", "서연이 연차", "민준의 휴가").
+ * 내 이름은 빼요. 이름이 다른 낱말 안에 든 것("하늘보리")과 연차 말과 떨어진 것("도윤이랑 같이 연차 쓰면")은 보지 않아요.
+ */
+export function namesOtherPerson(text: string, roster: readonly string[], mine: readonly string[]): boolean {
+  const others = [...new Set(roster)].filter((n) => /^[가-힣]{2,}$/.test(n) && !mine.includes(n));
+  if (!others.length) return false;
+  const names = others.sort((a, b) => b.length - a.length).join('|');
+  const pattern = new RegExp(String.raw`(?<![가-힣])(?:${names})(?:님|씨|쌤)?(?:이|의|은|는|가|도)?\s*(?:연차|반차|휴가|연가)`);
+  return pattern.test(text);
+}
+
+export async function myLeaveCard(ctx: AppContext, user: Pick<DeskUser, 'idpSubject' | 'email' | 'displayName'>, text: string): Promise<Card | null> {
   const today = kstDate(ctx.now());
   const q = await readLeaveQuestion(ctx.gateway, text, today);
   if (!q.about) return null;
   if (q.aboutOther) return otherPersonCard();
+  // "도윤 연차 몇 개 남았어?"처럼 호칭 없이 이름만 쓰면 규칙(OTHER_PERSON)이 못 알아봐요. 직원 명단 이름과 대조해요(QA D-A02).
+  const names = await ctx.adapters.directory.personNameWords().catch(() => [] as string[]);
+  if (namesOtherPerson(text, names, personNameWords(user.displayName))) return otherPersonCard();
   const record = await ctx.adapters.leave.leaveOf({ idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) }).catch(() => null);
   return leaveCard(record ? computeLeave(record, today) : null, q, today);
 }

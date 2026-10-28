@@ -1,7 +1,7 @@
 import type { Card, MyLoansResponse, RoomChatResponse } from '@one-line-desk/shared';
 import { useEffect, useRef, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
-import { useActions } from '../../components/ActionHost';
+import { replaceCard, useActions } from '../../components/ActionHost';
 import { CardView } from '../../components/CardView';
 import { CheckedInput } from '../../components/CheckedInput';
 
@@ -9,6 +9,8 @@ import { CheckedInput } from '../../components/CheckedInput';
 // 대화는 이 페이지 메모리에만 있어요. 저장소·주소에는 두지 않아요(R13). 수동 예약(빈 방 찾기·모든 회의실)은 그대로예요.
 
 const EXAMPLES = ['내일 3시 6명 회의실 잡아 줘', '내일 3시 회의에 빔프로젝터 빌려 줘', '지금 빈 방 있어?', '3C 장비 뭐 있어?', '내 예약 보여 줘'];
+/** 회의실 쓰기가 꺼졌을 때는 보기만 되는 예시예요(QA D-C03). */
+const READ_ONLY_EXAMPLES = ['지금 빈 방 있어?', '오늘 회의실 현황', '3C 장비 뭐 있어?', '노트북 남았어?'];
 /** 화면에 남기는 말풍선 수. 넘으면 오래된 것부터 지워요. */
 const KEEP = 20;
 
@@ -21,7 +23,8 @@ interface Message {
   failed?: boolean;
 }
 
-export function RoomChat({ auto }: { auto: boolean }) {
+/** auto: 채팅 자동 실행이 켜졌는지. write: 회의실 쓰기가 켜졌는지(꺼지면 예약·대여는 그룹웨어에서 해요). */
+export function RoomChat({ auto, write }: { auto: boolean; write: boolean }) {
   const actions = useActions();
   const [text, setText] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -62,9 +65,11 @@ export function RoomChat({ auto }: { auto: boolean }) {
         )}
       </div>
       <p className='hint'>
-        {auto
-          ? '"잡아 줘·빌려 줘"처럼 시키면 바로 예약·대여해요. 물어보면 카드로만 보여 줘요. 취소는 늘 한 번 더 확인해요.'
-          : '지금은 채팅 자동 실행이 꺼져 있어요. 채팅은 카드로 보여 주고, 예약·대여는 카드에서 한 번 더 확인해요.'}
+        {!write
+          ? '지금은 예약·대여를 그룹웨어에서 해요. 채팅으로는 빈 방·장비 현황을 볼 수 있어요.'
+          : auto
+            ? '"잡아 줘·빌려 줘"처럼 시키면 바로 예약·대여해요. 물어보면 카드로만 보여 줘요. 취소는 늘 한 번 더 확인해요.'
+            : '지금은 채팅 자동 실행이 꺼져 있어요. 채팅은 카드로 보여 주고, 예약·대여는 카드에서 한 번 더 확인해요.'}
       </p>
 
       {messages.length > 0 && (
@@ -80,7 +85,12 @@ export function RoomChat({ auto }: { auto: boolean }) {
                   key={card.id}
                   card={card}
                   onResults={(cards) => setMessages((list) => list.map((x) => (x.id === m.id ? { ...x, cards } : x)))}
-                  onAction={(action) => actions.run(action, card)}
+                  onAction={(action) =>
+                    // 끝난 카드는 결과 카드로 바꿔요(예약 → 확정, 취소 → 취소됨). 지난 버튼이 남지 않게 해요(QA D-B01).
+                    actions.run(action, card, (next) =>
+                      setMessages((list) => list.map((x) => (x.id === m.id ? { ...x, cards: replaceCard(x.cards, card.id, next) } : x))),
+                    )
+                  }
                 />
               ))}
             </div>
@@ -93,14 +103,14 @@ export function RoomChat({ auto }: { auto: boolean }) {
       <CheckedInput
         scope='나만 보여요'
         label='회의실 채팅'
-        placeholder='예) 내일 3시 6명 회의실 잡아 줘'
+        placeholder={write ? '예) 내일 3시 6명 회의실 잡아 줘' : '예) 지금 빈 방 있어?'}
         submitLabel='보내기'
         value={text}
         onValueChange={setText}
         onSubmit={(masked) => send(masked)}
       />
       <div className='chips scroll' aria-label='채팅 예시'>
-        {EXAMPLES.map((ex) => (
+        {(write ? EXAMPLES : READ_ONLY_EXAMPLES).map((ex) => (
           <button key={ex} type='button' className='chip' onClick={() => setText(ex)}>
             {ex}
           </button>

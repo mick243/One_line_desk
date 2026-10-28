@@ -63,11 +63,15 @@ const PERSON = new RegExp(String.raw`[가-힣]{2,4}\s?(?:${TITLE}님?|님)${PART
 // 줄바꿈·제어 문자, 앞뒤 공백, 안 보이는 0폭·글 방향 문자. 판 글자 = 미리보기에서 확정한 글자여야 해서 서버가 손대지 않고 거부해요.
 const SHAPE = new RegExp(String.raw`[\u0000-\u001f\u007f\u2028\u2029]|${INVISIBLE_CHARS.source}|^\s|\s$`);
 
+// 이름을 부를 때·친근하게 가리킬 때 붙는 말. "지후야", "민준아", "민준이네", "유나쌤"도 사람 이름이에요(QA D-C01).
+const NAME_TAIL = '(?:님|씨|쌤|샘|선배|이네|네)';
+const VOCATIVE = '(?:이야|야|아)';
+
 /** 직원 명단 이름("하늘", "김하늘")이 낱말로 든 모양. "하늘보리"처럼 다른 낱말 안에 든 것은 막지 않아요. */
 function personNamePattern(names: readonly string[]): RegExp | null {
   const words = [...new Set(names.filter((n) => /^[가-힣]{2,}$/.test(n)))].sort((a, b) => b.length - a.length);
   if (words.length === 0) return null;
-  return new RegExp(`(?<![가-힣])(?:${words.join('|')})(?:님|씨)?${PARTICLE}?(?![가-힣])`);
+  return new RegExp(`(?<![가-힣])(?:${words.join('|')})${NAME_TAIL}?(?:${VOCATIVE}|${PARTICLE})?(?![가-힣])`);
 }
 
 export interface ItemNameCheck {

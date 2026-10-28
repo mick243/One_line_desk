@@ -158,7 +158,12 @@ export class RoomChat {
       case 'equipment':
         return { ...base, ...(await this.equipmentStatus(user, text, it, rooms, room, now)) };
       default:
-        return { ...base, reply: '이렇게 말해 보세요', cards: [chatHelpCard({ auto: this.autoOn() })], code: 'help' };
+        return {
+          ...base,
+          reply: '이렇게 말해 보세요',
+          cards: [chatHelpCard({ mode: this.autoOn() ? 'auto' : this.writeOn() ? 'confirm' : 'read-only' })],
+          code: 'help',
+        };
     }
   }
 
@@ -189,6 +194,15 @@ export class RoomChat {
     return s.autoActions && roomsWriteEnabled(s);
   }
 
+  /** 회의실 쓰기가 켜져 있는지. 꺼져 있으면 카드로도 예약·대여를 못 해서 그룹웨어로 안내해요(QA D-C03). */
+  private writeOn(): boolean {
+    return roomsWriteEnabled(this.ctx.ops.get());
+  }
+
+  private groupwareLink(): Card {
+    return linkCard('rooms', this.ctx.ops.get().links.rooms);
+  }
+
   // ── 예약 ─────────────────────────────────────────────────
 
   private async reserve(
@@ -208,10 +222,19 @@ export class RoomChat {
 
     const check = checkQuery(query, now);
     if (!check.ok) {
+      // 채팅은 앞 문장을 기억하지 않아요. 빠진 조건만 따로 보내면 이어 붙지 않아서, 한 문장으로 다시 말해 달라고 해요(QA D-B02).
       const reply = check.missing.length
-        ? `빠진 조건이 있어요(${check.missing.join('·')}). 알려 주시면 ${it.command ? '바로 예약할게요' : '찾아 드릴게요'}`
+        ? `빠진 조건이 있어요(${check.missing.join('·')}). 조건을 모두 넣어 한 번에 다시 말해 주세요. 예: "내일 3시 6명 회의실 잡아 줘"`
         : (check.problem ?? '조건을 다시 알려 주세요');
       return { reply, cards: await cards('이 조건으로 찾았어요'), changed: false, code: 'reask' };
+    }
+    if (!this.writeOn()) {
+      return {
+        reply: '지금은 이 앱에서 회의실을 예약하지 않아요. 빈 방을 보고 카드의 [그룹웨어에서 예약하기]로 예약해 주세요',
+        cards: await cards('이 조건으로 찾았어요'),
+        changed: false,
+        code: 'write-off',
+      };
     }
     if (!it.command) {
       const found = await cards('이 조건으로 찾았어요');
@@ -271,6 +294,18 @@ export class RoomChat {
   ): Promise<Omit<ChatResult, 'aiParsed'>> {
     const slots = parseSlots(withoutLoanWords(text), now);
     const hour = { from: now, to: now + 60 * MINUTE };
+    if (!this.writeOn()) {
+      // 회의실 쓰기가 꺼지면 [빌리기]도 없어요. 남은 수만 보여 주고 그룹웨어로 보내요(QA D-C03).
+      const from = slots.start ? kstToEpoch(slots.date ?? kstDate(now), slots.start) : hour.from;
+      const to = slots.start ? from + (slots.minutes ?? 60) * MINUTE : hour.to;
+      const card = await this.equipment.stock(user, it.kinds, from, to, { aiSummarized: it.byModel });
+      return {
+        reply: '지금은 이 앱에서 장비를 빌리지 않아요. 남은 수만 보여 드려요. 빌리려면 그룹웨어로 신청해 주세요',
+        cards: [card, this.groupwareLink()],
+        changed: false,
+        code: 'write-off',
+      };
+    }
     if (!it.kinds.length) {
       const card = await this.equipment.stock(user, [], hour.from, hour.to, { aiSummarized: it.byModel });
       return { reply: '어떤 장비를 빌릴지 알려 주세요. 지금 남은 장비예요', cards: [card], changed: false, code: 'reask' };
@@ -362,7 +397,14 @@ export class RoomChat {
 
   private async mine(user: DeskUser, cancel: boolean, now: number): Promise<Omit<ChatResult, 'aiParsed'>> {
     const reservations = await this.desk.myReservations(user);
-    if (!reservations.enabled) return { reply: '지금은 회의실 쓰기가 꺼져 있어서 내 예약을 보여 줄 수 없어요', cards: [], changed: false, code: 'off' };
+    if (!reservations.enabled) {
+      return {
+        reply: '지금은 회의실 예약을 그룹웨어에서 해요. 내 예약도 그룹웨어에서 봐 주세요',
+        cards: [this.groupwareLink()],
+        changed: false,
+        code: 'write-off',
+      };
+    }
     const loans = await myLoans(this.ctx.db, user.pseudonymId, now);
     const cards = [...reservations.items.slice(0, MAX_LISTED).map(myReservationCard), ...loans.slice(0, MAX_LISTED).map((l) => loanCard(l, now, true))];
     if (!cards.length) return { reply: '다가오는 예약·대여가 없어요', cards: [], changed: false, code: cancel ? 'cancel' : 'my' };

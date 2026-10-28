@@ -2,7 +2,7 @@
 import { type Card, type CardAction, checkInput, type Kind } from '@one-line-desk/shared';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
-import { useActions } from '../components/ActionHost';
+import { replaceCard, useActions } from '../components/ActionHost';
 import { CardView } from '../components/CardView';
 import { CheckedInput } from '../components/CheckedInput';
 import { webModules } from '../modules/registry';
@@ -99,7 +99,8 @@ export function FeaturePage({
             onAction={(action) => {
               if (action.type === 'reask') return onMove(action.kind, sent ?? text);
               if (action.type === 'inquire') return setInquiry(action);
-              return actions.run(action, card);
+              // 끝난 카드는 결과 카드로 바꿔요(예약한 후보 → 확정 카드). 다시 눌러 헷갈리지 않게 해요(QA D-B01).
+              return actions.run(action, card, (next) => setCards((list) => (list ? replaceCard(list, card.id, next) : next)));
             }}
           />
         ))}

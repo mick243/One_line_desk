@@ -56,6 +56,13 @@ export function App() {
       }),
     [],
   );
+  // 로그인이 풀리거나 로그아웃하면 보던 페이지와 옮기던 문장을 비워요. 같은 PC로 다음 사람이 들어와도
+  // 앞사람 문장이 칸에 남거나 다음 사람 이름으로 찾아지지 않고, 홈에서 시작해요(QA D-A01·D-A05, R13).
+  useEffect(() => {
+    if (me !== null) return;
+    setView('home');
+    setHandoff(null);
+  }, [me]);
 
   const load = useCallback(async () => {
     setOffline(false);
@@ -142,7 +149,7 @@ export function App() {
               <FeaturePage key={pageKey} feature={feature} initialText={initial} autoRun={autoRun} onMove={move}>
                 {current === 'rooms' && (
                   <>
-                    {config.modules.rooms === 'on' && <RoomChat auto={config.autoActions && config.roomsWrite} />}
+                    {config.modules.rooms === 'on' && <RoomChat auto={config.autoActions && config.roomsWrite} write={config.roomsWrite} />}
                     <InvitedMeetings />
                     <RoomDirectory me={me} />
                     <MyReservations />

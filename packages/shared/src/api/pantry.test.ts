@@ -30,6 +30,14 @@ describe('공개 판 품목 이름 검사', () => {
     expect(checkItemName('하늘 좋아하는 커피').ok).toBe(true);
   });
 
+  it('이름을 부르는 말·친근한 꼬리("야·아·이네·쌤")가 붙어도 막아요(QA D-C01)', () => {
+    const personNames = ['지후', '민준', '하은', '유나', '하늘'];
+    for (const name of ['지후야 간식', '민준아 커피', '민준이네 커피', '하은이네 과일', '유나쌤 쿠키', '하늘선배 음료', '지후야!'])
+      expect(checkItemName(name, { personNames }).blocked, name).toEqual(['person']);
+    // 이름이 다른 낱말 안에 들면 그대로 받아요.
+    for (const name of ['하늘보리 500ml', '하은행 쿠키']) expect(checkItemName(name, { personNames }).ok, name).toBe(true);
+  });
+
   it('품목 이름은 막지 않아요', () => {
     for (const name of ['코카콜라 제로 355', '해바라기씨', '할머니 손맛 쿠키', '하늘보리', '팀 간식 믹스넛', '보리차 티백'])
       expect(checkItemName(name).ok, name).toBe(true);

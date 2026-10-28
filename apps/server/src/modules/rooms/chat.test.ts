@@ -192,6 +192,39 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
     expect(await appReservations(t)).toHaveLength(0);
   });
 
+  it('회의실 쓰기를 끄면 "카드에서 하세요" 대신 그룹웨어로 안내해요(QA D-C03)', async () => {
+    const t = await setup();
+    const op = await t.loginAs(MOCK.operator);
+    expect((await op.call('PUT', '/api/ops/flag', { flag: 'roomsWrite', value: false })).status).toBe(200);
+    const me = await t.loginAs(MOCK.staff);
+    const writes = (cards: Card[]) => cards.flatMap((c) => [c.actions.primary, ...c.actions.secondary]).filter((a) => a && a.type !== 'link');
+
+    for (const text of ['내일 3시 6명 회의실 잡아 줘', '내일 3시 6명 빈 방 있어?']) {
+      const out = await chat(me, text);
+      expect(out.reply, text).toContain('그룹웨어에서 예약하기');
+      expect(out.reply, text).not.toContain('카드에서 확인하고');
+      expect(writes(out.cards), text).toEqual([]);
+    }
+    const rent = await chat(me, '내일 3시 빔프로젝터 빌려 줘');
+    expect(rent.reply).toBe('지금은 이 앱에서 장비를 빌리지 않아요. 남은 수만 보여 드려요. 빌리려면 그룹웨어로 신청해 주세요');
+    expect(writes(rent.cards)).toEqual([]);
+    expect(rent.cards.at(-1)!.actions.primary).toMatchObject({ type: 'link' });
+    const mine = await chat(me, '내 예약 보여 줘');
+    expect(mine.cards[0]!.actions.primary).toMatchObject({ type: 'link' });
+    const help = await chat(me, '안녕하세요');
+    expect(help.cards[0]!.tail).toBe('지금은 예약·대여를 그룹웨어에서 해요. 채팅으로는 빈 방·장비 현황을 볼 수 있어요');
+    expect(help.cards[0]!.fields.map((f) => f.name)).not.toContain('예약');
+    expect(await appReservations(t)).toHaveLength(0);
+  });
+
+  it('빠진 조건을 되물을 때 "알려 주면 바로 예약"이라고 약속하지 않고 한 문장으로 다시 말해 달라고 해요(QA D-B02)', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.staff);
+    const out = await chat(me, '회의실 잡아 줘');
+    expect(out.reply).toContain('조건을 모두 넣어 한 번에 다시 말해 주세요');
+    expect(out.reply).not.toContain('바로 예약할게요');
+  });
+
   it('사람별 하루 5번까지만 자동으로 실행해요', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.staff);

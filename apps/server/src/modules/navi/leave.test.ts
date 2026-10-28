@@ -233,4 +233,23 @@ describe('담당 찾기 답에 붙는 내 남은 연차(ADR-18)', () => {
     expect(field(past, '작년·내년')).toBe('이번 연차 기간만 보여요. 지난 기간은 그룹웨어 근태 메뉴에서 봐요');
     expect(reads).toBe(1);
   });
+
+  it('호칭 없이 이름만 쓴 남의 연차도 숫자 없이 막아요. 내 이름·떨어진 이름은 내 질문이에요(QA D-A02)', async () => {
+    const t = await setup();
+    let reads = 0;
+    const leaveOf = t.ctx.adapters.leave.leaveOf.bind(t.ctx.adapters.leave);
+    t.ctx.adapters.leave.leaveOf = async (p) => {
+      reads += 1;
+      return leaveOf(p);
+    };
+    for (const text of ['도윤 연차 몇 개 남았어?', '민준 연차 며칠 남았어?', '서연이 연차 몇 개 남았어?', '지후의 휴가 남았어?']) {
+      const card = myLeave(await askAs(t, MOCK.staff, text));
+      expect(card, text).toMatchObject({ headline: '남의 연차는 볼 수 없어요' });
+      expect(JSON.stringify(card)).not.toMatch(/\d+(\.\d)?일/);
+    }
+    expect(reads).toBe(0);
+    // 하늘이 자기 이름을 쓰거나, 이름이 연차 말과 떨어져 있으면 본인 연차예요.
+    expect(myLeave(await askAs(t, MOCK.staff, '하늘 연차 몇 개 남았어?'))).toMatchObject({ headline: '남은 연차는 10일이에요' });
+    expect(myLeave(await askAs(t, MOCK.staff, '도윤이랑 같이 다음 주에 연차 쓰면 몇 개 남아?'))!.headline).toMatch(/^남은 연차는/);
+  });
 });

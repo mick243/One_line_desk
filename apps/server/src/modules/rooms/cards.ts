@@ -368,21 +368,33 @@ export function myReservationCard(r: MyReservation): Card {
 }
 
 /** 채팅으로 할 수 있는 일. 시키면 바로, 물으면 카드로만이에요(ADR-19). */
-export function chatHelpCard(o: { auto: boolean }): Card {
+/**
+ * 채팅으로 할 수 있는 일. auto = 시키면 바로, confirm = 자동 실행 끔(카드 확인 시트로), read-only = 회의실 쓰기 끔(보기만, 예약·대여는 그룹웨어).
+ * 회의실 쓰기가 꺼지면 카드에도 예약·대여 버튼이 없어서 "카드에서 하세요"라고 하지 않아요(QA D-C03).
+ */
+export function chatHelpCard(o: { mode: 'auto' | 'confirm' | 'read-only' }): Card {
+  const readOnly = o.mode === 'read-only';
   return makeCard({
     id: 'rooms-chat-help',
     kind: 'rooms',
     label: '안내',
     headline: '회의실 채팅으로 이런 걸 할 수 있어요',
     fields: [
-      { name: '예약', value: '내일 3시 6명 회의실 잡아 줘' },
-      { name: '장비 대여', value: '내일 3시 회의에 빔프로젝터 빌려 줘' },
-      { name: '현황', value: '지금 빈 방 있어? · 내 예약 보여 줘' },
+      ...(readOnly
+        ? []
+        : [
+            { name: '예약', value: '내일 3시 6명 회의실 잡아 줘' },
+            { name: '장비 대여', value: '내일 3시 회의에 빔프로젝터 빌려 줘' },
+          ]),
+      { name: '현황', value: readOnly ? '지금 빈 방 있어? · 오늘 회의실 현황' : '지금 빈 방 있어? · 내 예약 보여 줘' },
       { name: '장비 현황', value: '3C 장비 뭐 있어? · 노트북 남았어?' },
     ],
     evidence: { text: '회의실 채팅', aiSummarized: false },
-    tail: o.auto
-      ? '"잡아 줘·빌려 줘"처럼 시키면 바로 예약·대여하고, 물어보면 카드로만 보여 줘요'
-      : '지금은 채팅 자동 실행이 꺼져 있어서 카드에서 확인하고 예약·대여해요',
+    tail:
+      o.mode === 'auto'
+        ? '"잡아 줘·빌려 줘"처럼 시키면 바로 예약·대여하고, 물어보면 카드로만 보여 줘요'
+        : o.mode === 'confirm'
+          ? '지금은 채팅 자동 실행이 꺼져 있어서 카드에서 확인하고 예약·대여해요'
+          : '지금은 예약·대여를 그룹웨어에서 해요. 채팅으로는 빈 방·장비 현황을 볼 수 있어요',
   });
 }
