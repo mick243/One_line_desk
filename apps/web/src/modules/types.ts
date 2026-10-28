@@ -64,10 +64,10 @@ export interface WebModules {
     initialText?: string;
     autoRun?: boolean;
     onMove?: (kind: Kind, text: string) => void;
-    /** 최근 쓴 문장(이 창 메모리에만) */
+    /** 최근 쓴 문장(이 창 메모리에만). 칩의 [×]로 하나씩 지워요. */
     recent?: string[];
     onSent?: (text: string) => void;
-    onClearRecent?: () => void;
+    onRemoveRecent?: (text: string) => void;
   }>;
   /** 홈·내 것의 "내 요청" 칸 */
   MyRequests: ComponentType<{ compact?: boolean }>;

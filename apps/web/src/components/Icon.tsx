@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 // 선 아이콘 한 벌(10/26 디자인 정리). 색은 글자색(currentColor)을 따라가서 컴포넌트에 색 값을 쓰지 않아요.
 
-export type IconName = 'home' | 'navi' | 'rooms' | 'notices' | 'pantry' | 'mine' | 'bell' | 'chevron' | 'lock' | 'people';
+export type IconName = 'home' | 'navi' | 'rooms' | 'notices' | 'pantry' | 'mine' | 'bell' | 'chevron' | 'lock' | 'people' | 'close';
 
 const PATHS: Record<IconName, ReactNode> = {
   home: <path d='M3.5 10.2 12 3.5l8.5 6.7V19a1.5 1.5 0 0 1-1.5 1.5h-4.2v-5.6H9.2v5.6H5A1.5 1.5 0 0 1 3.5 19z' />,
@@ -45,6 +45,7 @@ const PATHS: Record<IconName, ReactNode> = {
     </>
   ),
   chevron: <path d='m9.5 6 6 6-6 6' />,
+  close: <path d='m6.5 6.5 11 11m0-11-11 11' />,
   lock: (
     <>
       <rect x='5' y='10.5' width='14' height='10' rx='2.5' />

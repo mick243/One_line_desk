@@ -164,7 +164,7 @@ export function App() {
                           write={config.roomsWrite}
                           recent={roomRecent}
                           onSent={(text) => setRoomRecent((list) => [text, ...list.filter((x) => x !== text)].slice(0, 5))}
-                          onClearRecent={() => setRoomRecent([])}
+                          onRemoveRecent={(text) => setRoomRecent((list) => list.filter((x) => x !== text))}
                           {...p}
                         />
                       )

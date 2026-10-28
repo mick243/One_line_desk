@@ -1570,7 +1570,7 @@ select {
 }
 
 /* 회의실 입력 칸(10/28 통합 개편, ADR-19). 빈 방 찾기와 회의실 채팅을 한 칸으로 써요.
-   입력 칸 아래 한 줄이 지금 동작(바로 예약 / 찾기만 / 그룹웨어)을 알려 주고, 결과는 최신 답 하나를 크게, 지난 대화는 접어요. */
+   입력 칸 아래 한 줄이 지금 동작(바로 예약 / 찾기만 / 그룹웨어)을 알려 주고, 대화는 구분선 안 대화창에 순서대로 쌓여요. */
 .room-ask {
   display: flex;
   flex-direction: column;
@@ -1590,10 +1590,37 @@ select {
   color: var(--warn-text);
   font-weight: 600;
 }
+/* 대화가 있을 때만 위(최근 쓴 문장과)·아래(모든 회의실과) 구분선이 생겨요. 대화창은 길어지면 창 안에서 스크롤돼요. */
 .room-results {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
+  margin-top: 6px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0 16px;
+}
+.room-chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.room-chat-head .example-label {
+  margin: 0;
+}
+.room-log {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: min(68vh, 640px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-3) transparent;
+}
+.room-log:focus-visible {
+  outline-offset: 4px;
 }
 .room-turn {
   display: flex;
@@ -1628,33 +1655,31 @@ select {
   font-weight: 700;
   white-space: nowrap;
 }
-.room-history {
-  border-radius: var(--radius-m);
-  padding: 8px 12px;
-  background: var(--surface-2);
+/* 최근 쓴 문장 칩: 글자를 누르면 칸에 채우고, 오른쪽 [×]로 그 문장만 지워요. */
+.chip.removable {
+  gap: 0;
+  padding: 0 4px 0 0;
 }
-.room-history summary {
-  cursor: pointer;
-  color: var(--text-2);
-  font-size: 0.875rem;
-  font-weight: 600;
+.chip-fill {
+  align-self: stretch;
+  border: 0;
+  padding: 0 6px 0 14px;
+  background: none;
 }
-.room-history[open] {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.chip-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: none;
+  color: var(--text-quiet);
 }
-.room-results > .link {
-  align-self: flex-start;
-}
-.recent-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-.recent-head .example-label {
-  margin: 0;
+.chip-remove:hover {
+  background: var(--surface-3);
+  color: var(--text);
 }
 
 /* 모든 회의실 필터(10/28 정리). 켜고 끄는 칩은 연한 파랑 + ✓로, 하나 고르는 칩(흰 바탕)과 모양이 달라요. 층별 묶음 제목이 있어요. */

@@ -4,13 +4,15 @@ import { ApiFailure, apiRequest } from '../../api';
 import { replaceCard, useActions } from '../../components/ActionHost';
 import { CardView } from '../../components/CardView';
 import { CheckedInput } from '../../components/CheckedInput';
+import { Icon } from '../../components/Icon';
 import { ScrollChips } from '../../components/ScrollChips';
 
 // 회의실 입력 칸(10/28 통합 개편, ADR-19). 빈 방 찾기와 회의실 채팅을 한 칸으로 합쳤어요.
 // - 묻는 말("내일 3시 6명", "빈 방 있어?")은 찾기만 하고, 시키는 말("잡아 줘·빌려 줘")은 조건이 다 있으면 바로 예약·대여해요.
 // - 보내기 전에 같은 규칙(공유 패키지 roomChatPreview)으로 "바로 예약돼요 / 찾기만 해요"를 미리 보여 주고, 버튼 이름도 바꿔요.
 // - 다른 페이지에서 옮겨 온 문장은 사람이 보내기를 누르지 않았으니 자동 실행하지 않아요(noAuto).
-// - 결과는 최신 답 하나를 크게, 지난 대화는 접어요. 대화는 이 페이지 메모리에만 있어요(R13). 수동 예약(모든 회의실)은 그대로예요.
+// - 대화는 위아래 구분선 안의 대화창에 순서대로 쌓이고, 길어지면 창 안에서 스크롤돼요. 새 답이 오면 그 문장이 창 위에 오게 넘겨요.
+//   대화는 이 페이지 메모리에만 있어요(R13). 수동 예약(모든 회의실)은 그대로예요.
 
 /** 칩 줄에 보이는 문장 수(예시·최근 쓴 문장 모두). 넘치면 옆으로 넘겨요. */
 const CHIP_MAX = 5;
@@ -52,7 +54,7 @@ function guide(mode: Mode, text: string): { line: string; tone: 'quiet' | 'warn'
  * auto: 채팅 자동 실행이 켜졌는지. write: 회의실 쓰기가 켜졌는지(꺼지면 예약·대여는 그룹웨어에서 해요).
  * initialText·autoRun: 다른 페이지에서 옮겨 온 문장. autoRun이면 열리자마자 찾되 자동 실행은 하지 않아요.
  * onMove: 회의실 일이 아니면 같은 문장을 다른 기능 페이지로 옮겨요.
- * recent·onSent·onClearRecent: 최근 쓴 문장. 앱이 이 창 메모리에만 두고, 로그아웃·새로 고침이면 지워져요(R13).
+ * recent·onSent·onRemoveRecent: 최근 쓴 문장. 앱이 이 창 메모리에만 두고, 로그아웃·새로 고침이면 지워져요(R13). 칩의 [×]로 하나씩 지워요.
  */
 export function RoomChat({
   auto,
@@ -62,7 +64,7 @@ export function RoomChat({
   onMove,
   recent = [],
   onSent,
-  onClearRecent,
+  onRemoveRecent,
 }: {
   auto: boolean;
   write: boolean;
@@ -71,7 +73,7 @@ export function RoomChat({
   onMove?: (kind: Kind, text: string) => void;
   recent?: string[];
   onSent?: (text: string) => void;
-  onClearRecent?: () => void;
+  onRemoveRecent?: (text: string) => void;
 }) {
   const actions = useActions();
   const mode: Mode = !write ? 'read-only' : auto ? 'auto' : 'confirm';
@@ -79,6 +81,8 @@ export function RoomChat({
   const [turns, setTurns] = useState<Turn[]>([]);
   const [waiting, setWaiting] = useState(false);
   const next = useRef(0);
+  const logRef = useRef<HTMLDivElement>(null);
+  const latestRef = useRef<HTMLDivElement>(null);
   const g = guide(mode, text);
 
   async function send(masked: string, opts: { noAuto?: boolean } = {}) {
@@ -117,11 +121,26 @@ export function RoomChat({
   }, []);
 
   const latest = turns.at(-1);
-  const older = turns.slice(0, -1);
+  const answered = latest?.reply !== undefined;
+
+  // 새 문장을 보냈을 때와 그 답이 왔을 때, 그 문장이 대화창 위에 오게 넘겨요. 페이지 스크롤은 건드리지 않아요.
+  useEffect(() => {
+    const log = logRef.current;
+    const el = latestRef.current;
+    if (log && el) log.scrollTop = el.offsetTop;
+  }, [latest?.id, answered]);
+
+  // 지운 칩 옆 칩의 [×]로 초점을 옮겨요. 키보드로 이어서 지울 수 있게 해요.
+  function removeRecent(button: HTMLButtonElement, ex: string) {
+    const chip = button.parentElement;
+    const neighbor = (chip?.nextElementSibling ?? chip?.previousElementSibling)?.querySelector<HTMLButtonElement>('.chip-remove');
+    onRemoveRecent?.(ex);
+    requestAnimationFrame(() => neighbor?.focus());
+  }
 
   function renderTurn(t: Turn) {
     return (
-      <div key={t.id} className='room-turn'>
+      <div key={t.id} ref={t.id === latest?.id ? latestRef : undefined} className='room-turn'>
         <p className='chat-bubble mine'>{t.text}</p>
         {t.reply !== undefined && (
           <p className={t.failed ? 'chat-bubble lock-line' : 'chat-bubble'}>
@@ -165,19 +184,19 @@ export function RoomChat({
       {/* 최근 쓴 문장이 있으면 그걸, 아직 없으면(처음 쓸 때) 예시 문장을 보여 줘요. 누르면 칸에 채우기만 하고 보내지 않아요. */}
       {recent.length > 0 ? (
         <>
-          <div className='recent-head'>
-            <p className='example-label'>최근 쓴 문장 · 이 창에서만 기억해요</p>
-            {onClearRecent && (
-              <button type='button' className='link' onClick={onClearRecent}>
-                지우기
-              </button>
-            )}
-          </div>
+          <p className='example-label'>최근 쓴 문장 · 이 창에서만 기억해요</p>
           <ScrollChips label='최근 쓴 문장'>
             {recent.slice(0, CHIP_MAX).map((ex) => (
-              <button key={ex} type='button' className='chip' onClick={() => setText(ex)}>
-                {ex}
-              </button>
+              <span key={ex} className='chip removable'>
+                <button type='button' className='chip-fill' onClick={() => setText(ex)}>
+                  {ex}
+                </button>
+                {onRemoveRecent && (
+                  <button type='button' className='chip-remove' aria-label={`"${ex}" 지우기`} onClick={(e) => removeRecent(e.currentTarget, ex)}>
+                    <Icon name='close' size={16} />
+                  </button>
+                )}
+              </span>
             ))}
           </ScrollChips>
         </>
@@ -194,19 +213,20 @@ export function RoomChat({
         </>
       )}
 
+      {/* 대화가 있을 때만 위아래 구분선과 대화창이 생겨요. 대화를 지우면 구분선도 같이 사라져요. */}
       {latest && (
-        <section className='results room-results' aria-live='polite' aria-busy={waiting}>
-          {renderTurn(latest)}
-          {waiting && latest.reply === undefined && <div className='skeleton' aria-label='답을 만드는 중' />}
-          {older.length > 0 && (
-            <details className='room-history'>
-              <summary>이전 대화 {older.length}개</summary>
-              {[...older].reverse().map(renderTurn)}
-            </details>
-          )}
-          <button type='button' className='link' onClick={() => setTurns([])}>
-            대화 지우기
-          </button>
+        <section className='room-results' aria-label='대화'>
+          <div className='room-chat-head'>
+            <p className='example-label'>대화</p>
+            <button type='button' className='link' onClick={() => setTurns([])}>
+              대화 지우기
+            </button>
+          </div>
+          {/* 키보드로도 창 안을 스크롤할 수 있게 초점을 받아요. */}
+          <div ref={logRef} className='room-log' role='log' aria-label='대화 내용' aria-busy={waiting} tabIndex={0}>
+            {turns.map(renderTurn)}
+            {waiting && !answered && <div className='skeleton' aria-label='답을 만드는 중' />}
+          </div>
         </section>
       )}
     </section>
