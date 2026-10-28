@@ -1,5 +1,5 @@
 import cookie from '@fastify/cookie';
-import { DEFAULT_OPS_SETTINGS, hasControlChar, LAUNCH_OPS_SETTINGS, LOCK_MESSAGE, type ModuleKind } from '@one-line-desk/shared';
+import { DEFAULT_OPS_SETTINGS, hasControlChar, LAUNCH_OPS_SETTINGS, LOCK_MESSAGE, type ModuleKind, recordCutoff } from '@one-line-desk/shared';
 import Fastify, { type FastifyServerOptions } from 'fastify';
 import { ZodError } from 'zod';
 import { type Adapters, createAdapters, withOutboundAdapters } from './adapters';
@@ -25,7 +25,7 @@ import { SessionStore } from './core/session';
 import { createModules } from './modules';
 import { registerAskRoutes } from './routes/ask';
 import { registerAuthRoutes } from './routes/auth';
-import { registerDemoInboxRoutes } from './routes/demo-inbox';
+import { purgeDemoInbox, registerDemoInboxRoutes } from './routes/demo-inbox';
 import { registerPeopleRoutes } from './routes/people';
 import { registerConfigRoutes } from './routes/config';
 import { registerNotificationRoutes } from './routes/notifications';
@@ -148,9 +148,15 @@ export async function buildApp(opts: BuildOptions) {
     for (const module of modules) await module.seed?.();
   }
 
-  // 보관 기간 지우기(L-33): 화면을 열지 않아도 문의 90일·알림 30일·접속기록 1년이 지나면 지워요. 뜰 때 한 번, 그 뒤 한 시간마다예요.
+  // 보관 기간 지우기(L-33): 화면을 열지 않아도 지워요. 뜰 때 한 번, 그 뒤 한 시간마다예요.
+  // 10/28 사용자 결정: 접속기록(법정 1년) 말고는 모두 7일(RECORD_KEEP_DAYS)이에요. 모듈 기록은 각 모듈 retention이 지워요.
   const runRetention = async () => {
+    const before = recordCutoff(ctx.now());
     await ctx.notify.purge();
+    await ctx.audit.purge(before);
+    await ctx.plans.purge(before);
+    await ctx.gateway.purgeUsage(before);
+    await purgeDemoInbox(ctx);
     await ctx.access.purge();
     for (const module of modules) await module.retention?.();
   };

@@ -1,5 +1,6 @@
 import type { CardAction } from '../cards';
 import type { Kind } from '../kinds';
+import { RECORD_KEEP_DAYS } from '../retention';
 
 // "틀렸어요" 선택지(R8). 세 문서가 같은 넷을 써요.
 export const WRONG_REASONS = ['other-owner', 'not-listed', 'content-changed', 'wrong-kind'] as const;
@@ -106,11 +107,11 @@ export interface ChartApplyResponse {
 }
 
 // ── 담당 팀에 문의 보내기(10/26, ADR-16) ─────────────────────────
-// 받는 곳은 분장표 행의 주인 부서예요(담당자 이름은 없어요, D9). 확인 시트에서 [보내기]를 누른 글만 저장하고 90일 뒤 지워요.
+// 받는 곳은 분장표 행의 주인 부서예요(담당자 이름은 없어요, D9). 확인 시트에서 [보내기]를 누른 글만 저장하고 7일 뒤 지워요(10/28, 처음엔 90일).
 
 export const INQUIRY_QUESTION_MAX = 1000;
 export const INQUIRY_REASON_MAX = 500;
-export const INQUIRY_KEEP_DAYS = 90;
+export const INQUIRY_KEEP_DAYS = RECORD_KEEP_DAYS;
 export const INQUIRY_STATES = ['new', 'seen', 'done'] as const;
 export type InquiryState = (typeof INQUIRY_STATES)[number];
 export const INQUIRY_STATE_LABEL: Record<InquiryState, string> = { new: '새 문의', seen: '확인했어요', done: '처리했어요' };

@@ -338,3 +338,15 @@ export async function seedFacilityStatus(q: Queryable, rows: { roomId: string; f
     );
   }
 }
+
+/**
+ * 보관 기간(7일, 10/28)이 지난 회의실 기록을 지워요. 서버가 한 시간마다 불러요.
+ * 끝난 지 7일 지난 예약(초대·같이 빌린 장비는 함께 지워져요), 끝난 지 7일 지난 대여, 취소한 지 7일 지난 취소 이력이에요.
+ * 앞으로 할 예약·대여는 언제 잡았든 남아요.
+ */
+export async function purgeRecords(q: Queryable, before: number): Promise<void> {
+  const at = new Date(before).toISOString();
+  await q.query('delete from room_reservations where upper(slot) < $1', [at]);
+  await q.query('delete from room_equipment_loans where upper(slot) < $1', [at]);
+  await q.query('delete from room_reservation_history where cancelled_at < $1', [at]);
+}

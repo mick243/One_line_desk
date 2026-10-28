@@ -356,3 +356,45 @@ export async function countCards(q: Queryable): Promise<number> {
   const { rows } = await q.query<{ n: number }>('select count(*)::int as n from pantry_cards');
   return rows[0]?.n ?? 0;
 }
+
+/**
+ * 보관 기간(7일, 10/28)이 지난 같이 채워요 기록을 지워요. 서버가 한 시간마다 트랜잭션 안에서 불러요.
+ * - 주문안: 확정안은 확정한 지 7일, 초안·바뀐 안은 만든 지 7일. 지울 요청이 들어 있는 초안·바뀐 안도 지워요(총무가 다시 만들어요).
+ * - 요청 카드: 열린 요청은 올린 지 7일, 주문된 요청은 주문 확정 7일 뒤. 표·합치기·같은 상품 표시도 같이 지워요.
+ *   남은 확정 주문안에 줄이 있는 카드(예산 초과로 빠진 요청 등)는 그 주문안이 지워질 때 같이 지워져요.
+ * 묶음에서 한쪽만 지워지면 남은 카드의 묶음 번호를 올려서, 그 묶음을 담은 주문안이 바뀐 걸 알게 해요.
+ */
+export async function purgeRecords(q: Queryable, before: number): Promise<void> {
+  const at = new Date(before).toISOString();
+  const expired = "((c.state = 'open' and c.created_at < $1) or (c.state = 'ordered' and coalesce(c.ordered_batch_at, c.created_at) < $1))";
+
+  const plans = await q.query<{ id: string }>(
+    `select p.id from pantry_order_plans p
+      where coalesce(p.confirmed_at, p.created_at) < $1
+         or (p.status <> 'confirmed' and exists (
+               select 1 from pantry_order_lines l join pantry_cards c on c.id = l.bundle_id where l.plan_id = p.id and ${expired}))`,
+    [at],
+  );
+  const planIds = plans.rows.map((r) => r.id);
+  if (planIds.length > 0) {
+    await q.query('delete from pantry_order_lines where plan_id = any($1::uuid[])', [planIds]);
+    await q.query('delete from pantry_order_plans where id = any($1::uuid[])', [planIds]);
+  }
+
+  const cards = await q.query<{ id: number }>(
+    `select c.id from pantry_cards c where ${expired} and not exists (select 1 from pantry_order_lines l where l.bundle_id = c.id)`,
+    [at],
+  );
+  const ids = cards.rows.map((r) => Number(r.id));
+  if (ids.length === 0) return;
+  const gone = new Set(ids);
+  await q.query('delete from pantry_similar_flags where card_a = any($1::bigint[]) or card_b = any($1::bigint[])', [ids]);
+  const merges = await q.query<{ merged_card_id: number; representative_card_id: number }>(
+    'delete from pantry_merges where merged_card_id = any($1::bigint[]) or representative_card_id = any($1::bigint[]) returning merged_card_id, representative_card_id',
+    [ids],
+  );
+  const touched = merges.rows.flatMap((m) => [Number(m.merged_card_id), Number(m.representative_card_id)]).filter((id) => !gone.has(id));
+  if (touched.length > 0) await bumpVersions(q, touched);
+  await q.query('delete from pantry_votes where card_id = any($1::bigint[])', [ids]);
+  await q.query('delete from pantry_cards where id = any($1::bigint[])', [ids]);
+}

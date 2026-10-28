@@ -1,6 +1,8 @@
+import { recordCutoff } from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
 import type { DeskModule } from '../../core/module';
 import { registerOrderRoutes } from './order';
+import * as repo from './repo';
 import { registerBoardRoutes } from './routes';
 import { createBoardService } from './service';
 
@@ -17,5 +19,7 @@ export function createPantryModule(ctx: AppContext): DeskModule {
     },
     seed: () => board.seed(),
     adapters: () => [{ name: 'mock-catalog', label: '탕비실 구매 카탈로그(가상 품목·가격)', mock: true }],
+    // 보관 기간(7일, 10/28): 요청 카드·표·합치기·주문안
+    retention: () => ctx.db.tx((q) => repo.purgeRecords(q, recordCutoff(ctx.now()))),
   };
 }

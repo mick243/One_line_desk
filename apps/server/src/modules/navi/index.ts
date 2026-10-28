@@ -1,6 +1,8 @@
+import { recordCutoff } from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
 import type { DeskModule } from '../../core/module';
 import { createInquiryService } from './inquiries';
+import * as repo from './repo';
 import { registerNaviRoutes } from './routes';
 import { createNaviService } from './service';
 
@@ -21,6 +23,10 @@ export function createNaviModule(ctx: AppContext): DeskModule {
     register: (app) => registerNaviRoutes(app, ctx, navi, inquiries),
     seed: () => navi.seed(),
     adapters: () => [{ name: 'mock-chart', label: '업무 분장표(가상 분장표)', mock: true }],
-    retention: () => inquiries.purge(),
+    // 보관 기간(7일, 10/28): 문의와 "틀렸어요" 기록
+    async retention() {
+      await inquiries.purge();
+      await repo.purgeFeedback(ctx.db, recordCutoff(ctx.now()));
+    },
   };
 }

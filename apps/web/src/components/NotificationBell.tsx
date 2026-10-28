@@ -1,4 +1,4 @@
-import type { AppDestination, NotificationsResponse } from '@one-line-desk/shared';
+import { type AppDestination, type NotificationsResponse, RECORD_KEEP_DAYS } from '@one-line-desk/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { apiRequest } from '../api';
@@ -103,7 +103,7 @@ export function NotificationBell({ onNavigate }: { onNavigate: (to: AppDestinati
                   </li>
                 ))}
               </ul>
-              <p className='hint'>알림에는 내용이 없어요. 누르면 그 페이지에서 볼 수 있어요. 30일 지나면 지워져요.</p>
+              <p className='hint'>알림에는 내용이 없어요. 누르면 그 페이지에서 볼 수 있어요. {RECORD_KEEP_DAYS}일 지나면 지워져요.</p>
             </>
           )}
         </Sheet>

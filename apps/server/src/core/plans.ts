@@ -304,6 +304,16 @@ export class PlanService {
     await q.query('update plans set state = $2, result = $3, params = $4 where id = $1', [planId, result.status, JSON.stringify(result), JSON.stringify(kept)]);
   }
 
+  /**
+   * 보관 기간(7일, 10/28)이 지난 실행 영수증과 끝난 plan을 지워요. 서버가 한 시간마다 불러요.
+   * 실행 중인 plan과 아직 확인할 수 있는 제안은 남겨요. 오늘 자동 실행 횟수는 오늘 영수증만 세서 영향이 없어요.
+   */
+  async purge(before: number): Promise<void> {
+    const at = new Date(before).toISOString();
+    await this.db.query('delete from action_receipts where created_at < $1', [at]);
+    await this.db.query("delete from plans where created_at < $1 and state <> 'executing' and expires_at < $2", [at, new Date(this.now()).toISOString()]);
+  }
+
   private async receipt(key: string, q: Queryable = this.db): Promise<StoredOutcome | null> {
     const { rows } = await q.query<{ result: StoredOutcome }>('select result from action_receipts where idempotency_key = $1', [key]);
     return rows[0]?.result ?? null;

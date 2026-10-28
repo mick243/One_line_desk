@@ -86,6 +86,11 @@ export class AiGateway {
     return rows.map((r) => ({ module: r.module, calls: r.calls, inputTokens: r.input_tokens, outputTokens: r.output_tokens, failures: r.failures }));
   }
 
+  /** 보관 기간(7일, 10/28)이 지난 사용량 줄을 지워요. 운영 표의 AI 비용은 최근 7일 합계가 돼요. */
+  async purgeUsage(before: number): Promise<void> {
+    await this.db.query('delete from ai_usage where at < $1', [new Date(before).toISOString()]);
+  }
+
   private async recordUsage(req: StructuredRequest<unknown>, inputTokens: number, outputTokens: number, ok: boolean): Promise<void> {
     await this.db.query('insert into ai_usage (module, purpose, provider, input_tokens, output_tokens, ok) values ($1, $2, $3, $4, $5, $6)', [
       req.module,

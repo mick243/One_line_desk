@@ -1,8 +1,10 @@
+import { recordCutoff } from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
 import type { DeskModule, PlanHandler } from '../../core/module';
 import { RoomChat } from './chat';
 import { RoomEquipment } from './equipment';
 import { MockRoomLedger } from './ledger-adapter';
+import * as repo from './repo';
 import { registerRoomRoutes } from './routes';
 import { RoomDesk, slotsToQuery } from './service';
 
@@ -43,5 +45,7 @@ export function createRoomsModule(ctx: AppContext): DeskModule {
       await equipment.seed();
     },
     adapters: () => [ledger.capabilities],
+    // 보관 기간(7일, 10/28): 끝난 예약·대여, 취소 이력
+    retention: () => repo.purgeRecords(ctx.db, recordCutoff(ctx.now())),
   };
 }
