@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, apiRequest } from '../../api';
 import { useActions } from '../../components/ActionHost';
 import { Sheet } from '../../components/Sheet';
+import { newRequestId } from '../../net';
 
 // 회의 참석자 고르기(10/26, ADR-17). 직원 이름·부서로 찾아 고르고, 알릴 길(앱 알림은 늘 · 그룹웨어 캘린더 · Slack DM)을 정해요.
 // [알리기] → 확인 시트 → 보내요. 고른 사람만 회의실·시간·내 이름을 봐요. LLM은 쓰지 않아요.
@@ -19,7 +20,7 @@ export function InviteSheet({ action, onClose }: { action: Invite; onClose: () =
   const [slack, setSlack] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 같은 양식에서 두 번 눌러도 한 번만 보내요(서버 멱등 키).
-  const requestId = useMemo(() => crypto.randomUUID(), []);
+  const requestId = useMemo(() => newRequestId(), []);
 
   useEffect(() => {
     void api.publicConfig().then((c) => setChannels(c.inviteChannels));

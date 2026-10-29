@@ -1,0 +1,13 @@
+# 이미지에 넣지 않을 것(10/29 배포 준비 회의 A2).
+# 비밀(.env)과 개발 DB(.data)는 절대 넣지 않아요. node_modules·빌드 결과는 이 PC 것이 아니라 이미지 안에서 새로 만들어요.
+.env
+.env.*
+.data
+**/node_modules
+**/dist
+*.log
+.git
+.github
+.claude
+docs
+idp

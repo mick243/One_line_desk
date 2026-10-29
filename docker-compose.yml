@@ -10,6 +10,25 @@ services:
     volumes:
       - desk-db:/var/lib/postgresql/data
 
+  # 시험 전용 PostgreSQL. npm run db:test:up → npm run test:pg. 자료는 메모리(tmpfs)에만 둬서 끄면 사라져요.
+  # 시험 속도를 위해 디스크 동기화를 꺼요. 개발·운영 DB에는 이 설정을 쓰지 않아요.
+  db-test:
+    image: postgres:17
+    command: postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=300
+    environment:
+      POSTGRES_USER: desk
+      POSTGRES_PASSWORD: desk
+      POSTGRES_DB: one_line_desk_test
+    ports:
+      - '5434:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U desk -d one_line_desk_test']
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
   # 임시 IdP(Keycloak). 가상 직원 15명이 들어 있는 로컬 개발용이에요. npm run idp:up → http://localhost:8180
   # 관리자 계정·클라이언트 비밀은 모두 개발용 값이에요. 운영에서는 회사 IdP를 써요.
   idp:

@@ -86,7 +86,8 @@ export function parseDate(text: string, today: string): string | undefined {
   if (monthDay) return upcomingMonthDay(today, Number(monthDay[1]), Number(monthDay[2]));
 
   // 주 + 요일: "다음 주 화요일", "담주 목욜", "이번 주 금", "다다음주 수요일", "지난주 월요일"
-  const week = text.match(/(이번|이|다음|담|다다음|지난|저번)\s*주\s*(월|화|수|목|금|토|일)(?:요일|욜)?/);
+  // 요일 글자 바로 뒤에 다른 한글이 오면 요일이 아니에요("다음 주 화상회의", "이번 주 일정", 10/29 회의 A1).
+  const week = text.match(/(이번|이|다음|담|다다음|지난|저번)\s*주\s*(월|화|수|목|금|토|일)(?:요일|욜|(?![가-힣]))/);
   if (week) {
     const monday = addDays(mondayOf(today), (WEEK_OFFSET[week[1]!] ?? 0) * 7);
     return addDays(monday, (WEEKDAYS.indexOf(week[2] as Weekday) + 6) % 7);
@@ -171,6 +172,20 @@ function parseDuration(text: string): number | undefined {
 
 const TIME_WORD = '(?:(?:오전|오후|아침|새벽|낮|점심|저녁|밤)\\s*)?\\d{1,2}\\s*시(?!간)\\s*(?:반|\\d{1,2}\\s*분)?|(?<!\\d)(?:[01]?\\d|2[0-3]):[0-5]\\d';
 const RANGE = new RegExp(`(${TIME_WORD})\\s*(?:부터|에서|~|-|–)\\s*(${TIME_WORD})`);
+
+/**
+ * 같은 칸에 다른 값이 둘 이상인 칸 이름("3시나 4시", "6명이나 8명"). 범위("3시부터 5시까지")는 시각 하나로 봐요.
+ * 회의실 채팅은 이런 문장을 바로 실행하지 않아요(10/29 회의 A1). parseSlots는 처음 나온 값을 쓰거든요.
+ */
+export function repeatedSlots(text: string): ('시각' | '인원')[] {
+  const said = koreanHours(text).replace(new RegExp(RANGE.source, 'g'), ' ');
+  const times = new Set([...said.matchAll(new RegExp(TIME_WORD, 'g'))].map((m) => parseTime(m[0], true) ?? m[0]));
+  const people = new Set([...said.matchAll(/(\d+)\s*(?:명|인(?!용))/g)].map((m) => Number(m[1])));
+  const out: ('시각' | '인원')[] = [];
+  if (times.size > 1) out.push('시각');
+  if (people.size > 1) out.push('인원');
+  return out;
+}
 
 /** "A부터 B까지" → 시작과 길이. 끝 시각이 시작보다 이르면 오후로 봐요("11시부터 1시까지"). */
 function parseRange(text: string): { start: string; minutes: number } | undefined {

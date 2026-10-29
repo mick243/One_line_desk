@@ -26,7 +26,7 @@ describe('배포 준비(L-17)', () => {
     try {
       const res = await t.app.inject({ method: 'GET', url: '/health' });
       expect(res.statusCode).toBe(503);
-      expect(res.json()).toMatchObject({ ok: false, db: 'pglite-error' });
+      expect(res.json()).toMatchObject({ ok: false, db: `${t.db.kind}-error` });
     } finally {
       t.db.query = query;
       await t.close();

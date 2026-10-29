@@ -27,13 +27,23 @@ export interface LoginAssurance {
 
 export class SessionStore {
   private readonly sessions = new Map<string, DeskSession>();
+  /**
+   * 이 서버 프로세스의 기동 번호(10/29 배포 준비 회의 B3). 세션 ID 앞에 붙여서, 서명은 맞는데 세션이 없을 때
+   * 재시작(배포) 때문인지 알아요. 세션이 메모리에만 있어서 재시작하면 모두 사라져요. 세션 표(앞선 F1)가 들어오면 필요 없어요.
+   */
+  readonly boot = randomBytes(6).toString('base64url');
 
   constructor(private readonly now: () => number) {}
+
+  /** 이 세션 ID가 지금 프로세스보다 앞선 기동에서 만든 것인지 */
+  fromEarlierBoot(id: string): boolean {
+    return !id.startsWith(this.boot);
+  }
 
   create(idpSubject: string, pseudonymId: string, assurance: LoginAssurance = { mfa: false }): DeskSession {
     const at = this.now();
     const session: DeskSession = {
-      id: randomBytes(32).toString('base64url'),
+      id: this.boot + randomBytes(32).toString('base64url'),
       idpSubject,
       pseudonymId,
       csrfToken: randomBytes(24).toString('base64url'),

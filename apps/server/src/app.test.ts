@@ -17,10 +17,11 @@ afterEach(async () => {
 });
 
 describe('공통 바닥', () => {
-  it('건강 확인에 DB와 AI 공급자를 알려 줘요', async () => {
-    const { app } = await setup();
-    const res = await app.inject({ method: 'GET', url: '/health' });
-    expect(res.json()).toMatchObject({ ok: true, db: 'pglite-connected', ai: 'fake', rulesVersion: 2 });
+  it('건강 확인은 DB와 떠 있는 판을 알려 주고, AI 공급자 이름은 내보내지 않아요(배포 준비 회의 A5)', async () => {
+    const { app, db } = await setup();
+    const res = (await app.inject({ method: 'GET', url: '/health' })).json();
+    expect(res).toMatchObject({ ok: true, db: `${db.kind}-connected`, build: 'dev', rulesVersion: 2 });
+    expect(res.ai).toBeUndefined();
   });
 
   it('로그인 전에는 /api/me가 막혀요', async () => {
@@ -111,7 +112,7 @@ describe('공통 바닥', () => {
     };
     const db = await createTestDb();
     try {
-      const prod = loadConfig({ NODE_ENV: 'production', DATABASE_URL: 'postgres://desk@db.example.com/desk', ...secrets, ...idp });
+      const prod = loadConfig({ NODE_ENV: 'production', DATABASE_URL: 'postgres://desk@db.example.com/desk', TRUST_PROXY: '10.0.3.11', ...secrets, ...idp });
       await expect(buildApp({ config: prod, db, adapters: createMockAdapters(), seed: false })).rejects.toThrow(/모의 로그인/);
       const demo = await buildApp({ config: loadConfig({ NODE_ENV: 'production', DESK_MOCK_LOGIN: 'true', ...secrets }), db, seed: false });
       expect((await demo.app.inject({ method: 'GET', url: '/api/auth/mock-users' })).statusCode).toBe(200);

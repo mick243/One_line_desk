@@ -16,9 +16,17 @@ const LOAN_WORDS: Record<LoanKind, RegExp> = {
 const MAX_KINDS = 3;
 
 export const RENT_VERB = /빌려|빌릴|빌리|대여|가져갈|챙겨/;
+/** 예약하라는 말(장비도 같이 빌리는 문장을 예약으로 볼 때도 써요) */
+export const RESERVE_VERB = /잡아|잡고|잡을|잡자|예약\s*(해|하고|하면서|도|좀|부탁)/;
 export const CANCEL_WORD = /취소|반납|돌려\s*(줄|놓|드)/;
 const COMMAND_END = /(줘|주세요|줄래|주라|주십시오|부탁(해요?|드려요?|드립니다|합니다)?|해\s*놔|해\s*둬|하자|할게요?|잡아|빌려|(예약|대여)\s*해)$/;
 const ASK_END = /(있어|있나|있니|있을까|있는지|되나|될까|돼|가능해|가능할까|어때|인가|일까|나요|까요|어디|언제|몇)$/;
+/** 보거나 찾아 달라는 말. "알려 줘·찾아 줘·보여 줘"는 시키는 말투여도 찾기만 해요(10/29 회의 A1). */
+const READ_REQUEST = /(찾아|알려|보여|확인해|조회해|검색해|체크해|살펴|봐|말해|추천해|골라)\s*(줘|주세요|줄래|주라|주십시오|주시겠어요|봐|보세요|부탁)/;
+/** "잡지 말고", "예약하지 마", "빌리지 않고" */
+const NEGATED_WRITE = /(잡지|예약(은|을)?\s*하지|빌리지|대여(는|를)?\s*하지)\s*(말|마|않|맙)/;
+/** "3시 말고 4시", "6명 대신 8명": 고쳐 말한 문장은 어느 값인지 몰라서 바로 실행하지 않아요. */
+const CORRECTION = /말고|아니고|아니라|대신/;
 
 /** 문장에 나온 이동식 장비 종류(정해진 목록 순서, 셋까지) */
 export function loanKindsIn(text: string): LoanKind[] {
@@ -30,12 +38,18 @@ export function withoutLoanWords(text: string): string {
   return LOAN_KINDS.reduce((t, k) => t.replace(new RegExp(LOAN_WORDS[k].source, 'gi'), ' '), text);
 }
 
-/** 시키는 문장인지. "줄래?"는 시키는 말로, "잡아 줄 수 있어?"는 묻는 말로 봐요. */
+/**
+ * 예약·대여를 시키는 문장인지. ADR-19의 "잡아 줘·예약해 줘·빌려 줘"처럼 쓰기 말이 있는 명령형만이에요.
+ * - "줄래?"는 시키는 말로, "잡아 줄 수 있어?"는 묻는 말로 봐요.
+ * - "알려 줘·찾아 줘·보여 줘", "잡지 말고", "3시 말고 4시"는 시키는 말투여도 바로 실행하지 않아요(10/29 회의 A1).
+ */
 export function isCommand(text: string): boolean {
   const plain = text.trim().replace(/[\s.!~?]+$/, '');
   if (ASK_END.test(plain)) return false;
   if (text.trim().endsWith('?') && !/줄래$/.test(plain)) return false;
-  return COMMAND_END.test(plain);
+  if (!COMMAND_END.test(plain)) return false;
+  if (!RESERVE_VERB.test(plain) && !RENT_VERB.test(plain)) return false;
+  return !READ_REQUEST.test(plain) && !NEGATED_WRITE.test(plain) && !CORRECTION.test(plain);
 }
 
 /**
@@ -49,5 +63,7 @@ export type RoomChatPreview = 'may-run-reserve' | 'may-run-rent' | 'ask' | 'canc
 export function roomChatPreview(text: string): RoomChatPreview {
   if (CANCEL_WORD.test(text)) return 'cancel';
   if (!isCommand(text)) return 'ask';
-  return RENT_VERB.test(text) && loanKindsIn(text).length > 0 && !/잡아|잡고|예약/.test(text) ? 'may-run-rent' : 'may-run-reserve';
+  // 예약은 예약하라는 말이, 대여는 빌리라는 말과 장비 이름이 있어야 해요. 서버도 이 결과가 아니면 자동 실행하지 않아요.
+  if (RESERVE_VERB.test(text)) return 'may-run-reserve';
+  return loanKindsIn(text).length > 0 ? 'may-run-rent' : 'ask';
 }

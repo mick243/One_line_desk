@@ -6,6 +6,7 @@ import { CardView } from '../../components/CardView';
 import { CheckedInput } from '../../components/CheckedInput';
 import { Icon } from '../../components/Icon';
 import { ScrollChips } from '../../components/ScrollChips';
+import { newRequestId } from '../../net';
 
 // 회의실 입력 칸(10/28 통합 개편, ADR-19). 빈 회의실 찾기와 회의실 채팅을 한 칸으로 합쳤어요.
 // - 묻는 말("내일 3시 6명", "빈 회의실 있어?")은 찾기만 하고, 시키는 말("잡아 줘·빌려 줘")은 조건이 다 있으면 바로 예약·대여해요.
@@ -96,7 +97,7 @@ export function RoomChat({
       // 보낼 때마다 새 요청 ID예요. 같은 요청이 두 번 가도 서버가 한 번만 실행해요.
       const res = await apiRequest<RoomChatResponse>('POST', '/api/rooms/chat', {
         text: masked,
-        requestId: crypto.randomUUID(),
+        requestId: newRequestId(),
         ...(opts.noAuto ? { noAuto: true } : {}),
       });
       done({ reply: res.reply, cards: res.cards, aiParsed: res.aiParsed });

@@ -1,9 +1,11 @@
 import type { Card, CardAction, PlanConfirmResponse, PlanCreateResponse, RoomChatResponse, RoomListResponse } from '@one-line-desk/shared';
 import { afterEach, describe, expect, it } from 'vitest';
+import { AiGateway, type LlmProvider, type ProviderResult, type StructuredRequest } from '../../core/ai/gateway';
 import { pseudonymize } from '../../core/pseudonym';
 import { createTestApp, MOCK } from '../../testing';
-import { isCommand, loanKindsIn } from '@one-line-desk/shared';
-import { interpretByRules, mentionedRoom } from './chat';
+import { LOAN_KINDS, loanKindsIn } from '@one-line-desk/shared';
+import { NO_AUTO_SENTENCES } from '@one-line-desk/shared/rooms-chat/samples';
+import { CHAT_INTENTS, interpretByRules, mentionedRoom } from './chat';
 import { listRooms } from './repo';
 
 // 회의실 채팅·장비 대여(ADR-19). 시계는 2026-10-26(월) 09:00이에요. "내일"은 10월 27일(화)이에요.
@@ -70,19 +72,22 @@ describe('규칙 해석', () => {
     ['내일 3시 6명 회의실 잡고 빔프로젝터도 빌려 줘', 'reserve', true],
     ['빔프로젝터 남았어?', 'equipment', false],
     ['3C 장비 뭐 있어?', 'equipment', false],
-    ['회의실별 장비 현황 알려 줘', 'equipment', true],
+    ['회의실별 장비 현황 알려 줘', 'equipment', false],
     ['지금 빈 방 있어?', 'overview', false],
     ['지금 빈 회의실 있어?', 'overview', false],
     ['5층 회의실 지금 비어 있어?', 'overview', false],
     ['오늘 회의실 예약 현황', 'overview', false],
-    ['내 예약 보여 줘', 'my', true],
-    ['내일 예약 취소해 줘', 'cancel', true],
-    ['빔프로젝터 반납할게', 'cancel', true],
+    ['내 예약 보여 줘', 'my', false],
+    ['내일 예약 취소해 줘', 'cancel', false],
+    ['빔프로젝터 반납할게', 'cancel', false],
     ['안녕하세요', 'help', false],
-  ])('"%s" → %s(시키는 문장 %s)', (text, intent, command) => {
+    // 10/29 회의 A1: 시키는 말투여도 읽기 부탁이면 예약·대여가 아니에요.
+    ['내일 3시 6명 빈 회의실 알려 줘', 'reserve', false],
+    ['내일 3시 노트북 빌릴 수 있는지 알려 줘', 'rent', false],
+  ])('"%s" → %s(바로 실행 %s)', (text, intent, command) => {
     const it = interpretByRules(text, now);
     expect(it.intent).toBe(intent);
-    expect(isCommand(text)).toBe(command);
+    expect(it.command).toBe(command);
   });
 
   it('장비 종류와 말한 방을 읽어요', async () => {
@@ -215,6 +220,26 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
     expect(out.cards.some((c) => c.actions.primary?.type === 'propose' && c.actions.primary.text === '이 회의실로 예약')).toBe(true);
   });
 
+  it('화면 판이 서버 판과 다르면(배포 뒤 오래 연 탭) 바로 실행하지 않고 카드로만 보여 줘요(배포 준비 회의 D1)', async () => {
+    const t = await setup();
+    t.ctx.config.build = 'b2';
+    const me = await t.loginAs(MOCK.staff);
+    const send = (build?: string) =>
+      t.app.inject({
+        method: 'POST',
+        url: '/api/rooms/chat',
+        headers: { cookie: me.cookie, 'x-csrf-token': me.csrf, ...(build ? { 'x-desk-build': build } : {}) },
+        payload: { text: '내일 3시 6명 회의실 잡아 줘', requestId: newRequestId() },
+      });
+    // 옛 판 화면, 판 머리가 없는 더 옛 화면은 화면이 보여 준 "지금 동작"과 서버 판정이 다를 수 있어요.
+    expect((await send('b1')).json()).toMatchObject({ changed: false });
+    expect((await send()).json()).toMatchObject({ changed: false });
+    expect(await appReservations(t)).toHaveLength(0);
+    // 같은 판이면 그대로 바로 예약해요.
+    expect((await send('b2')).json()).toMatchObject({ changed: true });
+    expect(await appReservations(t)).toHaveLength(1);
+  });
+
   it('운영 스위치 autoActions를 끄면 카드로만 보여 줘요', async () => {
     const t = await setup();
     const op = await t.loginAs(MOCK.operator);
@@ -296,6 +321,74 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
     t.advance(24 * 3_600_000);
     const nextDay = await t.loginAs(MOCK.staff);
     expect((await chat(nextDay, '내일 17:00 2명 잡아 줘')).changed).toBe(true);
+  });
+});
+
+/** 목적마다 정해 준 답을 돌려주는 실제 모델 흉내. 정한 답이 없으면 부르는 쪽의 규칙 해석을 돌려줘요. */
+class ScriptedProvider implements LlmProvider {
+  readonly name = 'anthropic' as const;
+  reply: unknown = undefined;
+  async complete<T>(req: StructuredRequest<T>): Promise<ProviderResult<T>> {
+    return { output: req.schema.parse(this.reply ?? req.fallback()), inputTokens: 1, outputTokens: 1 };
+  }
+}
+
+describe('바로 실행하면 안 되는 문장(10/29 회의 A1)', () => {
+  // 서버에서만 걸러지는 문장: 날짜를 못 읽음("화상회의"는 화요일이 아니에요), 같은 칸에 값이 둘
+  const SERVER_ONLY = [
+    '다음 주 화상회의 3시 6명 잡아 줘',
+    '이번 주 일정 3시 6명 잡아 줘',
+    '내일 3시나 4시에 6명 잡아 줘',
+    '내일 3시 6명이나 8명 회의실 잡아 줘',
+    '내일 3시나 4시에 노트북 빌려 줘',
+  ];
+
+  it('공유 금지 표와 서버 전용 문장은 예약·대여·plan을 하나도 만들지 않아요', async () => {
+    const t = await setup();
+    t.ctx.ops.patchValues({ rateLimitPerMinute: 10_000 });
+    const me = await t.loginAs(MOCK.staff);
+    for (const text of [...NO_AUTO_SENTENCES, ...SERVER_ONLY]) expect((await chat(me, text)).changed, text).toBe(false);
+    expect(await appReservations(t)).toHaveLength(0);
+    expect(await loans(t)).toHaveLength(0);
+    expect((await t.db.query('select 1 from plans')).rows).toHaveLength(0);
+  });
+
+  it('같은 칸에 값이 둘이면 이유를 말하고 카드만 보여 줘요', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.staff);
+    const out = await chat(me, '내일 3시나 4시에 6명 잡아 줘');
+    expect(out.reply).toBe('시각이 둘 이상 있어서 바로 실행하지 않았어요. 맞는 카드에서 골라 주세요');
+    expect(out.cards.some((c) => c.actions.primary?.type === 'propose')).toBe(true);
+    expect((await t.ctx.audit.recent(1))[0]).toMatchObject({ channel: 'ask', action: 'chat', result: 'held' });
+  });
+
+  it('모델이 어떤 일·장비를 골라도 규칙이 시키는 말로 본 일 밖의 쓰기는 없어요', async () => {
+    const provider = new ScriptedProvider();
+    const t = await createTestApp({ provider });
+    opened.push(t);
+    await t.modules.find((m) => m.kind === 'rooms')!.seed!();
+    t.ctx.gateway = new AiGateway(provider, true, t.db);
+    t.ctx.ops.patchValues({ rateLimitPerMinute: 10_000 });
+    const me = await t.loginAs(MOCK.staff);
+
+    const texts = [...NO_AUTO_SENTENCES.slice(0, 8), '내 예약 보여 줘', '회의실별 장비 현황 알려 줘', '지금 빈 방 있어?'];
+    for (const intent of CHAT_INTENTS) {
+      provider.reply = { intent, command: true, kinds: [...LOAN_KINDS] };
+      for (const text of texts) expect((await chat(me, text)).changed, `${intent} · ${text}`).toBe(false);
+    }
+    // 예약하라는 문장도 모델이 다른 일(대여)이나 말하지 않은 장비를 고르면 바로 실행하지 않아요.
+    provider.reply = { intent: 'rent', command: true, kinds: ['노트북'] };
+    expect((await chat(me, '내일 3시 6명 회의실 잡아 줘')).changed).toBe(false);
+    provider.reply = { intent: 'reserve', command: true, kinds: ['노트북'] };
+    expect((await chat(me, '내일 3시 6명 회의실 잡아 줘')).changed).toBe(false);
+    expect(await appReservations(t)).toHaveLength(0);
+    expect(await loans(t)).toHaveLength(0);
+
+    // 모델과 규칙이 같으면 지금처럼 바로 예약해요.
+    provider.reply = undefined;
+    const done = await chat(me, '내일 3시 6명 회의실 잡아 줘');
+    expect(done).toMatchObject({ changed: true, aiParsed: true });
+    expect(await appReservations(t)).toHaveLength(1);
   });
 });
 

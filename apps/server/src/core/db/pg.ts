@@ -1,14 +1,19 @@
 import pg from 'pg';
 import type { Db, Queryable } from './types';
 
-export function createPgDb(connectionString: string): Db {
+/** schema는 시험용이에요: 그 스키마를 먼저 찾고(search_path), 확장(btree_gist)은 public에서 찾아요. 운영은 넣지 않아요. */
+export interface PgDbOptions {
+  schema?: string;
+}
+
+export function createPgDb(connectionString: string, opts: PgDbOptions = {}): Db {
   // 시간 제한(L-17): 연결 5초, 문장 10초. 쉬던 연결이 끊겨도 풀 오류로 서버가 죽지 않게 받아서 남겨요(글은 빼고 코드만).
   const pool = new pg.Pool({
     connectionString,
     max: 10,
     connectionTimeoutMillis: 5_000,
     idleTimeoutMillis: 30_000,
-    options: '-c timezone=Asia/Seoul -c statement_timeout=10000',
+    options: `-c timezone=Asia/Seoul -c statement_timeout=10000${opts.schema ? ` -c search_path=${opts.schema},public` : ''}`,
   });
   pool.on('error', (err: Error & { code?: string }) => {
     console.error(JSON.stringify({ level: 'error', msg: 'db-pool-error', code: err.code ?? err.name }));

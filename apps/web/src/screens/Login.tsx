@@ -101,6 +101,10 @@ export function Login({
         <section className='card'>
           <h2>가상 직원으로 들어가기</h2>
           <p className='hint'>시연용이에요. 한 사람을 고르면 그 사람으로 들어가요. 실제로는 회사 계정으로 로그인해요.</p>
+          {/* 여러 사람이 같은 가상 직원을 같이 써요. 남이 쓴 글이 보여서 실제 정보를 쓰지 말라고 알려요(배포 준비 회의 D8). */}
+          <p className='demo-warning'>
+            여러 사람이 같은 가상 직원으로 들어와요. 보낸 문의·올린 품목·예약은 다른 사람도 볼 수 있어요. 진짜 이름·고민·연락처는 쓰지 마세요
+          </p>
           <ul className='choices'>
             {users.map((u) => (
               <li key={u.idpSubject}>

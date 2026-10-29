@@ -14,7 +14,14 @@ const IDP = {
   DESK_IDP_DIRECTORY_CLIENT_SECRET: 'd'.repeat(40),
 };
 /** 실제 운영에 필요한 값을 모두 넣은 환경 */
-const PROD = { NODE_ENV: 'production', PUBLIC_BASE_URL: 'https://desk.example.com', DATABASE_URL: 'postgres://desk@db.example.com/desk', ...SECRETS, ...IDP };
+const PROD = {
+  NODE_ENV: 'production',
+  PUBLIC_BASE_URL: 'https://desk.example.com',
+  DATABASE_URL: 'postgres://desk@db.example.com/desk',
+  TRUST_PROXY: '10.0.3.11',
+  ...SECRETS,
+  ...IDP,
+};
 
 const problemsOf = (env: NodeJS.ProcessEnv): string => {
   try {
@@ -127,12 +134,21 @@ describe('사내망·밖 접속 설정 검사(10/28 망 회의, C-3)', () => {
     [{ PUBLIC_BASE_URL: 'https://desk.example.com/' }, 'PUBLIC_BASE_URL은 https://이름 모양이어야 해요'],
     [{ PUBLIC_BASE_URL: 'https://example.com/desk' }, 'PUBLIC_BASE_URL은 https://이름 모양이어야 해요'],
     [{ ANTHROPIC_BASE_URL: 'http://ai-gateway.corp' }, 'ANTHROPIC_BASE_URL은 https 주소여야 해요'],
+    // 10/29 배포 준비 회의 B4: 비우거나 넓은 대역이면 접속기록 접속지가 쓸모없거나 꾸며져요. 모델을 켜면서 키가 없으면 조용히 꺼진 채예요.
+    [{ TRUST_PROXY: '' }, 'TRUST_PROXY가 없어요'],
+    [{ TRUST_PROXY: '10.0.0.0/8' }, 'TRUST_PROXY의 10.0.0.0/8는 너무 넓어요'],
+    [{ TRUST_PROXY: '10.0.3.11,fd00::/48' }, 'TRUST_PROXY의 fd00::/48는 너무 넓어요'],
+    [{ DESK_AI_PROVIDER: 'anthropic' }, 'ANTHROPIC_API_KEY가 없어요'],
   ])('운영에서 %o → 뜨지 않아요', (patch, reason) => {
     expect(problemsOf({ ...PROD, ...patch })).toContain(reason);
   });
 
   it('관문 주소 하나, 프록시를 켠 사내 출구, 일부러 끈 프록시는 받아요', () => {
     expect(loadConfig({ ...PROD, TRUST_PROXY: '10.0.3.11' }, NODE24).trustProxy).toBe('10.0.3.11');
+    expect(loadConfig({ ...PROD, TRUST_PROXY: '10.0.3.0/24,2001:db8::/64' }, NODE24).trustProxy).toBe('10.0.3.0/24,2001:db8::/64');
+    // 관문 없이 직접 받는 구성은 none으로 일부러 정했다고 남겨요. 아무도 믿지 않아요.
+    expect(loadConfig({ ...PROD, TRUST_PROXY: 'none' }, NODE24).trustProxy).toBe(false);
+    expect(() => loadConfig({ ...PROD, DESK_AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test' }, NODE24)).not.toThrow();
     expect(() => loadConfig({ ...PROD, HTTPS_PROXY: 'http://proxy.corp:8080', NODE_USE_ENV_PROXY: '1' }, NODE24)).not.toThrow();
     expect(() =>
       loadConfig({ ...PROD, HTTPS_PROXY: 'http://proxy.corp:8080', NODE_OPTIONS: '--max-old-space-size=512 --use-env-proxy' }, NODE24),

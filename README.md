@@ -4,7 +4,7 @@
 회의실·공지(회사생활 MCP 일부) + 같이 채워요(탕비실) + 담당자 내비를 하나로 합쳤어요.
 
 - 기획 문서: [docs/기획서.md](docs/기획서.md) · [docs/PRD.md](docs/PRD.md) · [docs/화면설계.md](docs/화면설계.md) · [docs/ADR.md](docs/ADR.md) · [docs/회의종합.pdf](docs/회의종합.pdf)
-- 개발 문서: [docs/CONVENTIONS.md](docs/CONVENTIONS.md)(코드 컨벤션) · [docs/TEAM.md](docs/TEAM.md)(에이전트 팀과 맡은 곳) · [docs/REVIEW.md](docs/REVIEW.md)(보안·QA 검토) · [docs/TRACEABILITY.md](docs/TRACEABILITY.md)(요구사항 추적표)
+- 개발 문서: [docs/CONVENTIONS.md](docs/CONVENTIONS.md)(코드 컨벤션) · [docs/TEAM.md](docs/TEAM.md)(에이전트 팀과 맡은 곳) · [docs/REVIEW.md](docs/REVIEW.md)(보안·QA 검토) · [docs/TRACEABILITY.md](docs/TRACEABILITY.md)(요구사항 추적표) · [docs/개선회의_2026-10-29.md](docs/개선회의_2026-10-29.md)(다음에 할 일 회의) · [docs/배포준비회의_2026-10-29.md](docs/배포준비회의_2026-10-29.md)(웹 배포 준비 회의) · [docs/장애런북.md](docs/장애런북.md)(장애 첫 조치)
 - 상태: 네 기능(담당·공지, 회의실, 같이 채워요, 읽기 전용 MCP)이 **가상 자료(등급 0)와 모의 어댑터**로 돌아가요. PRD는 아직 초안이에요(사용자 확인 3개·보안팀 질문 2개 대기). 실제 그룹웨어·IdP 연결과 10일 차 측정은 아직이에요.
 
 ## 실행
@@ -20,6 +20,8 @@ npm run dev
 
 - DB: `DATABASE_URL`이 없으면 내장 PGlite(`.data/pglite`)를 써요. 서버가 뜰 때 마이그레이션을 적용하고, 비어 있으면 가상 자료(분장표·공지·회의실 장부·탕비실 카탈로그와 요청)를 넣어요. 처음부터 다시 하려면 서버를 끄고 `.data/`를 지워요.
 - 실제 PostgreSQL: `cp .env.example .env` → `npm run db:up`(Docker, 5433) → `DATABASE_URL` 설정 → `npm run db:migrate`
+- 운영 이미지: `docker build -t one-line-desk .`. 서버와 웹 화면 파일을 한 이미지에 담고, 같은 서버가 화면도 줘요(보안 머리·캐시·미리 압축). 운영은 `.env`를 읽지 않아서 값을 모두 환경으로 넣어요. 띄운 뒤 `node scripts/smoke.mjs <주소>`로 바닥을 확인해요. 자세한 건 [Dockerfile](Dockerfile)과 [배포 준비 회의](docs/배포준비회의_2026-10-29.md)예요.
+- 시험을 실제 PostgreSQL에서: `npm run db:test:up`(Docker, 5434, 끄면 자료가 사라지는 시험 전용 DB) → `npm run test:pg`. 시험 DB마다 새 스키마를 만들고 끝나면 지워요. 다른 DB를 쓰려면 `TEST_DATABASE_URL`을 넣어요(DB 이름이 `_test`로 끝나야 해요). 기본 `npm test`는 그대로 PGlite예요.
 - AI: 기본은 모델을 부르지 않는 `fake`예요(규칙과 틀 문장으로 돌아가요). 실제 모델은 `DESK_AI_PROVIDER=anthropic`, `ANTHROPIC_API_KEY`, 무보관 계약 확인 뒤 `NO_RETENTION_CONTRACT_CONFIRMED=true`예요. 모델은 ADR-10대로 `claude-opus-5-5` 하나로 고정해요(`DESK_AI_MODEL`).
 - 임시 IdP(Keycloak): `npm run idp:up`(Docker, http://localhost:8180) → `npm run dev:idp`. 로그인 화면이 "회사 계정으로 로그인"이 되고, 직원 명단(참석자 검색)도 IdP에서 와요. 가상 직원 15명이고 아이디는 `idp/realm-one-line-desk.json`, 비밀번호는 모두 `desk-demo`예요(로컬 시험용). 끄려면 `npm run idp:down`.
 - 회의 초대(ADR-17): 그룹웨어 캘린더·Slack은 기본이 모의예요(마이 페이지 > 시연 받은편지함에서 보여요). `SLACK_BOT_TOKEN`을 넣으면 실제 Slack DM을 보내요(보관 조건·보안 승인 뒤에만).
@@ -31,7 +33,7 @@ npm run dev
 npm run check
 ```
 
-서식 검사(Prettier) + 타입 검사 + 시험(공유 10개, 서버 299개)을 한 번에 돌려요. 동시성 시험은 아직 PGlite(연결 하나)에서만 돌아요. 실제 PostgreSQL 경쟁 시험은 다음 일이에요([docs/REVIEW.md](docs/REVIEW.md) M1).
+서식 검사(Prettier) + 타입 검사 + 시험(공유 149개, 서버 654개, 웹 19개)을 한 번에 돌려요. 시험 DB는 PGlite예요. CI는 같은 서버 시험을 실제 PostgreSQL에서도 돌려요(`npm run test:pg`). 두 연결로 겹치는 경쟁 시험은 다음 일이에요([docs/REVIEW.md](docs/REVIEW.md) M1).
 
 ## 기능과 화면
 
