@@ -4,9 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>한 줄 데스크</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#f2f4f6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#101115" media="(prefers-color-scheme: dark)" />
+    <script type="module" src="/src/main.tsx"></script>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <!-- 첫 화면 뼈대(배포 준비 회의 D3). 앱이 뜨면 React가 바꿔 그려요. 스타일은 CSS 파일에 있어요(CSP에 인라인 스타일 예외를 두지 않아요). -->
+    <div id="root">
+      <div class="boot" role="status">
+        <span class="brand-mark" aria-hidden="true">한</span>
+        <p>불러오는 중이에요</p>
+        <p class="boot-late">화면을 열지 못했어요. Edge·Chrome 최신 판으로 열거나 <a href="/">다시 불러오기</a>를 눌러 주세요.</p>
+      </div>
+    </div>
+    <noscript><p class="boot">한 줄 데스크는 JavaScript를 켜야 쓸 수 있어요.</p></noscript>
   </body>
 </html>

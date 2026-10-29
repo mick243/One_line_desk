@@ -220,6 +220,26 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
     expect(out.cards.some((c) => c.actions.primary?.type === 'propose' && c.actions.primary.text === '이 회의실로 예약')).toBe(true);
   });
 
+  it('화면 판이 서버 판과 다르면(배포 뒤 오래 연 탭) 바로 실행하지 않고 카드로만 보여 줘요(배포 준비 회의 D1)', async () => {
+    const t = await setup();
+    t.ctx.config.build = 'b2';
+    const me = await t.loginAs(MOCK.staff);
+    const send = (build?: string) =>
+      t.app.inject({
+        method: 'POST',
+        url: '/api/rooms/chat',
+        headers: { cookie: me.cookie, 'x-csrf-token': me.csrf, ...(build ? { 'x-desk-build': build } : {}) },
+        payload: { text: '내일 3시 6명 회의실 잡아 줘', requestId: newRequestId() },
+      });
+    // 옛 판 화면, 판 머리가 없는 더 옛 화면은 화면이 보여 준 "지금 동작"과 서버 판정이 다를 수 있어요.
+    expect((await send('b1')).json()).toMatchObject({ changed: false });
+    expect((await send()).json()).toMatchObject({ changed: false });
+    expect(await appReservations(t)).toHaveLength(0);
+    // 같은 판이면 그대로 바로 예약해요.
+    expect((await send('b2')).json()).toMatchObject({ changed: true });
+    expect(await appReservations(t)).toHaveLength(1);
+  });
+
   it('운영 스위치 autoActions를 끄면 카드로만 보여 줘요', async () => {
     const t = await setup();
     const op = await t.loginAs(MOCK.operator);

@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./input-check/samples": "./src/input-check/samples.ts",
-    "./rooms-chat/samples": "./src/rooms-chat-samples.ts"
+    "./rooms-chat/samples": "./src/rooms-chat-samples.ts",
+    "./web-headers": "./src/web-headers.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

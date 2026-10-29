@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import cookie from '@fastify/cookie';
 import { DEFAULT_OPS_SETTINGS, hasControlChar, LAUNCH_OPS_SETTINGS, LOCK_MESSAGE, type ModuleKind, recordCutoff } from '@one-line-desk/shared';
-import Fastify, { type FastifyServerOptions } from 'fastify';
+import { NON_HTML_CSP } from '@one-line-desk/shared/web-headers';
+import Fastify, { type FastifyReply, type FastifyServerOptions } from 'fastify';
 import { ZodError } from 'zod';
 import { type Adapters, createAdapters, withOutboundAdapters } from './adapters';
 import type { ServerConfig } from './config';
@@ -12,7 +14,7 @@ import { AuditLog } from './core/audit';
 import { applyMigrations, type Db, openDb, pendingMigrations } from './core/db';
 import { DeskError } from './core/errors';
 import { FixedActions } from './core/fixed-action';
-import { errorSummary, maskedLogger } from './core/logging';
+import { errorSummary, maskedLogger, pathOnly } from './core/logging';
 import { Notifier } from './core/notifications';
 import { createGuards } from './core/guard';
 import type { DeskModule } from './core/module';
@@ -22,12 +24,13 @@ import { ProposalTokens } from './core/proposal-token';
 import { RateLimiter } from './core/rate-limit';
 import { Router } from './core/router';
 import { SessionStore } from './core/session';
+import { registerWebFiles } from './core/web-files';
 import { createModules } from './modules';
 import { registerAskRoutes } from './routes/ask';
 import { registerAuthRoutes } from './routes/auth';
 import { purgeDemoInbox, registerDemoInboxRoutes } from './routes/demo-inbox';
 import { registerPeopleRoutes } from './routes/people';
-import { registerConfigRoutes } from './routes/config';
+import { registerConfigRoutes, registerHealthRoutes } from './routes/config';
 import { registerNotificationRoutes } from './routes/notifications';
 import { registerPlanRoutes } from './routes/plans';
 
@@ -43,9 +46,12 @@ export interface BuildOptions {
   logger?: FastifyServerOptions['logger'];
   /** 보관 기간 지우기를 한 시간마다 돌릴지. 시험은 끄고 runRetention()을 직접 불러요. 기본은 켬이에요. */
   retentionTimer?: boolean;
+  /** 웹 화면 파일(apps/web/dist) 폴더. 넣으면 서버가 화면도 줘요(운영, 10/29 배포 준비 회의 A3). 개발은 Vite가 줘요. */
+  webDir?: string;
 }
 
 const RETENTION_EVERY_MS = 60 * 60_000;
+const RETENTION_RETRY_MS = 5 * 60_000;
 
 export async function buildApp(opts: BuildOptions) {
   const { config } = opts;
@@ -106,6 +112,15 @@ export async function buildApp(opts: BuildOptions) {
     connectionTimeout: 35_000,
     keepAliveTimeout: 65_000,
     return503OnClosing: true,
+    // 요청 번호(배포 준비 회의 C5): 기본은 프로세스마다 req-1부터 다시 세서 1년 남는 접속기록의 request_id가 겹쳐요.
+    // 무작위로 만들고 응답 머리 x-request-id로 돌려줘요. 들어온 요청 번호 머리는 믿지 않아요(꾸민 글이 1년 기록에 들어가지 않게).
+    genReqId: () => randomUUID(),
+    requestIdHeader: false,
+    // 읽지 못하는 주소(%zz 같은)는 기본 오류 글에 주소가 그대로 들어가요. 내용 없이 400으로 답해요(10/29 배포 준비 회의 B5).
+    frameworkErrors: (err, req, reply: FastifyReply) => {
+      req.log.warn({ msg: 'client-error', code: err.code });
+      return reply.code(400).send({ error: 'bad-request', message: '요청 형식이 맞지 않아요' });
+    },
   });
   await app.register(cookie, { secret: config.sessionSecret });
 
@@ -121,11 +136,27 @@ export async function buildApp(opts: BuildOptions) {
     return reply.code(500).send({ error: 'server-error', message: '지금 처리하지 못했어요' });
   });
 
-  // API 기본 머리(L-17): 응답을 캐시에 남기지 않고, 형식 추측·주소 넘김을 막아요. HTML 보안 머리는 웹·앞단 프록시가 맡아요(L-19).
-  app.addHook('onSend', async (_req, reply) => {
+  // 없는 주소: 기본 404는 쿼리까지 붙은 주소를 로그(info)와 응답 글에 그대로 넣어요. 경로만 로그에 남고 응답에는 주소가 없어요(B5).
+  // /api에 없는 경로는 대개 배포 뒤 옛 화면이 이름이 바뀐 API를 부른 거라 새로 고치라고 해요(D2).
+  app.setNotFoundHandler((req, reply) =>
+    reply.code(404).send({
+      error: 'not-found',
+      message: pathOnly(req.url).startsWith('/api/') ? '화면이 옛 버전이에요. 새로 고친 뒤 다시 해 주세요' : '찾는 주소가 없어요',
+    }),
+  );
+
+  // 기본 머리(L-17): 응답을 캐시에 남기지 않고, 형식 추측·주소 넘김을 막아요.
+  // 화면 HTML은 web-files.ts가 보안 머리 한 벌을 붙이고, 그 밖의 응답은 문서로 열려도 아무것도 못 불러오게 해요(B1).
+  // 요청 번호와 떠 있는 판(build)도 실어요. 웹은 판이 다르면 "새 버전이 있어요"를 띄워요(C5·D1).
+  app.addHook('onSend', async (req, reply) => {
+    reply.header('x-request-id', req.id);
+    reply.header('x-desk-build', config.build);
+    // 시연(모의 로그인)은 검색에 걸리지 않게 해요(배포 준비 회의 A8·D8).
+    if (config.demo) reply.header('x-robots-tag', 'noindex, nofollow');
     reply.header('x-content-type-options', 'nosniff');
     reply.header('referrer-policy', 'no-referrer');
     if (!reply.hasHeader('cache-control')) reply.header('cache-control', 'no-store');
+    if (!reply.hasHeader('content-security-policy')) reply.header('content-security-policy', NON_HTML_CSP);
   });
 
   // NUL 같은 제어 문자(줄바꿈·tab 빼고)가 든 본문·쿼리는 어느 경로든 검사·저장 전에 400으로 돌려보내요(QA-10).
@@ -143,35 +174,66 @@ export async function buildApp(opts: BuildOptions) {
   registerPeopleRoutes(app, ctx);
   registerDemoInboxRoutes(app, ctx);
   for (const module of modules) module.register?.(app);
+  if (opts.webDir) registerWebFiles(app, opts.webDir);
 
   if (opts.seed ?? config.seedDemo) {
     for (const module of modules) await module.seed?.();
   }
 
-  // 보관 기간 지우기(L-33): 화면을 열지 않아도 지워요. 뜰 때 한 번, 그 뒤 한 시간마다예요.
+  // 보관 기간 지우기(L-33): 화면을 열지 않아도 지워요. 듣기 시작한 뒤 한 번, 그 뒤 한 시간마다예요.
   // 10/28 사용자 결정: 접속기록(법정 1년) 말고는 모두 7일(RECORD_KEEP_DAYS)이에요. 모듈 기록은 각 모듈 retention이 지워요.
-  const runRetention = async () => {
+  // 단계마다 따로 잡아서 한 단계가 실패해도 나머지는 지워요. 실패한 단계 이름을 돌려주고 retention-failed를 남겨요(배포 준비 회의 A5).
+  const runRetention = async (): Promise<string[]> => {
     const before = recordCutoff(ctx.now());
-    await ctx.notify.purge();
-    await ctx.audit.purge(before);
-    await ctx.plans.purge(before);
-    await ctx.gateway.purgeUsage(before);
-    await purgeDemoInbox(ctx);
-    await ctx.access.purge();
-    for (const module of modules) await module.retention?.();
+    const steps: [string, () => Promise<unknown>][] = [
+      ['notifications', () => ctx.notify.purge()],
+      ['audit', () => ctx.audit.purge(before)],
+      ['plans', () => ctx.plans.purge(before)],
+      ['ai-usage', () => ctx.gateway.purgeUsage(before)],
+      ['demo-inbox', () => purgeDemoInbox(ctx)],
+      ['access-log', () => ctx.access.purge()],
+      ...modules.map((m): [string, () => Promise<unknown>] => [`module:${m.kind}`, async () => m.retention?.()]),
+    ];
+    const failed: string[] = [];
+    for (const [step, run] of steps) {
+      try {
+        await run();
+      } catch (err) {
+        failed.push(step);
+        app.log.error({ msg: 'retention-failed', step, err: errorSummary(err) });
+      }
+    }
+    return failed;
   };
+
+  // 첫 회차는 listen 뒤에 돌려요(앞선 회의 A6). 복원 직후처럼 지울 게 쌓여 있어도 서버가 뜨는 걸 막지 않고,
+  // 첫 회차가 끝날 때까지(성공이든 실패든) 받을 준비(/health/ready)가 503이에요. 실패한 단계가 있으면 5분 뒤 다시 돌려요.
+  const retentionOn = opts.retentionTimer ?? true;
+  let firstRetentionDone = !retentionOn;
+  let running: Promise<unknown> | undefined;
   let retentionTimer: NodeJS.Timeout | undefined;
-  if (opts.retentionTimer ?? true) {
-    await runRetention();
-    retentionTimer = setInterval(
-      () => void runRetention().catch((err) => app.log.error({ msg: 'retention-failed', err: errorSummary(err) })),
-      RETENTION_EVERY_MS,
-    );
+  let retryTimer: NodeJS.Timeout | undefined;
+  const scheduledRetention = () => {
+    running = runRetention().then((failed) => {
+      firstRetentionDone = true;
+      if (!failed.length) return;
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(scheduledRetention, RETENTION_RETRY_MS);
+      retryTimer.unref();
+    });
+  };
+  if (retentionOn) {
+    app.addHook('onListen', async () => scheduledRetention());
+    retentionTimer = setInterval(scheduledRetention, RETENTION_EVERY_MS);
     retentionTimer.unref();
   }
+  registerHealthRoutes(app, ctx, () => firstRetentionDone);
 
+  // 닫을 때(SIGTERM): 돌던 보관 회차가 끝나기를 기다린 뒤 DB를 닫아요(배포 준비 회의 A5).
   app.addHook('onClose', async () => {
     clearInterval(retentionTimer);
+    clearTimeout(retryTimer);
+    await running;
     if (!opts.db) await db.close();
   });
 

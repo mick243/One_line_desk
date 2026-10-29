@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --exclude ../../.data/** src/index.ts",
-    "start": "tsx src/index.ts",
+    "start": "node --import tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "db:migrate": "tsx scripts/migrate.ts"
@@ -19,11 +19,11 @@
     "fastify": "^5.12.7",
     "jose": "6.2.12",
     "pg": "^8.23.1",
+    "tsx": "^4.23.15",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/pg": "^8.23.1",
-    "highs": "^1.15.4",
-    "tsx": "^4.23.15"
+    "highs": "^1.15.4"
   }
 }

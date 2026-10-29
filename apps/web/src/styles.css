@@ -139,6 +139,7 @@ a {
 /* 폰 너비·한 손 기준. 주 버튼은 크고 아래쪽에 둬요(PRD 접근성·모바일). */
 .app {
   max-width: 480px;
+  min-height: 100vh;
   min-height: 100dvh;
   margin: 0 auto;
   background: var(--bg);
@@ -147,6 +148,7 @@ a {
 }
 .loading {
   flex: 1;
+  min-height: 60vh;
   min-height: 60dvh;
   display: flex;
   flex-direction: column;
@@ -166,8 +168,7 @@ a {
   justify-content: space-between;
   height: 56px;
   padding: 0 10px 0 var(--gutter);
-  background: color-mix(in srgb, var(--bg) 86%, transparent);
-  backdrop-filter: saturate(180%) blur(14px);
+  background: var(--bg);
 }
 .brand {
   font-size: 1.0625rem;
@@ -230,6 +231,26 @@ a {
 .empty {
   font-size: 0.9375rem;
 }
+/* 시연 경고(배포 준비 회의 D8): 주황 한 줄. 여러 사람이 같은 가상 직원을 같이 써서 실제 정보를 쓰지 말라고 해요. */
+.demo-warning {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-s);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+/* 손가락 기기에서는 입력 칸 글씨를 16px 이상으로 둬요. 더 작으면 iPhone이 누를 때 화면을 확대하고 돌아오지 않아요(D4).
+   확대 막기(maximum-scale)는 쓰지 않아요(글씨를 키워 보는 사람이 있어요). */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
 .lead {
   color: var(--text-2);
   font-size: 1rem;
@@ -268,6 +289,69 @@ a {
   margin: 0;
   padding: 0 var(--gutter) 10px calc(var(--gutter) + 18px);
   line-height: 1.7;
+}
+
+/* 새 버전 띠(배포 준비 회의 D1): 연한 파랑 한 줄에 작은 [새로 고침]. 저절로 새로 고치지 않아요. */
+.version-band {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px 7px var(--gutter);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.version-band span {
+  flex: 1;
+}
+.version-band button {
+  flex: none;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+}
+.version-band .version-band-close {
+  text-decoration: none;
+  font-size: 1.125rem;
+}
+
+/* 첫 화면 뼈대(배포 준비 회의 D3): JS가 돌기 전에도 글자가 보여요. 8초가 지나도 그대로면 안내를 더해요. 스크립트는 쓰지 않아요. */
+.boot {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px var(--gutter);
+  background: var(--bg);
+  color: var(--text-quiet);
+  text-align: center;
+}
+.boot p {
+  margin: 0;
+}
+.boot-late {
+  visibility: hidden;
+  max-width: 320px;
+  color: var(--text-2);
+  animation: boot-late 0s 8s forwards;
+}
+.boot-late a {
+  color: var(--accent-text);
+  font-weight: 700;
+}
+@keyframes boot-late {
+  to {
+    visibility: visible;
+  }
 }
 
 /* 칩: 바탕 위에서는 흰 칩, 카드·시트 안에서는 회색 칩이에요. 고른 칩은 진하게 채워요. */
@@ -464,6 +548,7 @@ button.chip:active {
     background: var(--accent-press);
   }
   .secondary:hover:not(:disabled) {
+    background: var(--accent-soft);
     background: color-mix(in srgb, var(--accent-soft) 80%, var(--accent) 12%);
   }
   .neutral:hover:not(:disabled) {
@@ -517,8 +602,7 @@ button.chip:active {
   max-width: 480px;
   display: flex;
   padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
-  background: color-mix(in srgb, var(--surface) 90%, transparent);
-  backdrop-filter: saturate(180%) blur(14px);
+  background: var(--surface);
   border-top: 1px solid var(--line);
 }
 .tab {
@@ -642,6 +726,7 @@ button.chip:active {
 .sheet {
   width: 100%;
   max-width: 480px;
+  max-height: 94vh;
   max-height: 94dvh;
   display: flex;
   flex-direction: column;
@@ -672,6 +757,7 @@ button.chip:active {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-height: 66vh;
   max-height: 66dvh;
   overflow-y: auto;
   overflow-x: hidden;
@@ -962,6 +1048,7 @@ button.chip:active {
   height: 44px;
   border-radius: 14px;
   color: var(--tint, var(--accent));
+  background: var(--surface-2);
   background: color-mix(in srgb, var(--tint, var(--accent)) 13%, var(--surface));
 }
 .tint-navi {
@@ -1300,6 +1387,7 @@ select {
   border: 0;
   border-radius: 16px;
   padding: 14px 18px;
+  background: var(--text);
   background: color-mix(in srgb, var(--text) 94%, transparent);
   color: var(--surface);
   text-align: left;

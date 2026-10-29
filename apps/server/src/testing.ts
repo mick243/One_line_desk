@@ -18,7 +18,16 @@ export async function createTestApp(opts: Partial<Omit<BuildOptions, 'config'>> 
   let clock = opts.start ?? Date.parse('2026-10-26T09:00:00+09:00');
   const db = opts.db ?? (await createTestDb());
   const adapters = createMockAdapters();
-  const built = await buildApp({ config: { ...loadConfig({}), databaseUrl: undefined }, db, adapters, now: () => clock, seed: false, ...opts });
+  // 보관 회차는 시험이 runRetention()으로 직접 불러요. 켜 두면 듣기(listen) 전까지 받을 준비가 503이에요.
+  const built = await buildApp({
+    config: { ...loadConfig({}), databaseUrl: undefined },
+    db,
+    adapters,
+    now: () => clock,
+    seed: false,
+    retentionTimer: false,
+    ...opts,
+  });
   return {
     ...built,
     db,

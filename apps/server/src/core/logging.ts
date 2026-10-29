@@ -9,8 +9,16 @@ export function pathOnly(url: string | undefined): string {
   return (url ?? '').split(/[?#]/, 1)[0]!.slice(0, 200);
 }
 
+/**
+ * 로그에 남길 경로. 앱 확인 링크(/r/<토큰>)는 토큰에 가명 ID·방·시각이 읽히는 글로 들어 있어서 자리 표시로 바꿔요.
+ * 서버가 화면도 주면서(10/29 배포 준비 회의 A3) 이 경로가 앱 로그에 들어오게 됐어요.
+ */
+export function logPath(url: string | undefined): string {
+  return pathOnly(url).replace(/^\/r\/[^/]+/, '/r/:token');
+}
+
 export const LOG_SERIALIZERS = {
-  req: (req: { method?: string; url?: string; id?: string }) => ({ id: req.id, method: req.method, path: pathOnly(req.url) }),
+  req: (req: { method?: string; url?: string; id?: string }) => ({ id: req.id, method: req.method, path: logPath(req.url) }),
   res: (res: { statusCode?: number }) => ({ statusCode: res.statusCode }),
   // 프레임워크가 남기는 오류도 글(message) 대신 코드·위치만 남겨요.
   err: (err: unknown) => {

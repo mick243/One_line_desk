@@ -30,6 +30,8 @@ interface Row {
   client_ip: string | null;
   request_id: string | null;
 }
+/** 요청 번호는 프로세스마다 다시 세지 않는 무작위 값이에요(배포 준비 회의 C5). 1년 기록에서 겹치지 않아요. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const rows = async (t: TestApp, action?: string) =>
   (
     await t.db.query<Row>(
@@ -45,8 +47,8 @@ describe('접속기록(C-2)', () => {
     await me.call('POST', '/api/auth/logout');
     const pseudonymId = pseudonymize(t.ctx.config.pseudonymSecret, MOCK.dev);
     expect(await rows(t)).toEqual([
-      { action: 'login', pseudonym_id: pseudonymId, subject_refs: [], client_ip: '127.0.0.1', request_id: expect.stringMatching(/^req-/) },
-      { action: 'logout', pseudonym_id: pseudonymId, subject_refs: [], client_ip: '127.0.0.1', request_id: expect.stringMatching(/^req-/) },
+      { action: 'login', pseudonym_id: pseudonymId, subject_refs: [], client_ip: '127.0.0.1', request_id: expect.stringMatching(UUID) },
+      { action: 'logout', pseudonym_id: pseudonymId, subject_refs: [], client_ip: '127.0.0.1', request_id: expect.stringMatching(UUID) },
     ]);
   });
 

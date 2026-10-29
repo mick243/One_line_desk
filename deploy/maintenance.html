@@ -1,0 +1,74 @@
+<!doctype html>
+<!--
+  관문 점검 화면(10/29 배포 준비 회의 D2). 서버가 다시 뜨는 동안(502·503·504) 관문이 화면 주소(HTML GET)에 이 파일을 줘요.
+  - 응답: 503, Retry-After: 120, Cache-Control: no-store, X-Robots-Tag: noindex
+  - 머리: X-Frame-Options: DENY, X-Content-Type-Options: nosniff, Referrer-Policy: no-referrer,
+          Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'
+    (스크립트·바깥 파일 없이 이 파일 안 스타일만 써요. 그래서 앱 CSP와 달리 인라인 스타일 하나만 열어요.)
+  - /api 응답에는 이 파일을 주지 않아요. 화면(api.ts)이 502·503·504를 "지금 앱을 고치는 중이에요" 문구로 바꿔요.
+-->
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="refresh" content="60" />
+    <title>한 줄 데스크 · 잠깐 고치는 중</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f2f4f6;
+        --text: #191f28;
+        --text-2: #4e5968;
+        --accent: #1e6ee8;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #101115;
+          --text: #e6e8eb;
+          --text-2: #a5acb6;
+        }
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        padding: 40px 20px;
+        box-sizing: border-box;
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+        text-align: center;
+      }
+      .mark {
+        display: grid;
+        place-items: center;
+        width: 56px;
+        height: 56px;
+        border-radius: 18px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 1.5rem;
+        font-weight: 800;
+      }
+      p {
+        margin: 0;
+        max-width: 340px;
+        line-height: 1.6;
+        color: var(--text-2);
+      }
+      strong {
+        color: var(--text);
+        font-size: 1.125rem;
+      }
+    </style>
+  </head>
+  <body>
+    <span class="mark" aria-hidden="true">한</span>
+    <strong>잠깐 앱을 고치는 중이에요</strong>
+    <p>보통 몇 분이면 끝나요. 조금 뒤에 새로 고쳐 주세요. 급한 일은 그룹웨어에서 해 주세요.</p>
+  </body>
+</html>

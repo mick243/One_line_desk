@@ -219,7 +219,10 @@ export function registerRoomRoutes(app: FastifyInstance, ctx: AppContext, desk: 
         await ctx.audit.record({ pseudonymId: user.pseudonymId, channel: 'ask', module: 'rooms', action: 'chat', result: 'locked' });
         return reply.code(422).send({ error: 'locked', message: checked.locks[0]!.message, locks: checked.locks, rulesVersion: checked.rulesVersion });
       }
-      const { code, ...answer } = await chat.reply(user, checked.text, req.body.requestId, { noAuto: req.body.noAuto === true });
+      // 화면이 옛 판이면(배포 뒤 오래 연 탭) 화면이 보여 준 "지금 동작"과 서버 판정이 다를 수 있어서 바로 실행하지 않고 카드로만 보여 줘요.
+      // 판 머리가 없는 옛 화면도 같아요. 판을 넣지 않은 개발(dev)은 비교하지 않아요(10/29 배포 준비 회의 D1).
+      const staleScreen = ctx.config.build !== 'dev' && req.headers['x-desk-build'] !== ctx.config.build;
+      const { code, ...answer } = await chat.reply(user, checked.text, req.body.requestId, { noAuto: req.body.noAuto === true || staleScreen });
       await ctx.audit.record({ pseudonymId: user.pseudonymId, channel: 'ask', module: 'rooms', action: 'chat', result: code });
       return answer;
     },

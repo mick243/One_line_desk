@@ -4,10 +4,10 @@ import type { EmployeeProfile, LoginEvidence } from '../adapters/types';
 import type { ServerConfig } from '../config';
 import type { AppContext } from '../context';
 import { accessFrom } from '../core/access-record';
-import { clearReauth, endEverything, endIfIdle, needsReauth, SESSION_COOKIE, sessionOf } from '../core/guard';
+import { clearReauth, endEverything, endIfIdle, markReauth, needsReauth, sessionCookie, sessionCookieOptions, sessionOf } from '../core/guard';
 import { pseudonymize } from '../core/pseudonym';
 import { computeRoles } from '../core/roles';
-import { type LoginAssurance, SESSION_MAX_AGE_MS } from '../core/session';
+import type { LoginAssurance } from '../core/session';
 
 const RETURN_BASE = 'http://return.invalid';
 
@@ -37,7 +37,7 @@ const USED_STATES_MAX = 10_000;
 const CLOCK_SKEW_MS = 60_000;
 const b64url = (n: number) => randomBytes(n).toString('base64url');
 
-/** 로그인 시작 → 돌아오기 사이에 브라우저 쿠키에 묶어 두는 값(state·nonce·검증 값·돌아갈 곳·다시 인증·시작 시각) */
+/** 로그인 시작 → 돌아오기 사이에 브라우저 쿠키에 묶어 두는 값(state·nonce·검증 값·돌아갈 곳·다시 인증·시작 시각·요청한 max_age 초) */
 interface OidcPending {
   s: string;
   n: string;
@@ -45,6 +45,7 @@ interface OidcPending {
   r: string;
   a: 0 | 1;
   t: number;
+  m: number;
 }
 
 function isPending(x: unknown): x is OidcPending {
@@ -56,7 +57,8 @@ function isPending(x: unknown): x is OidcPending {
     typeof p.v === 'string' &&
     typeof p.r === 'string' &&
     (p.a === 0 || p.a === 1) &&
-    typeof p.t === 'number'
+    typeof p.t === 'number' &&
+    typeof p.m === 'number'
   );
 }
 
@@ -80,14 +82,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
     const session = ctx.sessions.create(profile.idpSubject, pseudonymId, assurance);
     await ctx.audit.record({ pseudonymId, channel: 'auth', action: 'login', result: assurance.mfa ? 'ok-mfa' : 'ok' });
     await ctx.access.record({ pseudonymId, action: 'login', ...accessFrom(req) });
-    reply.setCookie(SESSION_COOKIE, session.id, {
-      path: '/',
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: ctx.config.production,
-      signed: true,
-      maxAge: SESSION_MAX_AGE_MS / 1000,
-    });
+    reply.setCookie(sessionCookie(ctx), session.id, sessionCookieOptions(ctx));
     if (needsReauth(ctx, req)) clearReauth(ctx, reply);
   }
 
@@ -112,11 +107,14 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
     const state = b64url(24);
     const nonce = b64url(24);
     const verifier = b64url(48);
-    // 쉬는 시간이 지나 끊긴 뒤에는 IdP에 지금 다시 인증해 달라고 해요(prompt=login, max_age=0).
+    // 쉬는 시간이 지나 끊겼거나 로그아웃한 뒤에는 IdP에 지금 다시 인증해 달라고 해요(prompt=login, max_age=0).
     // 화면 깃발이 없어도(새로 고침, 주소를 직접 엶) 서버 표시나 아직 남은 쉰 세션을 보고 정해요(10/29 회의 A5).
     const stale = sessionOf(ctx, req);
     const endedNow = stale ? await endIfIdle(ctx, stale, reply) : false;
-    const reauth = req.query.reauth === 'idle' || endedNow || needsReauth(ctx, req);
+    const reauth = Boolean(req.query.reauth) || endedNow || needsReauth(ctx, req);
+    // 그 밖의 로그인도 마지막 실제 인증이 쉬는 시간보다 오래됐으면 다시 인증해요(max_age, 10/29 배포 준비 회의 B3).
+    // 쉰 시간은 늘 "지금 − 인증 시각"보다 짧아서, 재시작·8시간 만료·쿠키 삭제로 세션이 사라져도 쉼 판정을 건너뛰지 못해요.
+    const maxAge = reauth ? 0 : ctx.ops.get().values.idleTimeoutMinutes * 60;
     const codeChallenge = createHash('sha256').update(verifier).digest('base64url');
     let url: string;
     try {
@@ -125,7 +123,8 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
         nonce,
         codeChallenge,
         redirectUri: redirectUri(),
-        ...(reauth ? { prompt: 'login' as const, maxAge: 0 } : {}),
+        maxAge,
+        ...(reauth ? { prompt: 'login' as const } : {}),
         ...(ctx.config.acrValues ? { acrValues: ctx.config.acrValues } : {}),
       });
     } catch {
@@ -133,7 +132,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
       req.log.warn({ msg: 'idp-unreachable', step: 'start' });
       return reply.redirect('/?login=idp-unreachable');
     }
-    const pending: OidcPending = { s: state, n: nonce, v: verifier, r: safeReturnPath(req.query.return), a: reauth ? 1 : 0, t: ctx.now() };
+    const pending: OidcPending = { s: state, n: nonce, v: verifier, r: safeReturnPath(req.query.return), a: reauth ? 1 : 0, t: ctx.now(), m: maxAge };
     reply.setCookie(pendingCookie(state), JSON.stringify(pending), { ...pendingCookieOptions, maxAge: OIDC_PENDING_MS / 1000 });
     return reply.redirect(url);
   });
@@ -169,8 +168,14 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
     // 다시 인증을 요청하지 않고 시작한 로그인인데 그사이 쉬어서 끊겼으면, 다시 인증을 요청하며 처음부터 해요.
     if (p.a === 0 && needsReauth(ctx, req)) return reply.redirect(`/api/auth/oidc/start?reauth=idle&return=${encodeURIComponent(p.r)}`);
     const { profile, evidence } = result;
-    // 다시 인증을 요청했으면 IdP가 지금 다시 인증했는지 봐요(auth_time). 근거가 없으면 받지 않아요.
-    if (p.a === 1 && !(evidence.authTime !== undefined && evidence.authTime >= p.t - CLOCK_SKEW_MS)) return reply.redirect('/?login=failed');
+    // IdP가 요청한 max_age 안에 실제로 인증했는지 봐요(auth_time). max_age를 요청하면 auth_time은 꼭 와야 해요(OIDC Core).
+    // 오래된 인증이면 다시 인증을 요청하며 처음부터 해요. 이미 다시 인증을 요청했는데도 맞지 않거나 근거가 없으면 받지 않아요.
+    const authTime = evidence.authTime;
+    if (!(authTime !== undefined && authTime >= p.t - p.m * 1000 - CLOCK_SKEW_MS)) {
+      if (authTime === undefined) req.log.warn({ msg: 'idp-no-auth-time' });
+      if (p.a === 0 && authTime !== undefined) return reply.redirect(`/api/auth/oidc/start?reauth=stale&return=${encodeURIComponent(p.r)}`);
+      return reply.redirect('/?login=failed');
+    }
     const mfa = hasMfa(evidence, ctx.config);
     if (ctx.config.requireMfa === 'always' && !mfa) {
       await ctx.audit.record({
@@ -233,7 +238,9 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
     ctx.sessions.destroy(user.sessionId);
     await ctx.audit.record({ pseudonymId: user.pseudonymId, channel: 'auth', action: 'logout', result: 'ok' });
     await ctx.access.record({ pseudonymId: user.pseudonymId, action: 'logout', ...accessFrom(req) });
-    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    reply.clearCookie(sessionCookie(ctx), sessionCookieOptions(ctx));
+    // 로그아웃해도 회사 SSO는 살아 있어요. 다음 회사 로그인은 지금 다시 인증하게 해요(공용 PC, 10/29 배포 준비 회의 B2).
+    markReauth(ctx, reply, 'logout');
     return { ok: true };
   });
 
@@ -248,7 +255,8 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
       result: `sessions:${ended.sessions},grants:${ended.grants}`,
     });
     await ctx.access.record({ pseudonymId: user.pseudonymId, action: 'logout', ...accessFrom(req) });
-    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    reply.clearCookie(sessionCookie(ctx), sessionCookieOptions(ctx));
+    markReauth(ctx, reply, 'logout');
     return { ok: true, ...ended };
   });
 }

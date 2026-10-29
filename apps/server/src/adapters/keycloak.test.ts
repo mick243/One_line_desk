@@ -68,6 +68,8 @@ async function fakeIdp() {
             family_name: '가상 직원',
             email: 'doyun@corp.example',
             groups: ['/부서/개발팀', '/층/5층', '/역할/facilities'],
+            // max_age를 받은 IdP는 인증 시각(auth_time)을 꼭 넣어요(OIDC Core). 기본은 방금 인증한 것으로 둬요.
+            auth_time: NOW / 1000,
             ...state.claims,
           }),
         });
@@ -112,7 +114,7 @@ describe('임시 IdP 어댑터', () => {
         groups: ['facilities'],
         email: 'doyun@corp.example',
       },
-      evidence: { amr: [] },
+      evidence: { amr: [], authTime: NOW },
     });
     state.claims = { amr: ['pwd', 'otp'], acr: 'gold', auth_time: NOW / 1000 - 30 };
     expect((await adapter.finishLogin({ ...p, code: 'good' }))?.evidence).toEqual({ amr: ['pwd', 'otp'], acr: 'gold', authTime: NOW - 30_000 });
@@ -265,7 +267,7 @@ describe('IdP 로그인 경로(OIDC 인가 코드 + PKCE)', () => {
     expect(s.auth.searchParams.get('max_age')).toBe('0');
     state.claims = { auth_time: (NOW - 2 * 3_600_000) / 1000 };
     expect((await callback(t, s.state, s.cookie)).headers.location).toBe('/?login=failed');
-    state.claims = {};
+    state.claims = { auth_time: undefined };
     s = await start(t, state, '?reauth=idle');
     expect((await callback(t, s.state, s.cookie)).headers.location).toBe('/?login=failed');
 
@@ -335,6 +337,50 @@ describe('IdP 로그인 경로(OIDC 인가 코드 + PKCE)', () => {
     const late = await get(`/api/auth/oidc/callback?code=good&state=${early.state}`, early.cookie, mark2);
     expect(late.headers.location).toBe('/api/auth/oidc/start?reauth=idle&return=%2F');
     expect(sessionCookie(late)).toBeUndefined();
+  });
+
+  it('모든 로그인에 max_age(쉬는 시간)를 붙이고, 마지막 인증이 그보다 오래됐으면 지금 다시 인증을 요청해요(배포 준비 회의 B3)', async () => {
+    const { t, state } = await setup();
+    const s = await start(t, state);
+    expect(s.auth.searchParams.get('max_age')).toBe(String(180 * 60));
+    expect(s.auth.searchParams.get('prompt')).toBeNull();
+    // 재시작·8시간 만료로 세션이 사라져도, SSO에 남은 오래된 인증으로는 쉼 판정을 건너뛰지 못해요.
+    state.claims = { auth_time: (NOW - 4 * 3_600_000) / 1000 };
+    const stale = await callback(t, s.state, s.cookie);
+    expect(stale.headers.location).toBe('/api/auth/oidc/start?reauth=stale&return=%2F');
+    expect(sessionCookie(stale)).toBeUndefined();
+    const again = await start(t, state, '?reauth=stale');
+    expect(again.auth.searchParams.get('prompt')).toBe('login');
+    expect(again.auth.searchParams.get('max_age')).toBe('0');
+    state.claims = { auth_time: NOW / 1000 };
+    expect(sessionCookie(await callback(t, again.state, again.cookie))).toBeDefined();
+
+    // max_age를 받고도 인증 시각을 주지 않는 IdP는 받지 않아요(로그에 idp-no-auth-time을 남겨요).
+    state.claims = { auth_time: undefined };
+    const bare = await start(t, state);
+    expect((await callback(t, bare.state, bare.cookie)).headers.location).toBe('/?login=failed');
+  });
+
+  it('로그아웃한 브라우저의 다음 회사 로그인은 지금 다시 인증을 요청해요(공용 PC, 배포 준비 회의 B2)', async () => {
+    const { t, state } = await setup();
+    const cookiesOf = (res: { headers: Record<string, unknown> }) => ([res.headers['set-cookie'] ?? []].flat() as string[]).map((c) => c.split(';')[0]!);
+    const s = await start(t, state);
+    const sid = sessionCookie(await callback(t, s.state, s.cookie))!;
+    const me = (await t.app.inject({ method: 'GET', url: '/api/me', headers: { cookie: sid } })).json();
+    const out = await t.app.inject({ method: 'POST', url: '/api/auth/logout', headers: { cookie: sid, 'x-csrf-token': me.csrfToken } });
+    expect(out.statusCode).toBe(200);
+    expect(cookiesOf(out)).toContain('desk_sid=');
+    const mark = cookiesOf(out).find((c) => /^desk_reauth=.+/.test(c))!;
+    expect(mark).toBeDefined();
+
+    // 로그아웃 뒤에는 "오래 쉬어서"가 아니라 그냥 로그인 필요예요.
+    const after = (await t.app.inject({ method: 'GET', url: '/api/me', headers: { cookie: mark } })).json();
+    expect(after).toMatchObject({ error: 'login-required' });
+    expect(after.reason).toBeUndefined();
+    const next = await t.app.inject({ method: 'GET', url: '/api/auth/oidc/start', headers: { cookie: mark } });
+    const auth = new URL(String(next.headers.location));
+    expect(auth.searchParams.get('prompt')).toBe('login');
+    expect(auth.searchParams.get('max_age')).toBe('0');
   });
 
   it('다른 사이트로는 돌려보내지 않고, 모의 로그인은 닫혀 있어요', async () => {

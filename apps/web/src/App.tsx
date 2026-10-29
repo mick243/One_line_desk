@@ -1,8 +1,19 @@
 import type { AppDestination, Kind } from '@one-line-desk/shared';
 import { useCallback, useEffect, useState } from 'react';
-import { api, IDLE_ENDED_MESSAGE, type Me, onSessionEnded, type PublicConfig, SESSION_ENDED_MESSAGE, sessionEndedByIdle } from './api';
+import {
+  api,
+  IDLE_ENDED_MESSAGE,
+  type Me,
+  onSessionEnded,
+  type PublicConfig,
+  RESTARTED_MESSAGE,
+  SESSION_ENDED_MESSAGE,
+  sessionEndedByIdle,
+  sessionEndedByRestart,
+} from './api';
 import { ActionHost } from './components/ActionHost';
 import { DemoBand } from './components/DemoBand';
+import { VersionBand } from './components/VersionBand';
 import { NotificationBell } from './components/NotificationBell';
 import { TabBar, type Tab, visibleTabs } from './components/TabBar';
 import { webModules } from './modules/registry';
@@ -47,8 +58,8 @@ export function App() {
     const next = await api.me();
     setMe(next);
     if (next) setEnded(false);
-    // 쉬는 시간으로 끊긴 뒤 새로 고쳐도 왜 로그인 화면인지 알려 줘요(ADR-20).
-    else if (sessionEndedByIdle()) setEnded(true);
+    // 쉬는 시간이나 서버 재시작으로 끊긴 뒤 새로 고쳐도 왜 로그인 화면인지 알려 줘요(ADR-20, 배포 준비 회의 B3).
+    else if (sessionEndedByIdle() || sessionEndedByRestart()) setEnded(true);
   }, []);
   useEffect(
     () =>
@@ -70,8 +81,9 @@ export function App() {
   const load = useCallback(async () => {
     setOffline(false);
     try {
-      setConfig(await api.publicConfig());
-      await refreshMe();
+      // 공개 설정과 내 정보를 같이 불러서 첫 화면 왕복을 한 번 줄여요(배포 준비 회의 D3).
+      const [loaded] = await Promise.all([api.publicConfig(), refreshMe()]);
+      setConfig(loaded);
     } catch {
       setOffline(true);
     }
@@ -131,11 +143,12 @@ export function App() {
   return (
     <div className='app'>
       <DemoBand items={config.demoData} />
+      <VersionBand />
       {me === null ? (
         <Login
           onLoggedIn={refreshMe}
           login={config.login}
-          notice={ended ? (sessionEndedByIdle() ? IDLE_ENDED_MESSAGE : SESSION_ENDED_MESSAGE) : undefined}
+          notice={ended ? (sessionEndedByIdle() ? IDLE_ENDED_MESSAGE : sessionEndedByRestart() ? RESTARTED_MESSAGE : SESSION_ENDED_MESSAGE) : undefined}
           reauth={ended && sessionEndedByIdle()}
         />
       ) : (

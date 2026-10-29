@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: npm
       - run: npm ci --no-audit --no-fund
       - name: 서식 검사
@@ -43,10 +43,47 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: npm
       - run: npm ci --no-audit --no-fund
       - name: 시험 DB 켜기
         run: npm run db:test:up
       - name: 서버 시험(PostgreSQL)
         run: npm run test:pg
+
+  # 운영 이미지(10/29 배포 준비 회의 A1·A2·A3). 만들고, 읽기 전용 루트·비루트로 시연 설정을 띄워서 연기 시험을 돌려요.
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+      - name: 이미지 만들기
+        run: docker build --build-arg DESK_BUILD=${{ github.sha }} -t one-line-desk:ci .
+      - name: 이미지에 .env가 없고 root로 돌지 않아요
+        run: |
+          docker run --rm --entrypoint sh one-line-desk:ci -c 'test ! -e /app/.env && test "$(id -u)" != 0'
+          docker image ls one-line-desk:ci --format '이미지 크기 {{.Size}}'
+      - name: 시연 설정으로 띄우기
+        run: |
+          secret() { openssl rand -hex 24; }
+          docker run -d --name desk -p 3190:3190 --stop-timeout 50 --read-only --tmpfs /tmp --tmpfs /app/.data:uid=1000,gid=1000 \
+            -e DESK_MOCK_LOGIN=true -e PUBLIC_BASE_URL=https://desk.example.test \
+            -e SESSION_SECRET="$(secret)" -e PSEUDONYM_SECRET="$(secret)" -e PROPOSAL_SECRET="$(secret)" -e MCP_TOKEN_SECRET="$(secret)" \
+            one-line-desk:ci
+      - name: 연기 시험
+        run: node scripts/smoke.mjs http://localhost:3190
+        env:
+          SMOKE_BUILD: ${{ github.sha }}
+      - name: 멈추면 받던 일을 끝내고 정상으로 나가요
+        run: |
+          docker stop desk
+          test "$(docker inspect -f '{{.State.ExitCode}}' desk)" = 0
+      - name: 서버 로그에 쿼리가 남지 않아요(404 카나리)
+        run: |
+          if docker logs desk 2>&1 | grep -q SMOKE_CANARY; then echo '서버 로그에 쿼리가 남았어요'; exit 1; fi
+      - name: 실패하면 서버 로그
+        if: failure()
+        run: docker logs desk

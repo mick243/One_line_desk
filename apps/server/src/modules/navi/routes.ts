@@ -164,7 +164,12 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
         },
       },
     },
-    async (req) => inquiries.send(req.deskUser!, req.body),
+    async (req, reply) => {
+      // 명단 밖으로 넓힌 시연은 여러 사람이 같은 가상 직원으로 들어와서, 저장한 문의를 받는 팀 가상 직원으로 들어온 남이 봐요.
+      // 그래서 저장하지 않고 알려 줘요(10/29 배포 준비 회의 쟁점 5).
+      if (ctx.config.demoWide) return reply.code(409).send({ error: 'demo-locked', message: '시연에서는 보내지 않아요' });
+      return inquiries.send(req.deskUser!, req.body);
+    },
   );
 
   // 받은 문의함은 보낸 사람 이름·부서가 붙은 글을 봐요. 연 사람·접속지·연 문의 번호를 접속기록에 남겨요(ADR-20).

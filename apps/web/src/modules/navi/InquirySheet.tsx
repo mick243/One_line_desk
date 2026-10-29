@@ -1,7 +1,9 @@
 import { type CardAction, checkInput, INQUIRY_KEEP_DAYS, INQUIRY_QUESTION_MAX, INQUIRY_REASON_MAX, maskLine } from '@one-line-desk/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { isDemoLogin } from '../../api';
 import { useActions } from '../../components/ActionHost';
 import { Sheet } from '../../components/Sheet';
+import { newRequestId } from '../../net';
 
 // 담당 팀에 문의 보내기 양식(ADR-16). 받는 곳은 분장표 행의 담당 팀이에요(담당자 이름은 없어요).
 // [보내기] → 확인 시트(받는 곳·내 이름과 부서가 같이 간다는 것·보관 기간) → 보내요. 글은 보내기 전까지 이 화면 메모리에만 있어요.
@@ -49,7 +51,7 @@ export function InquirySheet({ action, initialQuestion, onClose }: { action: Inq
   const [question, setQuestion] = useState(initialQuestion);
   const [reason, setReason] = useState('');
   // 같은 양식에서 두 번 눌러도 한 번만 보내요(서버 멱등 키).
-  const requestId = useMemo(() => crypto.randomUUID(), []);
+  const requestId = useMemo(() => newRequestId(), []);
 
   // 보내기가 끝나면(쓰기 횟수가 오르면) 양식을 닫아요. 확인 시트에서 [닫기]를 누르면 쓴 글이 그대로 남아요.
   const startVersion = useRef(actions.version);
@@ -93,6 +95,7 @@ export function InquirySheet({ action, initialQuestion, onClose }: { action: Inq
       />
       <Field label='사유' value={reason} onChange={setReason} max={INQUIRY_REASON_MAX} rows={2} placeholder='왜 필요한지 적어 주세요(예: 은행 제출용)' />
       <p className='hint'>키·비밀번호·주민번호·건강 정보는 적지 말아 주세요. 적으면 보낼 수 없어요.</p>
+      {isDemoLogin() && <p className='demo-warning'>시연에서는 받는 팀 가상 직원으로 들어온 다른 사람도 이 글을 봐요. 진짜 고민은 쓰지 마세요</p>}
       <button type='button' className='primary' disabled={blocked} onClick={send}>
         보내기
       </button>
