@@ -17,13 +17,14 @@ const appliedNames = async (q: Queryable) => new Set((await q.query<{ name: stri
 /**
  * db/migrations/*.sql을 이름 순서대로 한 번씩만 적용해요. 적용한 파일 이름을 돌려줘요.
  * PostgreSQL은 한 트랜잭션 안에서 잠금(advisory lock)을 잡고 적용해서, 잡을 두 번(동시에) 돌려도 한 번만 들어가요(L-22).
+ * 잠금은 스키마마다 따로예요. 시험(npm run test:pg)은 스키마를 나눠 동시에 적용해서, DB 하나에 잠금 하나면 줄을 서다 문장 제한(10초)에 걸려요.
  * 하나라도 실패하면 이번에 적용한 것 모두 되돌려요.
  */
 export async function applyMigrations(db: Db, dir = MIGRATIONS_DIR): Promise<string[]> {
   await db.exec('create table if not exists schema_migrations (name text primary key, applied_at timestamptz not null default now())');
   if (db.kind === 'pg') {
     return db.tx(async (q) => {
-      await q.query('select pg_advisory_xact_lock(hashtext($1))', [MIGRATION_LOCK]);
+      await q.query("select pg_advisory_xact_lock(hashtext($1 || ':' || current_schema()))", [MIGRATION_LOCK]);
       const done = await appliedNames(q);
       const applied: string[] = [];
       for (const name of migrationFiles(dir)) {

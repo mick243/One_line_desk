@@ -18,9 +18,9 @@ afterEach(async () => {
 
 describe('공통 바닥', () => {
   it('건강 확인에 DB와 AI 공급자를 알려 줘요', async () => {
-    const { app } = await setup();
+    const { app, db } = await setup();
     const res = await app.inject({ method: 'GET', url: '/health' });
-    expect(res.json()).toMatchObject({ ok: true, db: 'pglite-connected', ai: 'fake', rulesVersion: 2 });
+    expect(res.json()).toMatchObject({ ok: true, db: `${db.kind}-connected`, ai: 'fake', rulesVersion: 2 });
   });
 
   it('로그인 전에는 /api/me가 막혀요', async () => {

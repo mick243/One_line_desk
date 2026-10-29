@@ -10,7 +10,7 @@
 |---|---|---|
 | H1 | 고침 | 탕비실 LLM 호출 넷을 등급 1로 바꿨어요. 계약 전에는 규칙·틀 문장으로 가요. 바로 실행에서 고친 값은 core가 공통 검사로 다시 보고(`plans.direct`), 만료 경로의 `reSearch`는 `checkItemName`을 먼저 돌려요. 시험은 `pantry/security.test.ts`, `plans.test.ts` "[ADR-11 시험]"에 있어요 |
 | H2 | 고침 | 토큰·plan에서 `draftName`을 빼고 HMAC으로 바꿨어요. 막힌 결과는 `PlanHandler.storedParams`로 이름을 빼고, 막힘 카드에도 이름이 없어요. 시험: "[H2·F3 카나리]" |
-| M1 | 남음 | 실제 PostgreSQL(`TEST_DATABASE_URL`) 경쟁 시험은 다음 일이에요 |
+| M1 | 일부(10/29) | 서버 시험 전체가 실제 PostgreSQL에서도 돌아요(`npm run test:pg`, CI `postgres` 잡). 두 연결로 겹치는 경쟁 시험은 다음 일이에요 |
 | M2·M3 | 고침(PGlite로만 확인) | +1·거두기·게시는 대표 카드를 `FOR SHARE`로 잠그고, 확정은 대표와 묶인 카드를 ID 순 `FOR UPDATE`로 잠가요. 시험은 `pantry/locks.test.ts`에 있어요 |
 | M4 | 고침 | 운영 환경은 `DESK_MOCK_LOGIN=true` 없이는 모의 IdP로 뜨지 않아요. 시험: app.test "[ADR-13 시험] 운영 환경은…" |
 | M5 | 일부 | 예시 칩·S4·S5 진입이 끄기 스위치를 따라요(L7). `/api/ask` 429, 로그·URL 카나리, 10명 미만 통계 숨김은 남았어요 |

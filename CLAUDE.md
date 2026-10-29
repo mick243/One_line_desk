@@ -27,6 +27,7 @@
 - `npm run dev`: 서버(3190) + 웹(5190), 앱 안 모의 직원으로 로그인
 - `npm run idp:up` → `npm run dev:idp`: 임시 IdP(Keycloak, http://localhost:8180)로 로그인·직원 명단(가상 직원 15명, 비밀번호 `desk-demo`, `idp/realm-one-line-desk.json`)
 - `npm test`, `npm run typecheck`
+- `npm run db:test:up` → `npm run test:pg`: 같은 서버 시험을 실제 PostgreSQL(시험 전용 DB, Docker 5434)에서 돌려요. 기본 `npm test`는 PGlite예요
 - `npm run check`: 서식 검사 + 타입 검사 + 시험
 - DB: `DATABASE_URL`이 없으면 내장 PGlite(`.data/pglite`)를 쓰고 서버가 뜰 때 마이그레이션을 적용해요. 실제 PostgreSQL은 `npm run db:up`(Docker, 5433) → `DATABASE_URL` 설정 → `npm run db:migrate`
 - 운영(`NODE_ENV=production`)은 설정 검사(`apps/server/src/config.ts`)를 지나야 뜨고, 시작할 때 마이그레이션을 적용하지 않아요(`npm run db:migrate` 먼저). 시연 배포는 `DESK_MOCK_LOGIN=true`예요. 운영 설정(스위치·값·링크)은 `ops_settings` 표에 남아요

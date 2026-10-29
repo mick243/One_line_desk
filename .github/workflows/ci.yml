@@ -1,6 +1,7 @@
 # 검사(10/29 회의 B1). ADR "시험으로 지키는 것" 표의 "매 CI" 줄을 PR마다 실제로 돌려요.
 # 자료는 모두 가상(등급 0)이고 AI는 모델을 부르지 않는 fake라서 비밀 값이 필요 없어요.
-# 실제 PostgreSQL 경쟁 시험(services: postgres)은 다음 단계예요(회의록 2절 B1 나머지).
+# postgres 잡은 같은 서버 시험을 실제 PostgreSQL(docker-compose.yml의 db-test)에서 한 번 더 돌려요. 운영 DB와 다르게 도는 곳을 찾아요.
+# 두 연결로 겹치는 경쟁 시험은 다음 단계예요(회의록 2절 B1 나머지).
 name: check
 
 on:
@@ -35,3 +36,17 @@ jobs:
       - name: 웹 빌드
         run: npm run build
 
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: 시험 DB 켜기
+        run: npm run db:test:up
+      - name: 서버 시험(PostgreSQL)
+        run: npm run test:pg
