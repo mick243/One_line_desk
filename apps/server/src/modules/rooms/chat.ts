@@ -3,21 +3,22 @@ import {
   CANCEL_WORD,
   type Card,
   GRADE,
-  isCommand,
   kstDate,
   kstToEpoch,
   LOAN_KINDS,
   type LoanKind,
   loanKindsIn,
   RENT_VERB,
+  RESERVE_VERB,
   type RoomChatResponse,
+  roomChatPreview,
   withoutLoanWords,
 } from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { AppContext } from '../../context';
 import type { AutoOutcome } from '../../core/plans';
 import { linkCard } from '../../core/router';
-import { parseSlots, parseTime } from '../../core/slots';
+import { parseSlots, parseTime, repeatedSlots } from '../../core/slots';
 import type { DeskUser } from '../../core/user';
 import { chatHelpCard, equipmentOverviewCard, loanCard, myReservationCard, overviewCard, roomEquipmentCard, whenText, withSubject } from './cards';
 import type { RentParams, RoomEquipment } from './equipment';
@@ -45,6 +46,8 @@ const InterpretationSchema = z.object({
   kinds: z.array(z.enum(LOAN_KINDS)).max(LOAN_KINDS.length),
 });
 type Interpretation = z.infer<typeof InterpretationSchema>;
+/** byModel: 모델이 해석했는지. held: 시키는 말이지만 바로 실행하지 않은 이유(답 글) */
+type Reading = Interpretation & { byModel: boolean; held?: string };
 
 const SYSTEM = `회의실 데스크 채팅이에요. 직원이 쓴 한 줄이 무엇을 하려는지만 골라요.
 intent:
@@ -62,8 +65,6 @@ kinds: 문장에 나온 이동식 장비 종류(정해진 목록에서만). 회�
 // ── 규칙 해석(모델 없이도 같은 답, 모델이 거절·실패해도 이걸 써요) ──────────────
 // 시키는 문장·장비 이름·취소 말은 브라우저 미리 알림과 같이 쓰려고 공유 패키지(rooms-chat.ts)에 있어요.
 
-/** 예약하라는 말(장비도 같이 빌리는 문장을 예약으로 볼 때) */
-const RESERVE_VERB = /잡아|잡고|잡을|잡자|예약\s*(해|하고|하면서|도|좀|부탁)/;
 const RESERVE_WORD = /예약|잡아|잡고|잡을|잡자|빈\s*방|회의실|미팅\s*룸|방\s*(있|하나|좀|찾)|자리/;
 const STATUS_WORD = /현황|상황|목록|어떤\s*(방|회의실)|어느\s*(방|회의실)|비어|비었|빈\s*(방|회의실)|사용\s*중|쓰는\s*중/;
 const EQUIP_WORD = /장비|설비|비품|점검|고장/;
@@ -74,7 +75,6 @@ const NEXT_MEETING = /다음\s*회의|이번\s*회의|내\s*회의|예약한\s*(
 
 export function interpretByRules(text: string, now: number): Interpretation {
   const kinds = loanKindsIn(text);
-  const command = isCommand(text);
   // 회의 조건: 인원이나 말한 시각. "지금 빈 회의실 있어?"의 "지금"만으로는 회의를 찾는 문장으로 보지 않아요.
   const meeting = Boolean(parseSlots(text, now).people || parseTime(text));
   let intent: Intent;
@@ -86,6 +86,9 @@ export function interpretByRules(text: string, now: number): Interpretation {
   else if (STATUS_WORD.test(text) && !meeting) intent = 'overview';
   else if (RESERVE_WORD.test(text) || meeting) intent = 'reserve';
   else intent = 'help';
+  // 바로 실행은 브라우저 미리 알림과 같은 규칙이 그 일을 시키는 말로 볼 때만이에요. "알려 줘"는 예약이 아니에요(10/29 회의 A1).
+  const preview = roomChatPreview(text);
+  const command = (intent === 'reserve' && preview === 'may-run-reserve') || (intent === 'rent' && preview === 'may-run-rent');
   return { intent, command, kinds };
 }
 
@@ -129,6 +132,12 @@ export class RoomChat {
     const now = this.ctx.now();
     const it = await this.interpret(text, now);
     if (opts.noAuto) it.command = false;
+    // "3시나 4시에 6명 잡아 줘"처럼 같은 칸에 값이 둘이면 어느 쪽인지 몰라서 바로 실행하지 않아요(10/29 회의 A1).
+    const twice = it.command ? repeatedSlots(withoutLoanWords(text)) : [];
+    if (twice.length) {
+      it.command = false;
+      it.held = `${twice.join('·')}이 둘 이상 있어서 바로 실행하지 않았어요. 맞는 카드에서 골라 주세요`;
+    }
     const rooms = await listRooms(this.ctx.db);
     const room = mentionedRoom(text, rooms);
     const base = { aiParsed: it.byModel, changed: false };
@@ -155,8 +164,11 @@ export class RoomChat {
     }
   }
 
-  /** 모델 해석 + 규칙. 자동 실행은 규칙도 시키는 문장으로 본 것만이에요. 모델은 시키는 문장을 묻는 문장으로 낮출 수만 있어요. */
-  private async interpret(text: string, now: number): Promise<Interpretation & { byModel: boolean }> {
+  /**
+   * 모델 해석 + 규칙. 자동 실행은 규칙도 시키는 문장으로 본 것만이에요. 모델은 시키는 문장을 묻는 문장으로 낮출 수만 있어요.
+   * 모델이 고른 일·장비가 규칙과 다르면 그 해석으로 카드만 보여 주고 바로 실행하지 않아요(10/29 회의 A1).
+   */
+  private async interpret(text: string, now: number): Promise<Reading> {
     const ruled = interpretByRules(text, now);
     try {
       const out = await this.ctx.gateway.structured({
@@ -171,7 +183,9 @@ export class RoomChat {
         effort: 'low',
         maxTokens: 200,
       });
-      return { intent: out.intent, command: out.command && ruled.command, kinds: out.kinds.slice(0, MAX_KINDS), byModel: this.ctx.gateway.modelBacked };
+      const kinds = out.kinds.slice(0, MAX_KINDS);
+      const agrees = out.intent === ruled.intent && kinds.every((k) => ruled.kinds.includes(k));
+      return { intent: out.intent, command: out.command && ruled.command && agrees, kinds, byModel: this.ctx.gateway.modelBacked };
     } catch {
       return { ...ruled, byModel: false };
     }
@@ -197,7 +211,7 @@ export class RoomChat {
     user: DeskUser,
     text: string,
     requestId: string,
-    it: Interpretation & { byModel: boolean },
+    it: Reading,
     room: RoomRow | null,
     now: number,
   ): Promise<Omit<ChatResult, 'aiParsed'>> {
@@ -226,6 +240,7 @@ export class RoomChat {
     }
     if (!it.command) {
       const found = await cards('이 조건으로 찾았어요');
+      if (it.held) return { reply: it.held, cards: found, changed: false, code: 'held' };
       return { reply: '이 조건으로 찾았어요. [이 회의실로 예약]을 누르면 한 번 더 확인하고 예약해요', cards: found, changed: false, code: 'cards' };
     }
     if (!this.autoOn()) {
@@ -285,13 +300,7 @@ export class RoomChat {
 
   // ── 장비 대여 ──────────────────────────────────────────────
 
-  private async rent(
-    user: DeskUser,
-    text: string,
-    requestId: string,
-    it: Interpretation & { byModel: boolean },
-    now: number,
-  ): Promise<Omit<ChatResult, 'aiParsed'>> {
+  private async rent(user: DeskUser, text: string, requestId: string, it: Reading, now: number): Promise<Omit<ChatResult, 'aiParsed'>> {
     const slots = parseSlots(withoutLoanWords(text), now);
     const hour = { from: now, to: now + 60 * MINUTE };
     if (!this.writeOn()) {
@@ -335,6 +344,7 @@ export class RoomChat {
     const offer = async () =>
       Promise.all(it.kinds.map((k) => this.equipment.stock(user, [k], range.from, range.to, { aiSummarized: it.byModel, reservationId: linked?.id })));
     const at = `${whenText(range.from, range.to)}${linked ? `(${linked.roomName} 회의)` : ''}`;
+    if (it.held) return { reply: it.held, cards: await offer(), changed: false, code: 'held' };
     if (!it.command) return { reply: `${at} 기준이에요. [빌리기]를 누르면 한 번 더 확인하고 빌려요`, cards: await offer(), changed: false, code: 'cards' };
     if (!this.autoOn())
       return { reply: '지금은 채팅 자동 대여가 꺼져 있어요. 카드에서 확인하고 빌려 주세요', cards: await offer(), changed: false, code: 'auto-off' };
@@ -436,7 +446,7 @@ export class RoomChat {
   private async equipmentStatus(
     user: DeskUser,
     text: string,
-    it: Interpretation & { byModel: boolean },
+    it: Reading,
     rooms: RoomRow[],
     room: RoomRow | null,
     now: number,

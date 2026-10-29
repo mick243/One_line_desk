@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ProposalTokens } from './proposal-token';
-import { extractItemName, parseDate, parseSlots, parseTime } from './slots';
+import { extractItemName, parseDate, parseSlots, parseTime, repeatedSlots } from './slots';
 
 const NOW = Date.parse('2026-10-26T09:00:00+09:00');
 
@@ -79,8 +79,25 @@ describe('슬롯 뽑기', () => {
     ['이번 달 30일', '2026-10-30'],
     ['다다음 달 1일', '2026-12-01'],
     ['낼 오후', '2026-10-27'],
+    // 요일 글자 뒤에 다른 한글이 오면 요일이 아니에요(10/29 회의 A1)
+    ['다음 주 화상회의', undefined],
+    ['이번 주 일정', undefined],
+    ['다음 주 금 3시', '2026-11-06'],
   ])('날짜: %s → %s', (text, date) => {
     expect(parseDate(text, '2026-10-26')).toBe(date);
+  });
+
+  it.each([
+    ['내일 3시 6명', []],
+    ['내일 오후 3시부터 5시까지 6명', []],
+    ['내일 15:00 회의 3시 6명', []],
+    ['1시간 30분 회의 내일 3시 6명', []],
+    ['내일 3시나 4시에 6명', ['시각']],
+    ['내일 3시 6명이나 8명', ['인원']],
+    ['6인용 회의실 내일 3시 4명', []],
+    ['내일 10시 20분이나 11시에 4명이나 5명', ['시각', '인원']],
+  ])('같은 칸 값 둘: %s → %s', (text, slots) => {
+    expect(repeatedSlots(text)).toEqual(slots);
   });
 
   it.each([

@@ -8,6 +8,8 @@ import type {
   PeopleSearchResponse,
 } from '@one-line-desk/shared';
 import { afterEach, describe, expect, it } from 'vitest';
+import { PERSON_REF_TTL_MS, personRef, readPersonRef } from '../../core/person-ref';
+import { pseudonymize } from '../../core/pseudonym';
 import { createTestApp, MOCK } from '../../testing';
 
 // 회의 참석자 초대(10/26, ADR-17): 앱 안 알림 · 그룹웨어 캘린더(모의) · Slack DM(모의) · 캘린더 파일.
@@ -156,8 +158,8 @@ describe('참석자 초대(ADR-17)', () => {
 
   it('남의 예약에는 부를 수 없고, 지어낸 사람 값은 거부해요', async () => {
     const { t, doyun, reservationId } = await setup();
-    const people = (await refsOf(doyun, '서준')).map((p) => p.ref);
     const haneul = await t.loginAs(MOCK.staff);
+    const people = (await refsOf(haneul, '서준')).map((p) => p.ref);
     expect(
       (await haneul.call('POST', `/api/rooms/reservations/${reservationId}/invites`, { people, calendar: false, slack: false, requestId: requestId() })).status,
     ).toBe(404);
@@ -171,6 +173,37 @@ describe('참석자 초대(ADR-17)', () => {
           requestId: requestId(),
         })
       ).status,
+    ).toBe(400);
+    expect((await t.db.query('select * from room_invites')).rows).toHaveLength(0);
+  });
+
+  it('사람 값(ref)은 봉인돼서 풀어도 IdP 주체가 없고, 남이 받은 값·수명이 지난 값으로는 부를 수 없어요(10/29 회의 A4)', async () => {
+    const { t, doyun, reservationId } = await setup();
+    const [seojun] = await refsOf(doyun, '서준');
+    const ref = seojun!.ref;
+    expect(ref).toMatch(/^pr_[A-Za-z0-9_-]+$/);
+    const opened = Buffer.from(ref.slice(3), 'base64url').toString('latin1');
+    for (const leak of [SEOJUN, 'emp-006', 'mock|']) {
+      expect(ref).not.toContain(leak);
+      expect(opened).not.toContain(leak);
+    }
+
+    const secret = t.ctx.config.pseudonymSecret;
+    const owner = pseudonymize(secret, MOCK.dev);
+    expect(readPersonRef(secret, ref, owner, t.now())).toBe(SEOJUN);
+    expect(readPersonRef(secret, ref, pseudonymize(secret, MOCK.staff), t.now())).toBeNull();
+    expect(readPersonRef(secret, `${ref.slice(0, -2)}AA`, owner, t.now())).toBeNull();
+    expect(readPersonRef(secret, personRef(secret, HAEUN, owner, t.now()), owner, t.now() + PERSON_REF_TTL_MS + 1)).toBeNull();
+
+    const send = (people: string[]) =>
+      doyun.call('POST', `/api/rooms/reservations/${reservationId}/invites`, { people, calendar: false, slack: false, requestId: requestId() });
+    const haneul = await t.loginAs(MOCK.staff);
+    expect((await send((await refsOf(haneul, '하은')).map((p) => p.ref))).status).toBe(400);
+    t.advance(PERSON_REF_TTL_MS + 60_000);
+    const later = await t.loginAs(MOCK.dev);
+    expect(
+      (await later.call('POST', `/api/rooms/reservations/${reservationId}/invites`, { people: [ref], calendar: false, slack: false, requestId: requestId() }))
+        .status,
     ).toBe(400);
     expect((await t.db.query('select * from room_invites')).rows).toHaveLength(0);
   });

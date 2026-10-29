@@ -119,7 +119,8 @@ export function createInviteService(ctx: AppContext) {
     async send(user: DeskUser, reservationId: string, req: InviteRequest): Promise<{ status: 'done'; card: Card }> {
       if (!writeOn(ctx.ops.get())) throw new DeskError('feature-off', 409, '지금은 이 기능이 꺼져 있어요');
       if (!ctx.rateLimiter.hit(user.pseudonymId, 'invite')) throw new DeskError('rate-limited', 429, '요청이 많아요. 잠시 뒤에 다시 보내 주세요');
-      const subjects = [...new Set(req.people.map((ref) => readPersonRef(ctx.config.pseudonymSecret, ref)))];
+      const now = ctx.now();
+      const subjects = [...new Set(req.people.map((ref) => readPersonRef(ctx.config.pseudonymSecret, ref, user.pseudonymId, now)))];
       if (subjects.length === 0 || subjects.some((s) => s === null)) throw new DeskError('bad-request', 400, '고른 사람을 확인하지 못했어요. 다시 골라 주세요');
       const meeting = await findMeeting(ctx.db, reservationId);
       if (!meeting || meeting.owner !== user.pseudonymId) throw new DeskError('not-found', 404, '내 예약을 찾지 못했어요');

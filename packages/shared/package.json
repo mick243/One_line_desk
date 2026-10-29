@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./input-check/samples": "./src/input-check/samples.ts"
+    "./input-check/samples": "./src/input-check/samples.ts",
+    "./rooms-chat/samples": "./src/rooms-chat-samples.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

@@ -28,8 +28,14 @@ export function registerPeopleRoutes(app: FastifyInstance, ctx: AppContext) {
       // 검색어는 남기지 않고, 화면에 보여 준 사람만 가명 ID로 접속기록에 남겨요(ADR-20).
       const subjectRefs = found.map((p) => `person:${pseudonymize(ctx.config.pseudonymSecret, p.idpSubject)}`);
       await ctx.access.record({ pseudonymId: user.pseudonymId, action: 'people.search', subjectRefs, ...accessFrom(req) });
+      const now = ctx.now();
       return {
-        items: found.map((p) => ({ ref: personRef(ctx.config.pseudonymSecret, p.idpSubject), name: p.displayName, department: p.department, floor: p.floor })),
+        items: found.map((p) => ({
+          ref: personRef(ctx.config.pseudonymSecret, p.idpSubject, user.pseudonymId, now),
+          name: p.displayName,
+          department: p.department,
+          floor: p.floor,
+        })),
       };
     },
   );

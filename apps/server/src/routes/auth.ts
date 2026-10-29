@@ -4,7 +4,7 @@ import type { EmployeeProfile, LoginEvidence } from '../adapters/types';
 import type { ServerConfig } from '../config';
 import type { AppContext } from '../context';
 import { accessFrom } from '../core/access-record';
-import { endEverything, SESSION_COOKIE } from '../core/guard';
+import { clearReauth, endEverything, endIfIdle, needsReauth, SESSION_COOKIE, sessionOf } from '../core/guard';
 import { pseudonymize } from '../core/pseudonym';
 import { computeRoles } from '../core/roles';
 import { type LoginAssurance, SESSION_MAX_AGE_MS } from '../core/session';
@@ -88,6 +88,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
       signed: true,
       maxAge: SESSION_MAX_AGE_MS / 1000,
     });
+    if (needsReauth(ctx, req)) clearReauth(ctx, reply);
   }
 
   // IdP 리디렉트 로그인(OIDC 인가 코드 + PKCE, 10/26 임시 IdP).
@@ -112,7 +113,10 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
     const nonce = b64url(24);
     const verifier = b64url(48);
     // 쉬는 시간이 지나 끊긴 뒤에는 IdP에 지금 다시 인증해 달라고 해요(prompt=login, max_age=0).
-    const reauth = req.query.reauth === 'idle';
+    // 화면 깃발이 없어도(새로 고침, 주소를 직접 엶) 서버 표시나 아직 남은 쉰 세션을 보고 정해요(10/29 회의 A5).
+    const stale = sessionOf(ctx, req);
+    const endedNow = stale ? await endIfIdle(ctx, stale, reply) : false;
+    const reauth = req.query.reauth === 'idle' || endedNow || needsReauth(ctx, req);
     const codeChallenge = createHash('sha256').update(verifier).digest('base64url');
     let url: string;
     try {
@@ -162,6 +166,8 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
     }
     if (!result) return reply.redirect('/?login=failed');
     rememberUsed(state);
+    // 다시 인증을 요청하지 않고 시작한 로그인인데 그사이 쉬어서 끊겼으면, 다시 인증을 요청하며 처음부터 해요.
+    if (p.a === 0 && needsReauth(ctx, req)) return reply.redirect(`/api/auth/oidc/start?reauth=idle&return=${encodeURIComponent(p.r)}`);
     const { profile, evidence } = result;
     // 다시 인증을 요청했으면 IdP가 지금 다시 인증했는지 봐요(auth_time). 근거가 없으면 받지 않아요.
     if (p.a === 1 && !(evidence.authTime !== undefined && evidence.authTime >= p.t - CLOCK_SKEW_MS)) return reply.redirect('/?login=failed');

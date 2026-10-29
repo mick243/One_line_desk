@@ -1,0 +1,37 @@
+# 검사(10/29 회의 B1). ADR "시험으로 지키는 것" 표의 "매 CI" 줄을 PR마다 실제로 돌려요.
+# 자료는 모두 가상(등급 0)이고 AI는 모델을 부르지 않는 fake라서 비밀 값이 필요 없어요.
+# 실제 PostgreSQL 경쟁 시험(services: postgres)은 다음 단계예요(회의록 2절 B1 나머지).
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: 서식 검사
+        run: npm run format:check
+      - name: 타입 검사
+        run: npm run typecheck
+      - name: 시험
+        run: npm test
+      - name: 웹 빌드
+        run: npm run build
+

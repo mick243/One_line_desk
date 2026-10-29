@@ -276,6 +276,67 @@ describe('IdP 로그인 경로(OIDC 인가 코드 + PKCE)', () => {
     expect(sessionCookie(back)).toBeDefined();
   });
 
+  it('쉬어서 끊긴 뒤에는 화면 깃발 없이 새로 고치거나 시작 주소를 바로 열어도 다시 인증을 요청해요(10/29 회의 A5)', async () => {
+    const { t, state } = await setup();
+    const cookieOf = (res: { headers: Record<string, unknown> }, name: string) =>
+      ([res.headers['set-cookie'] ?? []].flat() as string[]).map((c) => c.split(';')[0]!).find((c) => c.startsWith(`${name}=`));
+    const get = (url: string, ...cookies: (string | undefined)[]) =>
+      t.app.inject({ method: 'GET', url, headers: { cookie: cookies.filter(Boolean).join('; ') } });
+    const login = async () => {
+      state.claims = { auth_time: t.now() / 1000 };
+      const s = await start(t, state);
+      return sessionCookie(await callback(t, s.state, s.cookie))!;
+    };
+
+    // ① 새로 고침: 끊긴 뒤 화면은 깃발을 잊지만, 서버 표시로 같은 이유를 다시 알려 주고 다시 인증을 요청해요.
+    let sid = await login();
+    t.advance(181 * 60_000);
+    const ended = await get('/api/me', sid);
+    expect(ended.json()).toMatchObject({ reason: 'idle' });
+    const mark = cookieOf(ended, 'desk_reauth')!;
+    expect(mark).toBeDefined();
+    expect((await get('/api/me', mark)).json()).toMatchObject({ error: 'login-required', reason: 'idle' });
+    const again = await get('/api/auth/oidc/start', mark);
+    const auth = new URL(String(again.headers.location));
+    expect(auth.searchParams.get('prompt')).toBe('login');
+    expect(auth.searchParams.get('max_age')).toBe('0');
+    state.nonce = auth.searchParams.get('nonce') ?? '';
+    const pending = cookieOf(again, 'desk_oidc_' + auth.searchParams.get('state')!.slice(0, 8))!;
+    // 오래된 인증(SSO)으로는 들어오지 못하고, 지금 다시 인증하면 들어와요. 들어오면 표시를 지워요.
+    state.claims = { auth_time: (t.now() - 2 * 3_600_000) / 1000 };
+    expect((await get(`/api/auth/oidc/callback?code=good&state=${auth.searchParams.get('state')}`, pending, mark)).headers.location).toBe('/?login=failed');
+    const retry = await get('/api/auth/oidc/start', mark);
+    const retryAuth = new URL(String(retry.headers.location));
+    state.nonce = retryAuth.searchParams.get('nonce') ?? '';
+    state.claims = { auth_time: t.now() / 1000 };
+    const back = await get(
+      `/api/auth/oidc/callback?code=good&state=${retryAuth.searchParams.get('state')}`,
+      cookieOf(retry, 'desk_oidc_' + retryAuth.searchParams.get('state')!.slice(0, 8)),
+      mark,
+    );
+    expect(back.headers.location).toBe('/');
+    expect(sessionCookie(back)).toBeDefined();
+    expect(cookieOf(back, 'desk_reauth')).toBe('desk_reauth=');
+
+    // ② 쉰 세션이 남은 채로 시작 주소를 바로 열어도 다시 인증이에요. 그 자리에서 세션을 끊고 표시를 남겨요.
+    sid = await login();
+    t.advance(181 * 60_000);
+    const direct = await get('/api/auth/oidc/start', sid);
+    expect(new URL(String(direct.headers.location)).searchParams.get('prompt')).toBe('login');
+    expect(cookieOf(direct, 'desk_reauth')).toMatch(/^desk_reauth=.+/);
+    expect((await get('/api/me', sid)).statusCode).toBe(401);
+
+    // ③ 쉬기 직전에 시작한 로그인을 끊긴 뒤에 마치면(진행 쿠키 10분 안), 다시 인증을 요청하며 처음부터 해요.
+    sid = await login();
+    t.advance(175 * 60_000);
+    const early = await start(t, state);
+    t.advance(6 * 60_000);
+    const mark2 = cookieOf(await get('/api/me', sid), 'desk_reauth');
+    const late = await get(`/api/auth/oidc/callback?code=good&state=${early.state}`, early.cookie, mark2);
+    expect(late.headers.location).toBe('/api/auth/oidc/start?reauth=idle&return=%2F');
+    expect(sessionCookie(late)).toBeUndefined();
+  });
+
   it('다른 사이트로는 돌려보내지 않고, 모의 로그인은 닫혀 있어요', async () => {
     const { t, state } = await setup();
     // QA-1: tab·줄바꿈·`\`·인코딩한 `/`·전각 `／`·`..`로 돌아 나가는 주소도 앱 첫 화면으로 보내요. 콜백은 500이 나지 않아요.

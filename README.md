@@ -4,7 +4,7 @@
 회의실·공지(회사생활 MCP 일부) + 같이 채워요(탕비실) + 담당자 내비를 하나로 합쳤어요.
 
 - 기획 문서: [docs/기획서.md](docs/기획서.md) · [docs/PRD.md](docs/PRD.md) · [docs/화면설계.md](docs/화면설계.md) · [docs/ADR.md](docs/ADR.md) · [docs/회의종합.pdf](docs/회의종합.pdf)
-- 개발 문서: [docs/CONVENTIONS.md](docs/CONVENTIONS.md)(코드 컨벤션) · [docs/TEAM.md](docs/TEAM.md)(에이전트 팀과 맡은 곳) · [docs/REVIEW.md](docs/REVIEW.md)(보안·QA 검토) · [docs/TRACEABILITY.md](docs/TRACEABILITY.md)(요구사항 추적표)
+- 개발 문서: [docs/CONVENTIONS.md](docs/CONVENTIONS.md)(코드 컨벤션) · [docs/TEAM.md](docs/TEAM.md)(에이전트 팀과 맡은 곳) · [docs/REVIEW.md](docs/REVIEW.md)(보안·QA 검토) · [docs/TRACEABILITY.md](docs/TRACEABILITY.md)(요구사항 추적표) · [docs/개선회의_2026-10-29.md](docs/개선회의_2026-10-29.md)(다음에 할 일 회의)
 - 상태: 네 기능(담당·공지, 회의실, 같이 채워요, 읽기 전용 MCP)이 **가상 자료(등급 0)와 모의 어댑터**로 돌아가요. PRD는 아직 초안이에요(사용자 확인 3개·보안팀 질문 2개 대기). 실제 그룹웨어·IdP 연결과 10일 차 측정은 아직이에요.
 
 ## 실행
