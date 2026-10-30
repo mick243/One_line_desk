@@ -1,5 +1,6 @@
 # 한 줄 데스크 운영 이미지(10/29 배포 준비 회의 A1·A2·A3). 서버와 웹 화면 파일을 한 이미지에 같은 판으로 담아요.
-#   만들기: docker build --build-arg DESK_BUILD=$(git rev-parse --short HEAD) -t one-line-desk .
+#   만들기: docker build --build-arg DESK_BUILD=$(git rev-parse HEAD) -t one-line-desk .
+#   판은 커밋 전체 SHA(40자)예요. Vercel 시연의 웹 화면(scripts/vercel-build.mjs)과 같은 형식이라야 새 버전 띠가 잘못 뜨지 않아요(10/30).
 #   띄우기: docker run --read-only --tmpfs /tmp --stop-timeout 50 -p 3190:3190 --env-file <비밀 저장소에서 만든 파일> one-line-desk
 #   멈춤 유예는 50초 이상이에요(서버가 45초 안에 받던 요청·보관 회차를 끝내요). 살아 있음은 /health/live, 받을 준비는 /health/ready예요.
 #   마이그레이션 잡(운영): 같은 이미지로 node --import tsx apps/server/scripts/migrate.ts

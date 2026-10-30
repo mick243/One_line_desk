@@ -652,6 +652,24 @@ button.chip:active {
   font-size: 1.5rem;
   font-weight: 800;
 }
+/* 시연 비밀번호(10/30, 공개 주소에 올린 시연) */
+.demo-password {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.demo-password span {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.demo-password input {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  color: var(--text);
+}
 .choices {
   list-style: none;
   margin: 4px -8px 0;

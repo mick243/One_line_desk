@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { EmployeeProfile, LoginEvidence } from '../adapters/types';
 import type { ServerConfig } from '../config';
@@ -10,6 +10,8 @@ import { computeRoles } from '../core/roles';
 import type { LoginAssurance } from '../core/session';
 
 const RETURN_BASE = 'http://return.invalid';
+/** 시연 비밀번호를 1분에 몇 번까지 틀릴 수 있는지(서버 전체) */
+export const DEMO_PASSWORD_TRIES = 10;
 
 /**
  * 로그인 뒤 돌아갈 앱 안 주소. 우리 앱 경로만 받아요(다른 사이트로 보내지 않아요).
@@ -205,15 +207,35 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
     }));
   });
 
-  app.post<{ Body: { idpSubject: string } }>(
+  // 시연 비밀번호(10/30 Vercel 배포 회의). 웹 화면이 공개 주소에 있어서 자료·API를 비밀번호 뒤에 둬요.
+  // 프록시 뒤라 접속지로 나눌 수 없어서, 틀린 횟수를 서버 전체로 세어 1분에 DEMO_PASSWORD_TRIES번을 넘으면 잠시 막아요.
+  const demoPassword = ctx.config.demoPassword;
+  const digest = (s: string) => createHash('sha256').update(s).digest();
+  let wrongTries: number[] = [];
+  app.post<{ Body: { idpSubject: string; password?: string } }>(
     '/api/auth/login',
     {
       schema: {
-        body: { type: 'object', required: ['idpSubject'], additionalProperties: false, properties: { idpSubject: { type: 'string', maxLength: 100 } } },
+        body: {
+          type: 'object',
+          required: ['idpSubject'],
+          additionalProperties: false,
+          properties: { idpSubject: { type: 'string', maxLength: 100 }, password: { type: 'string', maxLength: 200 } },
+        },
       },
     },
     async (req, reply) => {
       if (!ctx.adapters.idp.loginChoices || !ctx.config.demo) return reply.code(404).send({ error: 'not-mock', message: '모의 로그인이 꺼져 있어요' });
+      if (demoPassword !== undefined) {
+        const now = ctx.now();
+        wrongTries = wrongTries.filter((t) => t > now - 60_000);
+        if (wrongTries.length >= DEMO_PASSWORD_TRIES)
+          return reply.code(429).send({ error: 'demo-password-locked', message: '비밀번호를 여러 번 틀렸어요. 1분 뒤에 다시 해 주세요' });
+        if (!timingSafeEqual(digest(req.body.password ?? ''), digest(demoPassword))) {
+          wrongTries.push(now);
+          return reply.code(401).send({ error: 'demo-password', message: '시연 비밀번호가 맞지 않아요' });
+        }
+      }
       const profile = await ctx.adapters.idp.authenticate(req.body.idpSubject);
       if (!profile) return reply.code(401).send({ error: 'login-failed', message: '로그인하지 못했어요' });
       await startSession(req, reply, profile);

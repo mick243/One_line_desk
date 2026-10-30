@@ -11,7 +11,8 @@ export interface PublicConfig {
   demoData: string[];
   rulesVersion: number;
   /** 로그인 방식: 모의(가상 직원 고르기) 또는 IdP 리디렉트(임시 IdP·회사 IdP) */
-  login: { kind: 'mock' } | { kind: 'oidc'; label: string };
+  /** password: 시연 비밀번호를 받아야 하는지(10/30, 웹 화면만 Vercel에 올린 시연) */
+  login: { kind: 'mock'; password?: boolean } | { kind: 'oidc'; label: string };
   /** 회의 초대에 쓸 수 있는 바깥 길(ADR-17) */
   inviteChannels: { calendar: string | null; slack: string | null };
 }
@@ -157,8 +158,10 @@ export const api = {
     const { status, data } = await raw<MockUser[]>('GET', '/api/auth/mock-users');
     return status === 200 ? data : [];
   },
-  async login(idpSubject: string): Promise<boolean> {
-    return (await raw('POST', '/api/auth/login', { idpSubject })).status === 200;
+  /** 모의 로그인. 실패하면 서버 문구(시연 비밀번호 틀림·잠시 막힘 등)를 돌려줘요. */
+  async login(idpSubject: string, password?: string): Promise<{ ok: true } | { ok: false; message?: string }> {
+    const { status, data } = await raw<{ message?: string }>('POST', '/api/auth/login', password === undefined ? { idpSubject } : { idpSubject, password });
+    return status === 200 ? { ok: true } : { ok: false, message: data?.message };
   },
   async logout(all: boolean): Promise<void> {
     await raw('POST', all ? '/api/auth/logout-all' : '/api/auth/logout');

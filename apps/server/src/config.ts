@@ -53,6 +53,7 @@ export interface ServerConfig {
   /**
    * 서버가 내보낼 웹 화면 파일 폴더(10/29 배포 준비 회의 A3). 운영은 기본으로 apps/web/dist를 주고, 없으면 뜨지 않아요.
    * 개발은 Vite가 화면을 줘서 비워 둬요. DESK_WEB_DIST로 바꿀 수 있어요.
+   * DESK_WEB_DIST=none이면 화면을 주지 않아요. 웹 화면을 다른 곳(Vercel)이 주고 이 서버는 API만 받을 때예요(10/30).
    */
   webDist: string | undefined;
   /**
@@ -65,6 +66,11 @@ export interface ServerConfig {
    * 참이면 문의를 저장하지 않고(남이 쓴 글이 다른 방문자에게 보이지 않게), 운영 설정을 바꾸지 못해요(누구나 가상 운영자로 들어와서요).
    */
   demoWide: boolean;
+  /**
+   * 시연 비밀번호(DESK_DEMO_PASSWORD, 10/30 Vercel 배포 회의). 넣으면 모의 로그인에 이 비밀번호가 있어야 들어와요.
+   * 웹 화면만 Vercel(공개 주소)에 올린 시연에서 자료·API를 비밀번호 뒤에 둬요. 시연 배포에서만 써요.
+   */
+  demoPassword: string | undefined;
 }
 
 const BUILD_ID = /^[A-Za-z0-9._-]{1,64}$/;
@@ -89,6 +95,8 @@ const list = (value: string | undefined) =>
 export const ALLOWED_AI_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'];
 
 const SECRET_MIN = 32;
+/** 시연 비밀번호 최소 길이. 공개 주소에 올라가서 맞히기 어렵게 해요. */
+const DEMO_PASSWORD_MIN = 12;
 
 /**
  * 운영 설정이 실수하면 닫혀요(L-15). 값 하나만 빠지거나 개발용이어도 이유를 모두 말하고 뜨지 않아요.
@@ -119,6 +127,8 @@ function productionProblems(env: NodeJS.ProcessEnv, config: ServerConfig, runtim
     const real = [env.DESK_IDP && 'DESK_IDP', env.SLACK_BOT_TOKEN && 'SLACK_BOT_TOKEN'].filter((x): x is string => Boolean(x));
     if (real.length)
       problems.push(`시연 배포(DESK_MOCK_LOGIN=true)에 실제 연결 설정이 있어요(${real.join('·')}). 운영 배포에서는 DESK_MOCK_LOGIN을 지워 주세요`);
+    if (config.demoPassword !== undefined && config.demoPassword.length < DEMO_PASSWORD_MIN)
+      problems.push(`DESK_DEMO_PASSWORD는 ${DEMO_PASSWORD_MIN}자 이상이어야 해요`);
     if (config.databaseUrl && env.DESK_DEMO_DATABASE !== 'true')
       problems.push('시연 배포가 DATABASE_URL을 써요. 시연 전용 DB가 맞으면 DESK_DEMO_DATABASE=true를 넣고, 운영 DB면 DESK_MOCK_LOGIN을 지워 주세요');
   } else {
@@ -128,6 +138,7 @@ function productionProblems(env: NodeJS.ProcessEnv, config: ServerConfig, runtim
     if (config.idp.kind !== 'keycloak') problems.push('DESK_IDP가 없어요(운영은 회사 IdP로만 로그인해요)');
     else if (!config.idp.issuer.startsWith('https://')) problems.push('DESK_IDP_ISSUER는 https 주소여야 해요');
     if (env.DESK_SEED_DEMO === 'true') problems.push('운영에는 가상 자료를 넣지 않아요. DESK_SEED_DEMO를 지워 주세요');
+    if (env.DESK_DEMO_PASSWORD) problems.push('DESK_DEMO_PASSWORD는 시연 배포에만 넣어요. 운영 배포에서는 지워 주세요');
     if (env.DESK_DEMO_WIDE) problems.push('DESK_DEMO_WIDE는 시연 배포에만 넣어요. 운영 배포에서는 지워 주세요');
   }
   return problems;
@@ -223,9 +234,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, runtime: Runtim
     mfaAmr: env.DESK_IDP_MFA_AMR ? list(env.DESK_IDP_MFA_AMR) : DEFAULT_MFA_AMR,
     mfaAcr: list(env.DESK_IDP_MFA_ACR),
     acrValues: env.DESK_IDP_ACR_VALUES || undefined,
-    webDist: env.DESK_WEB_DIST || (production ? DEFAULT_WEB_DIST : undefined),
+    webDist: env.DESK_WEB_DIST === 'none' ? undefined : env.DESK_WEB_DIST || (production ? DEFAULT_WEB_DIST : undefined),
     build: env.DESK_BUILD || 'dev',
     demoWide: demo && env.DESK_DEMO_WIDE === 'true',
+    demoPassword: demo ? env.DESK_DEMO_PASSWORD || undefined : undefined,
   };
   // 응답 머리에 그대로 실어서 글자를 좁혀 둬요.
   if (!BUILD_ID.test(config.build)) throw new Error('DESK_BUILD는 영문·숫자·.·_·- 64자까지예요');

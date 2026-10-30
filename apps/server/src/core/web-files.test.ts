@@ -136,6 +136,8 @@ describe('웹 화면 파일 설정과 로그', () => {
     expect(loadConfig(demo).webDist).toBe(DEFAULT_WEB_DIST);
     expect(loadConfig({}).webDist).toBeUndefined();
     expect(loadConfig({ DESK_WEB_DIST: '/srv/web' }).webDist).toBe('/srv/web');
+    // 웹 화면을 Vercel이 주고 이 서버는 API만 받을 때(10/30): 화면 파일 없이도 떠요.
+    expect(loadConfig({ ...demo, DESK_WEB_DIST: 'none' }).webDist).toBeUndefined();
   });
 
   it('accept-encoding에서 q=0으로 거절한 압축은 고르지 않아요', () => {

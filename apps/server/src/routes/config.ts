@@ -57,7 +57,10 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
         .map((a) => a.label),
       rulesVersion: RULES_VERSION,
       // 로그인 방식: 모의(가상 직원 고르기) 또는 IdP 리디렉트(임시 IdP·회사 IdP)
-      login: ctx.adapters.idp.oidc ? { kind: 'oidc' as const, label: ctx.adapters.idp.oidc.label } : { kind: 'mock' as const },
+      // password: 시연 비밀번호를 받아야 하는지(값은 내보내지 않아요)
+      login: ctx.adapters.idp.oidc
+        ? { kind: 'oidc' as const, label: ctx.adapters.idp.oidc.label }
+        : { kind: 'mock' as const, password: ctx.config.demoPassword !== undefined },
       // 회의 초대에 쓸 수 있는 바깥 길(ADR-17)
       inviteChannels: { calendar: ctx.adapters.calendar.capabilities.label, slack: ctx.adapters.messenger.capabilities.label },
     };
