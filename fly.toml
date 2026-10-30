@@ -41,6 +41,7 @@ kill_timeout = 60
     method = "GET"
     path = "/health/live"
 
+# PGlite가 처음 DB를 열 때 900MB 가까이 써서 1GB에서는 메모리 부족으로 죽었어요(10/30 첫 배포). 그래서 2GB예요.
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "1gb"
+  memory = "2gb"
