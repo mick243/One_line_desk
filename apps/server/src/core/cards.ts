@@ -12,6 +12,7 @@ export function makeCard(input: {
   secondary?: CardAction[];
   wrong?: Card['wrong'];
   variant?: string;
+  overview?: Card['overview'];
   tail: string;
 }): Card {
   return {
@@ -24,6 +25,7 @@ export function makeCard(input: {
     evidence: input.evidence,
     actions: { ...(input.primary ? { primary: input.primary } : {}), secondary: input.secondary ?? [] },
     ...(input.wrong ? { wrong: input.wrong } : {}),
+    ...(input.overview ? { overview: input.overview } : {}),
     tail: input.tail,
   };
 }

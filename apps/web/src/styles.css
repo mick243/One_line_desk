@@ -1117,6 +1117,8 @@ button.chip:active {
   flex-direction: column;
   gap: 12px;
   padding-top: 8px;
+  /* [그림으로 보기]로 넘겨 올 때 제목이 위 막대(56px)에 가리지 않게 해요. */
+  scroll-margin-top: 64px;
 }
 .room-directory h2 {
   margin: 0;
@@ -1205,6 +1207,71 @@ button.chip:active {
   font-weight: 700;
   background: var(--warn-bg);
   color: var(--warn-text);
+}
+/* 대화의 회의실 현황 카드(10/30 QA·디자인 회의): 회의실마다 누르는 한 줄. 이름·층·정원 / 상태 배지(글자+색) / ›.
+   눌리는 높이는 44px 이상이에요. 장비는 자세히에서 봐요. */
+.room-rows {
+  list-style: none;
+  margin: 4px -8px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.room-rows li + li {
+  border-top: 1px solid var(--line);
+}
+.room-row {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  text-align: left;
+}
+@media (hover: hover) {
+  .room-row:hover {
+    background: var(--surface-2);
+  }
+}
+.room-row:active {
+  background: var(--surface-3);
+}
+.room-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.room-row-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9375rem;
+}
+.room-row-name > span:not([class]) {
+  color: var(--text-quiet);
+  font-size: 0.8125rem;
+}
+.room-row .room-status {
+  margin: 2px 0 0;
+}
+.room-row-repair {
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+.room-overview .card-body > .link {
+  align-self: flex-start;
+  margin-top: 4px;
 }
 .room-equipment-status {
   margin: 0 0 10px;

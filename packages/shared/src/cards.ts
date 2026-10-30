@@ -1,3 +1,4 @@
+import type { RoomOverview } from './api/rooms';
 import type { Kind, ModuleKind } from './kinds';
 
 // 카드 머리 라벨은 넷이고, 글자로 보여 줘요. 색만으로 가르지 않아요(R7).
@@ -66,6 +67,8 @@ export interface Card {
   /** 4 행동: 주 버튼 하나 + 보조 버튼 */
   actions: { primary?: CardAction; secondary: CardAction[] };
   wrong?: WrongInfo;
+  /** 회의실 현황 카드(variant 'rooms-overview')의 회의실 한 줄 목록. fields에도 같은 내용이 글로 있어요(따로 그리지 못하는 화면용). */
+  overview?: RoomOverview;
   /** 5 꼬리: 무엇이 바뀌고 무엇이 남는지 한 줄 */
   tail: string;
 }

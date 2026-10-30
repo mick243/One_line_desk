@@ -6,8 +6,12 @@ import {
   type LoanKind,
   type MyReservation,
   ROOM_CONDITIONS_VARIANT,
+  ROOM_OVERVIEW_VARIANT,
   roomConditionFields,
+  roomDateLabel,
   type RoomListResponse,
+  type RoomOverviewRow,
+  roomStatusText,
   type RoomQuery,
 } from '@one-line-desk/shared';
 import { makeCard } from '../../core/cards';
@@ -344,22 +348,72 @@ export function equipmentOverviewCard(rooms: RoomRow[], aiSummarized: boolean): 
   });
 }
 
-/** 고른 날 회의실 현황. 남의 예약은 누가 잡았는지 없이 상태만이에요(ADR-06). */
-export function overviewCard(list: RoomListResponse, o: { onlyFree: boolean; checkedAt: number; aiSummarized: boolean }): Card {
-  const rooms = o.onlyFree ? list.rooms.filter((r) => r.status.kind === 'free-now') : list.rooms;
-  const value = (s: RoomListResponse['rooms'][number]['status']) => {
-    if (s.kind === 'free-now') return s.nextBusyAt ? `비어 있음 · 다음 예약 ${s.nextBusyAt}` : '비어 있음 · 오늘 남은 예약 없음';
-    if (s.kind === 'busy-now') return `사용 중 · ${s.freeAt}부터 비어요`;
-    return s.bookings ? `예약 ${s.bookings}건` : '예약 없음';
-  };
+/** "오늘 10월 30일(금)"·"10월 31일(토)" */
+export function dayText(date: string, today: string): string {
+  return date === today ? `오늘 ${roomDateLabel(date)}` : roomDateLabel(date);
+}
+
+/** 층 묶음 순서: 내 층 먼저, 그다음 층 번호, 이름 순(화면 "모든 회의실"과 같아요) */
+export function byMyFloor(myFloor: string) {
+  return (a: { floor: string; name: string }, b: { floor: string; name: string }) =>
+    Number(b.floor === myFloor) - Number(a.floor === myFloor) || parseInt(a.floor, 10) - parseInt(b.floor, 10) || a.name.localeCompare(b.name);
+}
+
+/**
+ * 고른 날 회의실 현황(10/30 QA·디자인 회의). 화면은 회의실마다 누를 수 있는 한 줄로 그리고(variant), 누르면 회의실 자세히가 열려요.
+ * 예약은 자세히에서 확인 시트를 거쳐요(ADR-03). 남의 예약은 누가 잡았는지 없이 상태만이에요(ADR-06).
+ * 빈 회의실을 물으면 오늘은 지금 빈 곳, 다른 날은 그날 예약이 없는 곳만 보여요.
+ */
+export function overviewCard(
+  list: RoomListResponse,
+  o: { today: string; myFloor: string; onlyFree: boolean; floor?: string; roomId?: string; checkedAt: number; aiSummarized: boolean; write: boolean },
+): Card {
+  const today = list.date === o.today;
+  const free = (r: RoomListResponse['rooms'][number]) => (today ? r.status.kind === 'free-now' : r.status.kind === 'day' && r.status.bookings === 0);
+  const rooms = (o.onlyFree ? list.rooms.filter(free) : list.rooms).slice().sort(byMyFloor(o.myFloor));
+  const rows: RoomOverviewRow[] = rooms.map((r) => ({
+    id: r.id,
+    name: r.name,
+    floor: r.floor,
+    capacity: r.capacity,
+    status: r.status,
+    repairs: r.repairs.length > 0,
+    mine: r.floor === o.myFloor,
+  }));
+  const day = dayText(list.date, o.today);
+  const where = o.floor ? `${o.floor} ` : '';
+  const n = rows.length;
+  const headline = o.roomId
+    ? n
+      ? `${rows[0]!.name} ${day} 현황이에요`
+      : '그 회의실을 찾지 못했어요'
+    : o.onlyFree
+      ? today
+        ? n
+          ? `지금 빈 ${where}회의실 ${n}곳이에요`
+          : `지금 빈 ${where}회의실이 없어요`
+        : n
+          ? `${day} 예약 없는 ${where}회의실 ${n}곳이에요`
+          : `${day} 예약 없는 ${where}회의실이 없어요`
+      : n
+        ? `${day} ${where}회의실 ${n}곳 현황이에요`
+        : `${where}회의실이 없어요`;
   return makeCard({
     id: `rooms-overview-${list.date}${o.onlyFree ? '-free' : ''}`,
     kind: 'rooms',
     label: '안내',
-    headline: o.onlyFree ? (rooms.length ? `지금 빈 회의실 ${rooms.length}곳이에요` : '지금 빈 회의실이 없어요') : `${list.date} 회의실 현황이에요`,
-    fields: rooms.map((r) => ({ name: roomLine(r), value: value(r.status) })),
+    variant: ROOM_OVERVIEW_VARIANT,
+    headline,
+    // 따로 그리지 못하는 화면용 글. 줄 목록과 같은 내용이에요.
+    fields: rows.map((r) => ({ name: roomLine(r), value: roomStatusText(r.status) })),
     evidence: { text: statusAt(o.checkedAt), aiSummarized: o.aiSummarized },
-    tail: '예약하려면 "3시 6명 잡아 줘"처럼 말해 주세요',
+    tail: o.write ? '회의실을 누르면 그날 일정을 보고, 확인 한 번으로 예약해요' : '회의실을 누르면 그날 일정을 봐요. 예약은 그룹웨어에서 해요',
+    overview: {
+      date: list.date,
+      today: o.today,
+      rows,
+      show: { date: list.date, onlyFree: o.onlyFree, ...(o.roomId ? { roomId: o.roomId } : o.floor ? { floor: o.floor } : {}) },
+    },
   });
 }
 

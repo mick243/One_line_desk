@@ -1,11 +1,21 @@
-import { type Card, checkInput, type Kind, type MyLoansResponse, type RoomChatPreview, type RoomChatResponse, roomChatPreview } from '@one-line-desk/shared';
-import { useEffect, useRef, useState } from 'react';
+import {
+  type Card,
+  checkInput,
+  type Kind,
+  type MyLoansResponse,
+  type RoomChatPreview,
+  type RoomChatResponse,
+  roomChatPreview,
+  type RoomShowQuery,
+} from '@one-line-desk/shared';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
 import { replaceCard, useActions } from '../../components/ActionHost';
 import { CardView } from '../../components/CardView';
 import { CheckedInput } from '../../components/CheckedInput';
 import { Icon } from '../../components/Icon';
 import { ScrollChips } from '../../components/ScrollChips';
+import { RoomChatContext } from './RoomOverviewCard';
 import { useSlow } from '../../components/useSlow';
 import { newRequestId, SLOW_MESSAGE } from '../../net';
 
@@ -71,6 +81,7 @@ export function RoomChat({
   onSent,
   onRemoveRecent,
   onShowRooms,
+  canEditFacilities = false,
 }: {
   auto: boolean;
   write: boolean;
@@ -80,8 +91,13 @@ export function RoomChat({
   recent?: string[];
   onSent?: (text: string) => void;
   onRemoveRecent?: (text: string) => void;
-  /** 회의실 현황을 물었을 때 아래 회의실 카드를 펼쳐요. 대화를 지우거나 페이지를 떠나면 null로 접어요(10/30). */
-  onShowRooms?: (show: RoomChatResponse['showRooms'] | null) => void;
+  /**
+   * 현황 카드의 [그림으로 모든 회의실 보기]가 아래 회의실 카드를 그 조건으로 펼쳐요(10/30 QA·디자인 회의).
+   * 새 문장을 보내거나 대화를 지우거나 페이지를 떠나면 null로 접어요.
+   */
+  onShowRooms?: (show: RoomShowQuery | null) => void;
+  /** 현황 줄을 눌러 연 회의실 자세히에서 설비 상태를 바꿀 수 있는지(총무) */
+  canEditFacilities?: boolean;
 }) {
   const actions = useActions();
   const mode: Mode = !write ? 'read-only' : auto ? 'auto' : 'confirm';
@@ -101,6 +117,8 @@ export function RoomChat({
     const turn: Turn = { id, text: masked, requestId: newRequestId(), noAuto: opts.noAuto, cards: [] };
     setTurns((list) => [...list, turn].slice(-KEEP));
     onSent?.(masked);
+    // 새로 물으면 앞서 펼친 그림 카드를 접어요. 지난 조건의 목록이 새 답과 섞여 보이지 않게 해요.
+    onShowRooms?.(null);
     setText('');
     await ask(turn);
   }
@@ -116,7 +134,6 @@ export function RoomChat({
       });
       done({ reply: res.reply, cards: res.cards, aiParsed: res.aiParsed, failed: false });
       if (res.changed) actions.refresh();
-      if (res.showRooms) onShowRooms?.(res.showRooms);
     } catch (e) {
       // 보내지 못한 문장은 대화 줄에 남고 [다시 보내기]가 같은 요청 번호로 보내요. 입력 칸에 돌려놓지 않아요:
       // 칸에서 다시 보내면 새 번호라서, 늦게 실행된 앞 요청과 겹쳐 두 번 예약될 수 있어요.
@@ -184,6 +201,9 @@ export function RoomChat({
     setTurns([]);
     onShowRooms?.(null);
   }
+
+  // 현황 카드의 [그림으로 모든 회의실 보기]·회의실 자세히가 쓰는 값(RoomOverviewCard)
+  const chatContext = useMemo(() => ({ showRooms: (show: RoomShowQuery) => onShowRooms?.(show), canEditFacilities }), [onShowRooms, canEditFacilities]);
 
   // 지운 칩 옆 칩의 [×]로 초점을 옮겨요. 키보드로 이어서 지울 수 있게 해요.
   function removeRecent(button: HTMLButtonElement, ex: string) {
@@ -302,7 +322,7 @@ export function RoomChat({
         </div>
         {/* 키보드로도 창 안을 스크롤할 수 있게 초점을 받아요. */}
         <div ref={logRef} className='room-log' role='log' aria-label='대화 내용' aria-busy={waiting} tabIndex={0}>
-          {turns.map(renderTurn)}
+          <RoomChatContext.Provider value={chatContext}>{turns.map(renderTurn)}</RoomChatContext.Provider>
         </div>
       </section>
       <div ref={composerRef} className='room-composer floating'>

@@ -1,4 +1,4 @@
-import type { AppDestination, Kind, RoomChatResponse } from '@one-line-desk/shared';
+import type { AppDestination, Kind, RoomShowQuery } from '@one-line-desk/shared';
 import { useCallback, useEffect, useState } from 'react';
 import {
   api,
@@ -51,8 +51,8 @@ export function App() {
   const [handoff, setHandoff] = useState<{ to: View; text: string; at: number; auto: boolean } | null>(null);
   // 회의실 입력 칸의 최근 쓴 문장(최대 5개). 이 창 메모리에만 있어요. 저장소·서버에는 두지 않아요(R13).
   const [roomRecent, setRoomRecent] = useState<string[]>([]);
-  // 회의실 카드는 대화로 현황을 물었을 때만 펼쳐요(10/30 사용자 결정). 물은 조건으로 걸러요.
-  const [roomShow, setRoomShow] = useState<RoomChatResponse['showRooms'] | null>(null);
+  // 회의실 그림 카드는 대화 현황 카드의 [그림으로 모든 회의실 보기]를 눌렀을 때만 그 조건으로 펼쳐요(10/30 QA·디자인 회의).
+  const [roomShow, setRoomShow] = useState<RoomShowQuery | null>(null);
 
   // 로그인이 풀리면 로그인 화면으로 돌려요. 알림 새로 불러오기 같은 반복 요청도 화면과 함께 멈춰요(L-46).
   const [ended, setEnded] = useState(false);
@@ -179,6 +179,7 @@ export function App() {
                           write={config.roomsWrite}
                           recent={roomRecent}
                           onShowRooms={(show) => setRoomShow(show ?? null)}
+                          canEditFacilities={me.roles.includes('facilities')}
                           onSent={(text) => setRoomRecent((list) => [text, ...list.filter((x) => x !== text)].slice(0, 5))}
                           onRemoveRecent={(text) => setRoomRecent((list) => list.filter((x) => x !== text))}
                           {...p}
