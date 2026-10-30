@@ -12,7 +12,7 @@ import { dateLabel, statusText } from './roomText';
 // 10/28 필터 평가(디자이너·프론트·PM·QA): 날짜 줄은 회의실 자세히와 겹쳐 빼고, 층 칩은 층별 묶음으로, "4명 이상"은
 // 가장 작은 회의실이 4명이라 거르는 게 없어 뺐어요. 휴대폰 폭에서 칩이 화면 밖으로 숨지 않게 줄바꿈해요.
 // 10/30 사용자 결정: 회의실은 대화로 다뤄서, 회의실 카드는 대화에서 현황을 물었을 때(show)만 펼쳐요. 물은 조건(지금 빈 회의실·층·회의실 하나)으로 걸러요.
-// 접혀 있을 때는 제목과 물어보는 법 한 줄만 보여요.
+// 묻기 전에는 칸 전체를 그리지 않아요(제목도 없음). 물어보는 법은 페이지 설명 한 줄이 알려 줘요.
 
 /** 인원 칩. 하나만 켜지고, 켠 칩을 다시 누르면 꺼져요. */
 const PEOPLE = [6, 10] as const;
@@ -65,6 +65,8 @@ export function RoomDirectory({ me, show = null }: ScreenProps & { show?: RoomCh
     return floors.map((floor) => ({ floor, rooms: shown.filter((r) => r.floor === floor) }));
   }, [data, people, freeNow, only, me.floor]);
 
+  // 대화에서 현황을 묻기 전에는 이 칸을 그리지 않아요(10/30 사용자 결정). 물으면 그 조건으로 펼쳐요.
+  if (!show) return null;
   if (error) return <p className='lock-line'>{error}</p>;
   if (!data) return <div className='skeleton' aria-label='회의실 불러오는 중' />;
   if (data.linkOnly) {
@@ -86,17 +88,6 @@ export function RoomDirectory({ me, show = null }: ScreenProps & { show?: RoomCh
     setPeople(null);
     setOnly({});
   };
-
-  if (!show) {
-    return (
-      <section className='room-directory folded' aria-label='모든 회의실'>
-        <header className='screen-head'>
-          <h2>모든 회의실 · 오늘 {dateLabel(data.date)}</h2>
-        </header>
-        <p className='hint'>회의실 카드는 대화에서 물으면 펼쳐져요. 예) "회의실 현황 보여 줘" · "지금 빈 회의실 있어?" · "3층 회의실 현황"</p>
-      </section>
-    );
-  }
 
   return (
     <section className='room-directory' aria-label='모든 회의실'>
