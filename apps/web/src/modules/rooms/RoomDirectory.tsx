@@ -1,4 +1,4 @@
-import type { RoomListItem, RoomListResponse } from '@one-line-desk/shared';
+import type { RoomChatResponse, RoomListItem, RoomListResponse } from '@one-line-desk/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
 import { useActions } from '../../components/ActionHost';
@@ -11,6 +11,8 @@ import { dateLabel, statusText } from './roomText';
 // 거르기는 켜고 끄는 칩 한 줄이에요: [지금 빈 회의실] [6명 이상] [10명 이상]. 아무것도 안 고르면 모든 회의실이에요.
 // 10/28 필터 평가(디자이너·프론트·PM·QA): 날짜 줄은 회의실 자세히와 겹쳐 빼고, 층 칩은 층별 묶음으로, "4명 이상"은
 // 가장 작은 회의실이 4명이라 거르는 게 없어 뺐어요. 휴대폰 폭에서 칩이 화면 밖으로 숨지 않게 줄바꿈해요.
+// 10/30 사용자 결정: 회의실은 대화로 다뤄서, 회의실 카드는 대화에서 현황을 물었을 때(show)만 펼쳐요. 물은 조건(지금 빈 회의실·층·회의실 하나)으로 걸러요.
+// 접혀 있을 때는 제목과 물어보는 법 한 줄만 보여요.
 
 /** 인원 칩. 하나만 켜지고, 켠 칩을 다시 누르면 꺼져요. */
 const PEOPLE = [6, 10] as const;
@@ -20,13 +22,22 @@ function floorOrder(myFloor: string) {
   return (a: string, b: string) => Number(b === myFloor) - Number(a === myFloor) || parseInt(a, 10) - parseInt(b, 10) || a.localeCompare(b);
 }
 
-export function RoomDirectory({ me }: ScreenProps) {
+export function RoomDirectory({ me, show = null }: ScreenProps & { show?: RoomChatResponse['showRooms'] | null }) {
   const actions = useActions();
   const [data, setData] = useState<RoomListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [people, setPeople] = useState<number | null>(null);
   const [freeNow, setFreeNow] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  // 대화가 고른 층·회의실. [조건 지우기]로 풀어요.
+  const [only, setOnly] = useState<{ floor?: string; roomId?: string }>({});
+
+  // 대화에서 현황을 새로 물을 때마다 그 조건으로 다시 걸러요.
+  useEffect(() => {
+    setFreeNow(show?.onlyFree ?? false);
+    setPeople(null);
+    setOnly({ floor: show?.floor, roomId: show?.roomId });
+  }, [show]);
 
   const load = useCallback(async () => {
     try {
@@ -43,10 +54,16 @@ export function RoomDirectory({ me }: ScreenProps) {
 
   const groups = useMemo(() => {
     if (!data) return [];
-    const shown = data.rooms.filter((r) => (people === null || r.capacity >= people) && (!freeNow || r.status.kind === 'free-now'));
+    const shown = data.rooms.filter(
+      (r) =>
+        (people === null || r.capacity >= people) &&
+        (!freeNow || r.status.kind === 'free-now') &&
+        (!only.floor || r.floor === only.floor) &&
+        (!only.roomId || r.id === only.roomId),
+    );
     const floors = [...new Set(shown.map((r) => r.floor))].sort(floorOrder(me.floor));
     return floors.map((floor) => ({ floor, rooms: shown.filter((r) => r.floor === floor) }));
-  }, [data, people, freeNow, me.floor]);
+  }, [data, people, freeNow, only, me.floor]);
 
   if (error) return <p className='lock-line'>{error}</p>;
   if (!data) return <div className='skeleton' aria-label='회의실 불러오는 중' />;
@@ -63,11 +80,23 @@ export function RoomDirectory({ me }: ScreenProps) {
   }
 
   const count = groups.reduce((n, g) => n + g.rooms.length, 0);
-  const filtered = freeNow || people !== null;
+  const filtered = freeNow || people !== null || Boolean(only.floor || only.roomId);
   const clear = () => {
     setFreeNow(false);
     setPeople(null);
+    setOnly({});
   };
+
+  if (!show) {
+    return (
+      <section className='room-directory folded' aria-label='모든 회의실'>
+        <header className='screen-head'>
+          <h2>모든 회의실 · 오늘 {dateLabel(data.date)}</h2>
+        </header>
+        <p className='hint'>회의실 카드는 대화에서 물으면 펼쳐져요. 예) "회의실 현황 보여 줘" · "지금 빈 회의실 있어?" · "3층 회의실 현황"</p>
+      </section>
+    );
+  }
 
   return (
     <section className='room-directory' aria-label='모든 회의실'>

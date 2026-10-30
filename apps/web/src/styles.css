@@ -1725,32 +1725,47 @@ select {
   scrollbar-width: thin;
   scrollbar-color: var(--surface-3) transparent;
 }
-/* 대화 중(10/30): 대화창 높이를 화면(위 막대 56px·아래 탭·여백을 뺀 높이)에 맞춰요. 대화 줄만 창 안에서 스크롤되고,
-   입력 칸(.room-composer)은 대화창 맨 아래 제자리에 있어서 늘 보이고 대화를 가리지 않아요. 아주 낮은 화면은 최소 높이로 두고 페이지가 스크롤돼요. */
+/* 대화 중(10/30 사용자 요청): 페이지 머리를 숨기고, 입력 칸은 아래 탭 바로 위에 떠 있어요(.room-composer.floating).
+   대화창은 위 막대 아래부터 떠 있는 입력 칸 위까지 길게 차지해서, 입력 칸이 대화를 가리지 않아요. 아래로 내리면 입력 칸은 회의실 목록 위에 떠요.
+   --composer-h는 떠 있는 입력 칸의 실제 높이예요(RoomChat이 재요). 아래 탭은 약 64px이에요. 아주 낮은 화면은 최소 높이로 두고 페이지가 스크롤돼요. */
+.feature-page:has(.room-results.chatting) > .page-head {
+  display: none;
+}
 .room-results.chatting {
-  height: calc(100vh - 56px - 92px);
-  height: calc(100dvh - 56px - 80px - env(safe-area-inset-bottom));
-  min-height: 420px;
-  padding-bottom: 12px;
+  margin-top: 0;
+  border-top: 0;
+  border-bottom: 0;
+  padding: 4px 0 8px;
+  height: calc(100vh - 56px - 8px - 64px - var(--composer-h, 120px) - 8px);
+  height: calc(100dvh - 56px - 8px - 64px - env(safe-area-inset-bottom) - var(--composer-h, 120px) - 8px);
+  min-height: 280px;
   scroll-margin-top: 64px;
-  scroll-margin-bottom: calc(84px + env(safe-area-inset-bottom));
 }
 .room-results.chatting .room-log {
   flex: 1;
   min-height: 0;
   max-height: none;
 }
-.room-composer {
+/* 떠 있는 입력 칸이 페이지 끝(내 예약·내 대여)을 가리지 않게 아래 여백을 그만큼 늘려요. */
+.screen:has(.room-composer.floating) {
+  padding-bottom: calc(108px + var(--composer-h, 120px) + env(safe-area-inset-bottom));
+}
+.room-composer.floating {
+  position: fixed;
+  left: 50%;
+  /* 아래 탭(약 63px)과 틈이 생기지 않게 살짝 겹쳐요. 겹친 곳은 탭이 위에 그려요. */
+  bottom: calc(62px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 5;
+  width: 100%;
+  max-width: 480px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  padding: 8px var(--gutter);
+  background: var(--bg);
   border-top: 1px solid var(--line);
-  padding-top: 10px;
 }
-.room-composer .example-label {
-  margin: 0;
-}
-/* 대화 중 입력 칸은 메신저처럼 한 줄(칸 + 보내기)로 줄여서 대화가 보이는 자리를 넓혀요. "나만 보여요"는 칸 위에 작게 남겨요. */
 .room-composer .checked-input {
   gap: 6px;
   padding: 10px 12px;

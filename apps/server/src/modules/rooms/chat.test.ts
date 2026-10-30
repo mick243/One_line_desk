@@ -511,6 +511,11 @@ describe('현황·장비 현황', () => {
     expect(fifth.reply).toBe('지금 비어 있는 5층 회의실이에요');
     expect(fifth.cards[0]!.fields.length).toBeGreaterThan(0);
     expect(fifth.cards[0]!.fields.every((f) => f.name.endsWith('· 5층'))).toBe(true);
+    // 현황을 물을 때만 화면이 접어 둔 회의실 카드를 같은 조건으로 펼쳐요(10/30). 다른 답에는 없어요.
+    expect(free.showRooms).toEqual({ onlyFree: true });
+    expect(fifth.showRooms).toEqual({ onlyFree: true, floor: '5층' });
+    expect((await chat(me, '대회의실 현황')).showRooms).toEqual({ onlyFree: false, roomId: 'r-5c' });
+    expect(mine.showRooms).toBeUndefined();
 
     const room = await chat(me, '5A 장비 뭐 있어?');
     expect(room.cards[0]!.fields).toEqual(

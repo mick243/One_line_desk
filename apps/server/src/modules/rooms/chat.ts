@@ -439,6 +439,8 @@ export class RoomChat {
       reply: onlyFree ? `지금 비어 있는 ${where}회의실이에요` : `${date} ${where}회의실 현황이에요`,
       cards: [overviewCard(shown, { onlyFree, checkedAt: now, aiSummarized })],
       changed: false,
+      // 화면이 접어 둔 회의실 카드를 같은 조건으로 펼쳐요. 아래 목록은 오늘 기준이라 다른 날을 물어도 오늘 카드예요(날짜는 카드를 눌러 바꿔요).
+      showRooms: { onlyFree, ...(room ? { roomId: room.id } : slots.floor ? { floor: slots.floor } : {}) },
       code: 'overview',
     };
   }

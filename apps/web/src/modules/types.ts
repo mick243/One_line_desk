@@ -1,4 +1,4 @@
-import type { Card, CardAction, Kind } from '@one-line-desk/shared';
+import type { Card, CardAction, Kind, RoomChatResponse } from '@one-line-desk/shared';
 import type { ComponentType } from 'react';
 import type { Me } from '../api';
 import type { CardViewProps } from '../components/CardView';
@@ -46,7 +46,8 @@ export interface WebModules {
   /** 담당 찾기 페이지: 내가 보낸 문의와 처리 상태 */
   MyInquiries: ComponentType;
   /** 회의실 페이지 "모든 회의실": 회의실 카드(그림·정원·상태) → 회의실 자세히(설비·하루 일정·이 시간 예약) */
-  RoomDirectory: ComponentType<ScreenProps>;
+  /** 모든 회의실. 회의실 카드는 대화에서 현황을 물었을 때(show)만 펼쳐요(10/30). */
+  RoomDirectory: ComponentType<ScreenProps & { show?: RoomChatResponse['showRooms'] | null }>;
   /** 회의 참석자 고르기 양식(ADR-17). 확정 카드·내 예약의 [참석자 초대]로 열려요. */
   InviteSheet: ComponentType<{ action: Extract<CardAction, { type: 'invite' }>; onClose: () => void }>;
   /** 회의실·마이 페이지의 "나를 부른 회의" 칸 */
@@ -68,6 +69,8 @@ export interface WebModules {
     recent?: string[];
     onSent?: (text: string) => void;
     onRemoveRecent?: (text: string) => void;
+    /** 대화에서 회의실 현황을 물으면 아래 회의실 카드를 펼쳐요. null이면 접어요. */
+    onShowRooms?: (show: RoomChatResponse['showRooms'] | null) => void;
   }>;
   /** 홈·마이 페이지의 "내 요청" 칸 */
   MyRequests: ComponentType<{ compact?: boolean }>;

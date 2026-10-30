@@ -70,6 +70,7 @@ export function RoomChat({
   recent = [],
   onSent,
   onRemoveRecent,
+  onShowRooms,
 }: {
   auto: boolean;
   write: boolean;
@@ -79,6 +80,8 @@ export function RoomChat({
   recent?: string[];
   onSent?: (text: string) => void;
   onRemoveRecent?: (text: string) => void;
+  /** 회의실 현황을 물었을 때 아래 회의실 카드를 펼쳐요. 대화를 지우거나 페이지를 떠나면 null로 접어요(10/30). */
+  onShowRooms?: (show: RoomChatResponse['showRooms'] | null) => void;
 }) {
   const actions = useActions();
   const mode: Mode = !write ? 'read-only' : auto ? 'auto' : 'confirm';
@@ -113,6 +116,7 @@ export function RoomChat({
       });
       done({ reply: res.reply, cards: res.cards, aiParsed: res.aiParsed, failed: false });
       if (res.changed) actions.refresh();
+      if (res.showRooms) onShowRooms?.(res.showRooms);
     } catch (e) {
       // 보내지 못한 문장은 대화 줄에 남고 [다시 보내기]가 같은 요청 번호로 보내요. 입력 칸에 돌려놓지 않아요:
       // 칸에서 다시 보내면 새 번호라서, 늦게 실행된 앞 요청과 겹쳐 두 번 예약될 수 있어요.
@@ -150,15 +154,36 @@ export function RoomChat({
     if (log && el) log.scrollTop = el.offsetTop;
   }, [latest?.id, answered]);
 
-  // 대화가 시작되면 입력 칸이 대화창 아래로 옮겨 가요(10/30 사용자 요청). 대화창 전체(대화 + 입력 칸)가 화면에 들어오게 한 번 넘기고,
-  // 옮겨 간 입력 칸에 초점을 돌려줘요. 답을 읽던 자리에서 바로 이어 쓸 수 있어서, 읽으러 내려갔다 쓰러 올라가지 않아요.
+  // 대화가 시작되면(10/30 사용자 요청) 페이지 머리를 숨기고, 입력 칸은 아래 탭 바로 위에 떠서 늘 보여요(.room-composer.floating).
+  // 대화창은 위 막대부터 떠 있는 입력 칸 위까지 길게 차지해서 입력 칸이 대화를 가리지 않아요. 아래로 내리면 입력 칸은 회의실 목록 위에 떠요.
+  // 처음 한 번 대화창을 맨 위로 넘기고, 옮겨 간 입력 칸에 초점을 돌려줘요. 답을 읽던 자리에서 바로 이어 써요.
   const chatting = latest !== undefined;
+  const composerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const panel = panelRef.current;
     if (!chatting || !panel) return;
-    panel.scrollIntoView({ block: 'end', behavior: 'smooth' });
-    panel.querySelector<HTMLInputElement>('.room-composer input')?.focus({ preventScroll: true });
+    panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    composerRef.current?.querySelector('input')?.focus({ preventScroll: true });
   }, [chatting]);
+  // 떠 있는 입력 칸 높이(가림·잠김 안내가 붙으면 늘어요)를 재서 대화창 높이와 페이지 아래 여백에 써요(--composer-h).
+  useEffect(() => {
+    const bar = composerRef.current;
+    if (!chatting || !bar) return;
+    const root = document.documentElement.style;
+    const observer = new ResizeObserver(() => root.setProperty('--composer-h', `${Math.ceil(bar.getBoundingClientRect().height)}px`));
+    observer.observe(bar);
+    return () => {
+      observer.disconnect();
+      root.removeProperty('--composer-h');
+    };
+  }, [chatting]);
+  // 페이지를 떠나면 펼친 회의실 카드를 접어요. 다시 오면 대화가 비어 있어서요.
+  useEffect(() => () => onShowRooms?.(null), []);
+
+  function clearChat() {
+    setTurns([]);
+    onShowRooms?.(null);
+  }
 
   // 지운 칩 옆 칩의 [×]로 초점을 옮겨요. 키보드로 이어서 지울 수 있게 해요.
   function removeRecent(button: HTMLButtonElement, ex: string) {
@@ -264,15 +289,14 @@ export function RoomChat({
     );
   }
 
-  // 대화 중: 대화창 안에서 대화 → (칩 → 입력 칸 → 지금 동작 한 줄)이에요. 대화창 높이를 화면에 맞춰서 대화와 입력 칸이 늘 같이 보여요.
-  // 입력 칸은 대화 위에 띄우지 않고 대화창 아래 제자리를 차지해서 대화를 가리지 않아요. 대화가 길면 대화 줄만 창 안에서 스크롤돼요.
-  // 대화를 지우면 구분선·대화창이 사라지고 입력 칸이 맨 위로 돌아가요.
+  // 대화 중: 대화창(대화만, 길게)과 아래 탭 위에 떠 있는 입력 칸(지금 동작 한 줄 → 입력 칸)이에요. 문장 칩은 대화창을 넓히려고 숨기고,
+  // 대화를 지우면 입력 칸이 맨 위로 돌아오면서 다시 보여요. 대화가 길면 대화 줄만 창 안에서 스크롤돼요.
   return (
     <section className='room-ask' aria-label='회의실 입력'>
       <section ref={panelRef} className='room-results chatting' aria-label='대화'>
         <div className='room-chat-head'>
           <p className='example-label'>대화</p>
-          <button type='button' className='link' onClick={() => setTurns([])}>
+          <button type='button' className='link' onClick={clearChat}>
             대화 지우기
           </button>
         </div>
@@ -280,12 +304,11 @@ export function RoomChat({
         <div ref={logRef} className='room-log' role='log' aria-label='대화 내용' aria-busy={waiting} tabIndex={0}>
           {turns.map(renderTurn)}
         </div>
-        <div className='room-composer'>
-          {chips}
-          {input}
-          {modeLine}
-        </div>
       </section>
+      <div ref={composerRef} className='room-composer floating'>
+        {modeLine}
+        {input}
+      </div>
     </section>
   );
 }

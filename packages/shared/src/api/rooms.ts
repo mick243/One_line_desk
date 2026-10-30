@@ -256,4 +256,9 @@ export interface RoomChatResponse {
   changed: boolean;
   /** 모델이 실제로 해석했는지("AI 정리" 표시) */
   aiParsed: boolean;
+  /**
+   * 회의실 현황을 물었을 때만 있어요(10/30 사용자 결정). 회의실 페이지는 회의실 카드(모든 회의실)를 접어 두었다가
+   * 이 값이 오면 펼쳐요. 물은 조건(지금 빈 회의실·층·회의실 하나)으로 걸러서 보여 줘요.
+   */
+  showRooms?: { onlyFree: boolean; floor?: string; roomId?: string };
 }
