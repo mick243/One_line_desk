@@ -1624,9 +1624,99 @@ select {
   background: var(--accent-soft);
   color: var(--accent-text);
 }
-.inquiry-state.done {
+.inquiry-state.done,
+.inquiry-state.approved {
   background: var(--ok-bg);
   color: var(--ok-text);
+}
+.inquiry-state.rejected {
+  background: var(--surface-2);
+  color: var(--lock-text);
+}
+
+/* 휴가 요청(10/30, ADR-24): 신청 양식의 날 줄, 받은 문의함의 쓸 날·남은 연차, 답장 */
+.inquiry-kind {
+  margin-right: 6px;
+  border-radius: 6px;
+  padding: 1px 6px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 0.75rem;
+}
+.leave-remaining {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+.leave-days {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.leave-day {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.leave-day input[type='date'] {
+  flex: 1 1 150px;
+  min-width: 0;
+  height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  color: var(--text);
+}
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+.segmented button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  background: var(--surface);
+  color: var(--text-2);
+  font-weight: 600;
+}
+.segmented button[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.leave-after {
+  margin: 0;
+  font-weight: 600;
+}
+.leave-after small {
+  font-weight: 400;
+  color: var(--text-quiet);
+}
+.leave-after.short {
+  color: var(--lock-text);
+}
+.leave-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-radius: var(--radius-s);
+  padding: 10px 12px;
+  background: var(--surface-2);
+}
+.leave-block p {
+  margin: 0;
+}
+.inquiry-replies {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-left: 3px solid var(--line);
+  padding-left: 10px;
+}
+.inquiry-replies p {
+  margin: 0;
 }
 
 /* 마이 페이지: 맨 위 내 정보 */

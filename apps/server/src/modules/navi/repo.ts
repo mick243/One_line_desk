@@ -1,4 +1,4 @@
-import type { Kind, WrongReason } from '@one-line-desk/shared';
+import type { Kind, LeaveDay, WrongReason } from '@one-line-desk/shared';
 import type { Queryable } from '../../core/db';
 import type { ChartRow } from './chart-csv';
 
@@ -118,7 +118,7 @@ export async function feedbackCounts(q: Queryable, rowIds: string[]): Promise<{ 
   return rows.map((r) => ({ row: r.row, reason: r.reason, at: new Date(r.at).toISOString(), n: r.n }));
 }
 
-// ── 담당 팀 문의(ADR-16) ──────────────────────────────────────
+// ── 담당 팀 문의(ADR-16)·휴가 요청과 답장(ADR-24) ─────────────────────
 
 export interface InquiryRow {
   id: string;
@@ -131,24 +131,49 @@ export interface InquiryRow {
   senderDepartment: string;
   question: string;
   reason: string;
-  state: 'new' | 'seen' | 'done';
+  state: 'new' | 'seen' | 'done' | 'approved' | 'rejected';
+  kind: 'general' | 'leave';
+  leaveDays: LeaveDay[] | null;
+  /** 보낸 사람 IdP 주체(휴가 요청만). 화면·LLM에 내보내지 않아요. */
+  senderSubject: string | null;
+  decisionReason: string | null;
+  leaveRecorded: boolean | null;
   created: number;
   updated: number;
 }
 
 const INQUIRY_COLUMNS = `id::text as id, row_id as "rowId", task, team, department,
   sender_pseudonym as "senderPseudonym", sender_name as "senderName", sender_department as "senderDepartment",
-  question, reason, state,
+  question, reason, state, kind, leave_days as "leaveDays", sender_subject as "senderSubject",
+  decision_reason as "decisionReason", leave_recorded as "leaveRecorded",
   (extract(epoch from created_at) * 1000)::float8 as created,
   (extract(epoch from updated_at) * 1000)::float8 as updated`;
 
-export async function insertInquiry(q: Queryable, i: Omit<InquiryRow, 'id' | 'state' | 'created' | 'updated'> & { at: number }): Promise<InquiryRow> {
+export async function insertInquiry(
+  q: Queryable,
+  i: Omit<InquiryRow, 'id' | 'state' | 'created' | 'updated' | 'decisionReason' | 'leaveRecorded'> & { at: number },
+): Promise<InquiryRow> {
   const at = new Date(i.at).toISOString();
   const { rows } = await q.query<InquiryRow>(
-    `insert into navi_inquiries (row_id, task, team, department, sender_pseudonym, sender_name, sender_department, question, reason, created_at, updated_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+    `insert into navi_inquiries (row_id, task, team, department, sender_pseudonym, sender_name, sender_department, question, reason,
+       kind, leave_days, sender_subject, created_at, updated_at)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $13)
      returning ${INQUIRY_COLUMNS}`,
-    [i.rowId, i.task, i.team, i.department, i.senderPseudonym, i.senderName, i.senderDepartment, i.question, i.reason, at],
+    [
+      i.rowId,
+      i.task,
+      i.team,
+      i.department,
+      i.senderPseudonym,
+      i.senderName,
+      i.senderDepartment,
+      i.question,
+      i.reason,
+      i.kind,
+      i.leaveDays ? JSON.stringify(i.leaveDays) : null,
+      i.senderSubject,
+      at,
+    ],
   );
   return rows[0]!;
 }
@@ -158,16 +183,20 @@ export async function purgeFeedback(q: Queryable, before: number): Promise<void>
   await q.query('delete from navi_feedback where at < $1', [new Date(before).toISOString()]);
 }
 
-/** 보관 기간이 지난 문의를 지워요(7일). */
+/** 보관 기간이 지난 문의와 답장을 지워요(7일). 문의가 지워지면 답장도 같이 지워져요. */
 export async function purgeInquiries(q: Queryable, before: number): Promise<void> {
-  await q.query('delete from navi_inquiries where created_at < $1', [new Date(before).toISOString()]);
+  const cutoff = new Date(before).toISOString();
+  await q.query('delete from navi_inquiry_replies where created_at < $1', [cutoff]);
+  await q.query('delete from navi_inquiries where created_at < $1', [cutoff]);
 }
 
+/** 받은 문의함 순서: 아직 끝나지 않은 것(새 문의·확인함) 먼저, 그다음 최근 순 */
+const OPEN_FIRST = `(state in ('done', 'approved', 'rejected')), created_at desc, id desc`;
+
 export async function inquiriesOfDepartment(q: Queryable, department: string): Promise<InquiryRow[]> {
-  const { rows } = await q.query<InquiryRow>(
-    `select ${INQUIRY_COLUMNS} from navi_inquiries where department = $1 order by (state = 'done'), created_at desc, id desc limit 100`,
-    [department],
-  );
+  const { rows } = await q.query<InquiryRow>(`select ${INQUIRY_COLUMNS} from navi_inquiries where department = $1 order by ${OPEN_FIRST} limit 100`, [
+    department,
+  ]);
   return rows;
 }
 
@@ -179,14 +208,71 @@ export async function inquiriesOfSender(q: Queryable, pseudonymId: string): Prom
   return rows;
 }
 
-/** 받은 부서 사람만 상태를 바꿔요. 새 문의 → 확인함 → 처리함 순서로만 가요. 바뀌지 않으면 null이에요. */
+/** 받은 부서 사람만 상태를 바꿔요. 새 문의 → 확인함 → 처리함 순서로만 가요. 휴가 요청은 [처리했어요] 대신 승인·반려예요. 바뀌지 않으면 null이에요. */
 export async function moveInquiryState(q: Queryable, id: string, department: string, to: 'seen' | 'done', at: number): Promise<InquiryRow | null> {
   const from = to === 'seen' ? ['new'] : ['new', 'seen'];
   const { rows } = await q.query<InquiryRow>(
     `update navi_inquiries set state = $3, updated_at = $5
-      where id = $1 and department = $2 and state = any($4::text[])
+      where id = $1 and department = $2 and state = any($4::text[]) and (kind = 'general' or $3 = 'seen')
       returning ${INQUIRY_COLUMNS}`,
     [id, department, to, from, new Date(at).toISOString()],
   );
   return rows[0] ?? null;
+}
+
+/** 받은 부서 사람이 아직 결정 전인 휴가 요청을 잠가서 읽어요(승인 중 두 번 눌러도 한 번만). */
+export async function lockOpenLeaveRequest(q: Queryable, id: string, department: string): Promise<InquiryRow | null> {
+  const { rows } = await q.query<InquiryRow>(
+    `select ${INQUIRY_COLUMNS} from navi_inquiries where id = $1 and department = $2 and kind = 'leave' and state in ('new', 'seen') for update`,
+    [id, department],
+  );
+  return rows[0] ?? null;
+}
+
+export async function decideLeaveRequest(
+  q: Queryable,
+  id: string,
+  d: { state: 'approved' | 'rejected'; reason: string | null; recorded: boolean | null; at: number },
+): Promise<InquiryRow> {
+  const { rows } = await q.query<InquiryRow>(
+    `update navi_inquiries set state = $2, decision_reason = $3, leave_recorded = $4, updated_at = $5 where id = $1 returning ${INQUIRY_COLUMNS}`,
+    [id, d.state, d.reason, d.recorded, new Date(d.at).toISOString()],
+  );
+  return rows[0]!;
+}
+
+/** 받은 부서 문의인지 확인하고 돌려줘요(답장 전). */
+export async function inquiryOfDepartment(q: Queryable, id: string, department: string): Promise<InquiryRow | null> {
+  const { rows } = await q.query<InquiryRow>(`select ${INQUIRY_COLUMNS} from navi_inquiries where id = $1 and department = $2`, [id, department]);
+  return rows[0] ?? null;
+}
+
+export interface ReplyRow {
+  inquiryId: string;
+  authorName: string;
+  body: string;
+  at: number;
+}
+
+/** 답장 넣기. 같은 requestId로 두 번 와도 한 번만 들어가요. 새로 들어갔으면 true예요. */
+export async function insertReply(
+  q: Queryable,
+  r: { inquiryId: string; authorPseudonym: string; authorName: string; body: string; requestId: string; at: number },
+): Promise<boolean> {
+  const { rows } = await q.query<{ id: string }>(
+    `insert into navi_inquiry_replies (inquiry_id, author_pseudonym, author_name, body, request_id, created_at)
+     values ($1, $2, $3, $4, $5, $6) on conflict (inquiry_id, request_id) do nothing returning id::text as id`,
+    [r.inquiryId, r.authorPseudonym, r.authorName, r.body, r.requestId, new Date(r.at).toISOString()],
+  );
+  return rows.length > 0;
+}
+
+export async function repliesOf(q: Queryable, inquiryIds: string[]): Promise<ReplyRow[]> {
+  if (!inquiryIds.length) return [];
+  const { rows } = await q.query<ReplyRow>(
+    `select inquiry_id::text as "inquiryId", author_name as "authorName", body, (extract(epoch from created_at) * 1000)::float8 as at
+       from navi_inquiry_replies where inquiry_id = any($1::bigint[]) order by created_at, id`,
+    [inquiryIds],
+  );
+  return rows;
 }

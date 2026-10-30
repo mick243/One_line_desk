@@ -41,6 +41,8 @@ export interface WebModules {
   ChartScreen: ComponentType<ScreenProps>;
   /** 담당 팀에 문의 보내기 양식(ADR-16). 담당 카드의 [○○에 문의하기]로 열려요. */
   InquirySheet: ComponentType<{ action: Extract<CardAction, { type: 'inquire' }>; initialQuestion: string; onClose: () => void }>;
+  /** 휴가 신청 양식(ADR-24). 연차 카드의 [휴가 신청하기]로 열려요. 보내기는 확인 시트를 거쳐요. */
+  LeaveRequestSheet: ComponentType<{ action: Extract<CardAction, { type: 'leave-request' }>; onClose: () => void }>;
   /** 담당 찾기 페이지: 우리 팀에 온 문의(받은 문의함) */
   InquiryInbox: ComponentType;
   /** 담당 찾기 페이지: 내가 보낸 문의와 처리 상태 */

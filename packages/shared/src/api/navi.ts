@@ -112,9 +112,27 @@ export interface ChartApplyResponse {
 export const INQUIRY_QUESTION_MAX = 1000;
 export const INQUIRY_REASON_MAX = 500;
 export const INQUIRY_KEEP_DAYS = RECORD_KEEP_DAYS;
-export const INQUIRY_STATES = ['new', 'seen', 'done'] as const;
+/** 승인·반려는 휴가 요청에만 있어요(10/30, ADR-24). */
+export const INQUIRY_STATES = ['new', 'seen', 'done', 'approved', 'rejected'] as const;
 export type InquiryState = (typeof INQUIRY_STATES)[number];
-export const INQUIRY_STATE_LABEL: Record<InquiryState, string> = { new: '새 문의', seen: '확인했어요', done: '처리했어요' };
+export const INQUIRY_STATE_LABEL: Record<InquiryState, string> = {
+  new: '새 문의',
+  seen: '확인했어요',
+  done: '처리했어요',
+  approved: '승인했어요',
+  rejected: '반려했어요',
+};
+export const INQUIRY_REPLY_MAX = 1000;
+export const LEAVE_REJECT_REASON_MAX = 500;
+/** 한 번에 신청할 수 있는 날 수 */
+export const LEAVE_REQUEST_MAX_DAYS = 30;
+
+/** 휴가 하루. 반차는 0.5일이에요. */
+export interface LeaveDay {
+  /** YYYY-MM-DD(한국 날짜) */
+  date: string;
+  kind: 'full' | 'half';
+}
 
 /** POST /api/navi/inquiries. requestId는 같은 문의를 두 번 보내지 않게 하는 값이에요(화면이 만들어요). */
 export interface InquiryRequest {
@@ -122,6 +140,40 @@ export interface InquiryRequest {
   question: string;
   reason: string;
   requestId: string;
+  /** 휴가 요청이면 쓸 날(ADR-24). 받는 팀(인사팀)이 승인하면 근태 기록에 들어가요. */
+  leave?: { days: LeaveDay[] };
+}
+
+/** POST /api/navi/inquiries/:id/reply. 받은 팀이 보내는 답장이에요. 7일 보관해요. */
+export interface InquiryReplyRequest {
+  text: string;
+  requestId: string;
+}
+
+/** POST /api/navi/inquiries/:id/decision. 휴가 요청만. 반려는 사유가 꼭 있어야 해요. */
+export interface InquiryDecisionRequest {
+  decision: 'approved' | 'rejected';
+  reason?: string;
+}
+
+/** 휴가 요청 계산(서버 규칙, ADR-18). 받은 팀 화면에서 그 요청을 보낸 사람 것만 보여요. 저장하지 않고 열 때마다 계산해요. */
+export interface LeaveRequestBalance {
+  /** 지금 남은 연차(이미 승인돼 근태 기록에 들어간 날 포함해 뺀 값) */
+  remaining: number;
+  /** 이 요청을 승인하면 남는 연차. 모자라면 음수예요. */
+  after: number;
+  /** 이번 연차 기간 마지막 날 */
+  periodEnd: string;
+}
+
+export interface InquiryReply {
+  /** 지금은 받은 팀만 답장해요 */
+  from: 'team';
+  /** 답장한 팀 사람 이름(보낸 사람 화면에서 누가 답했는지 보여요) */
+  name: string;
+  text: string;
+  /** ISO 시각(+09:00) */
+  at: string;
 }
 
 export interface InquiryItem {
@@ -136,8 +188,19 @@ export interface InquiryItem {
   updatedAt: string;
   /** 받은 문의함에서만 와요. 답하려면 누구인지 알아야 해서요. */
   sender?: { name: string; department: string };
-  /** 받은 문의함: [확인했어요]·[처리했어요] */
+  /** 받은 문의함: [확인했어요]·[처리했어요](휴가 요청은 [확인했어요]만, 승인·반려는 decision으로) */
   actions: CardAction[];
+  kind: 'general' | 'leave';
+  /** 휴가 요청이면 날과 일수. balance는 받은 문의함에서, 아직 결정 전일 때만 와요. */
+  leave?: { days: LeaveDay[]; total: number; balance?: LeaveRequestBalance | null };
+  /** 반려 사유(반려했을 때만) */
+  decisionReason?: string;
+  /** 승인했는데 근태 기록에 넣지 못했으면 false(근태 연결 안 함). 그룹웨어 근태에 직접 반영해야 해요. */
+  recorded?: boolean;
+  replies: InquiryReply[];
+  /** 받은 문의함에서 지금 답장·승인·반려를 할 수 있는지 */
+  canReply?: boolean;
+  canDecide?: boolean;
 }
 
 /** GET /api/navi/inquiries/inbox · /mine. 받은 문의함은 분장표에 행이 있는 부서만 열려요(enabled). */

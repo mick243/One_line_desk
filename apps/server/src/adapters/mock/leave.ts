@@ -40,9 +40,18 @@ const RECORDS: Record<string, LeaveRecord> = {
 
 export class MockLeave implements LeaveAdapter {
   readonly capabilities: AdapterCapabilities = { name: 'mock-leave', label: '인사 근태 기록(가상 연차 자료)', mock: true };
+  /** 시연 중 인사팀이 승인한 날(ADR-24). 이 서버 메모리에만 있고, 다시 뜨면 처음 자료로 돌아가요. */
+  private readonly approved = new Map<string, LeaveUse[]>();
 
   async leaveOf(person: { idpSubject: string; email?: string }): Promise<LeaveRecord | null> {
     const record = person.email ? RECORDS[person.email] : undefined;
-    return record ? { hireDate: record.hireDate, uses: record.uses.map((u) => ({ ...u })) } : null;
+    if (!record) return null;
+    return { hireDate: record.hireDate, uses: [...record.uses, ...(this.approved.get(person.email!) ?? [])].map((u) => ({ ...u })) };
+  }
+
+  async recordUses(person: { idpSubject: string; email?: string }, uses: LeaveUse[]): Promise<'recorded' | 'not-found'> {
+    if (!person.email || !RECORDS[person.email]) return 'not-found';
+    this.approved.set(person.email, [...(this.approved.get(person.email) ?? []), ...uses.map((u) => ({ ...u }))]);
+    return 'recorded';
   }
 }

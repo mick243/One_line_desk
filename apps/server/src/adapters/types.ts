@@ -91,11 +91,19 @@ export interface LeaveRecord {
   uses: LeaveUse[];
 }
 
-/** 인사 근태(연차) 어댑터. 본인 것만 읽어요. 남의 것을 찾는 함수는 없어요. */
+/**
+ * 인사 근태(연차) 어댑터. 본인 것만 읽어요. 아무 사람이나 찾는 목록·검색 함수는 없어요.
+ * 받은 팀(인사팀)은 그 사람이 보낸 휴가 요청을 처리할 때만 그 사람 것을 읽어요(ADR-24).
+ */
 export interface LeaveAdapter {
   capabilities: AdapterCapabilities;
   /** 연결이 안 됐거나 기록이 없으면 null이에요. 회사 메일(사번 대신)로 찾아요. */
   leaveOf(person: { idpSubject: string; email?: string }): Promise<LeaveRecord | null>;
+  /**
+   * 인사팀이 승인한 휴가를 근태 기록에 넣어요(ADR-24). 넣으면 남은 연차 계산에서 바로 빠져요.
+   * 연결이 안 됐으면 'not-connected'예요(그룹웨어 근태에 직접 반영해야 해요). 기록이 없는 사람은 'not-found'예요.
+   */
+  recordUses(person: { idpSubject: string; email?: string }, uses: LeaveUse[]): Promise<'recorded' | 'not-connected' | 'not-found'>;
 }
 
 /** 메신저 DM(ADR-17). 받는 사람은 회사 메일로 찾아요. 글에는 회의실·시간·부른 사람만 넣어요. */

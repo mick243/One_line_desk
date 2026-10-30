@@ -34,8 +34,8 @@ describe('담당 팀에 문의 보내기(ADR-16)', () => {
     const sent = await doyun.call('POST', '/api/navi/inquiries', { rowId: 'HR-01', question: QUESTION, reason: REASON, requestId: requestId() });
     expect(sent.status).toBe(200);
     expect(sent.body).toMatchObject({ status: 'done', card: { label: '확정', headline: '인사팀에 보냈어요' } });
-    // 답 글은 앱으로 오지 않아요. 실제 동작대로 "처리 상태"만 알린다고 적어요(10/29 개선 회의 C1).
-    expect(sent.body.card.evidence.text).toBe('처리 상태가 바뀌면 알려 드려요. 답은 그 팀이 따로 연락해요. 담당 찾기 "내 문의"에서도 볼 수 있어요');
+    // 받은 팀이 답장을 보낼 수 있어서(10/30, ADR-24) 상태 변경과 답장을 알린다고 적어요.
+    expect(sent.body.card.evidence.text).toBe('처리 상태가 바뀌거나 답장이 오면 알려 드려요. 담당 찾기 "내 문의"에서 볼 수 있어요');
 
     const jihu = await t.loginAs(MOCK.hr);
     const inbox = (await jihu.call('GET', '/api/navi/inquiries/inbox')).body as InquiryListResponse;

@@ -1,4 +1,4 @@
-import { type Card, GRADE, kstDate, personNameWords } from '@one-line-desk/shared';
+import { type Card, type CardAction, GRADE, kstDate, personNameWords } from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { LeaveRecord } from '../../adapters/types';
 import type { AppContext } from '../../context';
@@ -306,8 +306,39 @@ function otherPersonCard(): Card {
   });
 }
 
+/** 분장표에서 휴가를 신청하는 행(휴가 신청·연차 신청). 휴가 요청은 이 행의 주인 부서(인사팀)로 가요(ADR-24). */
+export interface LeaveRequestTarget {
+  rowId: string;
+  team: string;
+  task: string;
+}
+
+const LEAVE_REQUEST_ROW = /휴가\s*신청|연차\s*신청/;
+
+export function findLeaveRequestRow(rows: readonly { id: string; task: string; team: string; aliases: string[] }[]): LeaveRequestTarget | null {
+  const row = rows.find((r) => LEAVE_REQUEST_ROW.test(r.task)) ?? rows.find((r) => r.aliases.some((a) => LEAVE_REQUEST_ROW.test(a)));
+  return row ? { rowId: row.id, team: row.team, task: row.task } : null;
+}
+
+/**
+ * [휴가 신청하기]: 질문에서 읽은 날(규칙, 양은 AI도)을 양식에 미리 채워요. 사람이 날·하루/반차를 고치고 확인 시트에서 보내요.
+ * 날 없이 양만 말했으면("이틀 쓰고 싶어") 고를 일수만 알려 줘요.
+ */
+function leaveRequestAction(target: LeaveRequestTarget, q: LeaveQuestion, balance: LeaveBalance): CardAction {
+  const kind = q.planHalf > 0 && q.planFull === 0 ? ('half' as const) : ('full' as const);
+  const planned = q.planFull + q.planHalf * HALF_DAY;
+  return {
+    type: 'leave-request',
+    text: '휴가 신청하기',
+    ...target,
+    days: q.planDates.map((date) => ({ date, kind })),
+    remaining: balance.remaining,
+    ...(!q.planDates.length && planned > 0 ? { planned } : {}),
+  };
+}
+
 /** 본인 연차 카드. 숫자는 모두 서버 계산이고, "AI 정리"는 모델이 질문(더 쓰려는 양)을 해석했을 때만 붙여요. */
-export function leaveCard(balance: LeaveBalance | null, q: LeaveQuestion, today: string): Card {
+export function leaveCard(balance: LeaveBalance | null, q: LeaveQuestion, today: string, request?: LeaveRequestTarget | null): Card {
   if (q.aboutOther) return otherPersonCard();
   if (!balance) {
     return makeCard({
@@ -355,6 +386,7 @@ export function leaveCard(balance: LeaveBalance | null, q: LeaveQuestion, today:
       ...(q.otherPeriod ? [{ name: '작년·내년', value: '이번 연차 기간만 보여요. 지난 기간은 그룹웨어 근태 메뉴에서 봐요' }] : []),
     ],
     evidence: { text: `인사 근태 기록으로 서버가 계산 · 근로기준법(개근 가정) · ${today} 기준`, aiSummarized: q.viaAi && plan > 0 },
+    ...(request ? { secondary: [leaveRequestAction(request, q, balance)] } : {}),
     tail: LEAVE_TAIL,
   });
 }
@@ -372,7 +404,12 @@ export function namesOtherPerson(text: string, roster: readonly string[], mine: 
   return pattern.test(text);
 }
 
-export async function myLeaveCard(ctx: AppContext, user: Pick<DeskUser, 'idpSubject' | 'email' | 'displayName'>, text: string): Promise<Card | null> {
+export async function myLeaveCard(
+  ctx: AppContext,
+  user: Pick<DeskUser, 'idpSubject' | 'email' | 'displayName'>,
+  text: string,
+  request?: LeaveRequestTarget | null,
+): Promise<Card | null> {
   const today = kstDate(ctx.now());
   const q = await readLeaveQuestion(ctx.gateway, text, today);
   if (!q.about) return null;
@@ -381,5 +418,5 @@ export async function myLeaveCard(ctx: AppContext, user: Pick<DeskUser, 'idpSubj
   const names = await ctx.adapters.directory.personNameWords().catch(() => [] as string[]);
   if (namesOtherPerson(text, names, personNameWords(user.displayName))) return otherPersonCard();
   const record = await ctx.adapters.leave.leaveOf({ idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) }).catch(() => null);
-  return leaveCard(record ? computeLeave(record, today) : null, q, today);
+  return leaveCard(record ? computeLeave(record, today) : null, q, today, request);
 }

@@ -40,7 +40,8 @@ export function FeaturePage({
   const slow = useSlow(loading);
   const [wrongCard, setWrongCard] = useState<Card | null>(null);
   const [inquiry, setInquiry] = useState<Extract<CardAction, { type: 'inquire' }> | null>(null);
-  const { WrongSheet, InquirySheet } = webModules;
+  const [leaveRequest, setLeaveRequest] = useState<Extract<CardAction, { type: 'leave-request' }> | null>(null);
+  const { WrongSheet, InquirySheet, LeaveRequestSheet } = webModules;
 
   async function ask(masked: string) {
     setSent(masked);
@@ -141,6 +142,7 @@ export function FeaturePage({
             onAction={(action) => {
               if (action.type === 'reask') return onMove(action.kind, sent ?? text);
               if (action.type === 'inquire') return setInquiry(action);
+              if (action.type === 'leave-request') return setLeaveRequest(action);
               // 끝난 카드는 결과 카드로 바꿔요(예약한 후보 → 확정 카드). 다시 눌러 헷갈리지 않게 해요(QA D-B01).
               return actions.run(action, card, (next) => setCards((list) => (list ? replaceCard(list, card.id, next) : next)));
             }}
@@ -151,6 +153,7 @@ export function FeaturePage({
       {children}
 
       {inquiry && <InquirySheet action={inquiry} initialQuestion={sent ?? text} onClose={() => setInquiry(null)} />}
+      {leaveRequest && <LeaveRequestSheet action={leaveRequest} onClose={() => setLeaveRequest(null)} />}
 
       {wrongCard && (
         <WrongSheet

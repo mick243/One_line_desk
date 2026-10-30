@@ -100,7 +100,8 @@ export function ActionHost({
             return;
           case 'reask':
           case 'inquire':
-            // 다시 찾기·문의 양식은 원문을 가진 기능 페이지가 처리해요(CardView onAction에서 먼저 가로채요).
+          case 'leave-request':
+            // 다시 찾기·문의 양식·휴가 신청 양식은 원문을 가진 기능 페이지가 처리해요(CardView onAction에서 먼저 가로채요).
             return;
           case 'invite':
             // 참석자 고르기 양식(ADR-17). 확정 카드 시트 위에서도 열려야 해서 여기서 띄워요.

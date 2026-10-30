@@ -36,6 +36,21 @@ export type CardAction =
   | { type: 'navigate'; text: string; to: AppDestination }
   /** 담당 팀에 문의 보내기 양식을 열어요(ADR-16). 양식은 페이지가 띄우고, 보내기는 확인 시트를 거쳐요. */
   | { type: 'inquire'; text: string; rowId: string | null; team: string; task: string }
+  /**
+   * 휴가 신청 양식을 열어요(ADR-24). days는 질문에서 읽은 날(규칙·AI)로 미리 채우고, 사람이 고쳐요.
+   * remaining은 본인 남은 연차(본인 화면에만 와요). 보내기는 확인 시트를 거쳐요.
+   */
+  | {
+      type: 'leave-request';
+      text: string;
+      rowId: string;
+      team: string;
+      task: string;
+      days: { date: string; kind: 'full' | 'half' }[];
+      remaining: number;
+      /** 날짜 없이 양만 말했을 때("이틀 쓰고 싶어") 고를 일수 안내 */
+      planned?: number;
+    }
   /** 회의 참석자 고르기 양식을 열어요(ADR-17). 보내기는 확인 시트를 거쳐요. */
   | { type: 'invite'; text: string; reservationId: string; roomName: string; when: string };
 
