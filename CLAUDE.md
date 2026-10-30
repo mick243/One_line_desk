@@ -31,4 +31,5 @@
 - `npm run check`: 서식 검사 + 타입 검사 + 시험
 - DB: `DATABASE_URL`이 없으면 내장 PGlite(`.data/pglite`)를 쓰고 서버가 뜰 때 마이그레이션을 적용해요. 실제 PostgreSQL은 `npm run db:up`(Docker, 5433) → `DATABASE_URL` 설정 → `npm run db:migrate`
 - 운영 이미지: `docker build --build-arg DESK_BUILD=<커밋> -t one-line-desk .`(Dockerfile). 판(`DESK_BUILD`)은 응답 머리 `x-desk-build`로 나가고 웹 판과 다르면 새 버전 띠가 떠요. 상태 확인은 `/health/live`(DB 안 봄)·`/health/ready`예요. 운영은 같은 서버가 웹 화면 파일(`apps/web/dist`)도 줘요(`core/web-files.ts`, 보안 머리는 `packages/shared/src/web-headers.ts` 하나). 운영은 `.env`를 읽지 않아요. 띄운 뒤 `node scripts/smoke.mjs <주소>`
+- 회사별 분리(ADR-23): 회사마다 앱 한 벌을 따로 띄워요. `npm run tenant -- new|check|deploy --dir <저장소 밖 비공개 폴더>`(`apps/server/scripts/tenant.ts`). 회사는 무작위 ID(`t-xxxxxx`)로만 부르고, 회사 이름·목록·설정은 이 저장소에 넣지 않아요. 회사 고르기·회사 목록 화면을 만들지 않아요
 - 운영(`NODE_ENV=production`)은 설정 검사(`apps/server/src/config.ts`)를 지나야 뜨고, 시작할 때 마이그레이션을 적용하지 않아요(`npm run db:migrate` 먼저). 시연 배포는 `DESK_MOCK_LOGIN=true`예요. 운영 설정(스위치·값·링크)은 `ops_settings` 표에 남아요

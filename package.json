@@ -25,7 +25,8 @@
     "idp:up": "docker compose up -d idp",
     "dev:idp": "node scripts/dev-idp.mjs",
     "idp:down": "docker compose stop idp",
-    "db:migrate": "npm run db:migrate -w @one-line-desk/server"
+    "db:migrate": "npm run db:migrate -w @one-line-desk/server",
+    "tenant": "node --import tsx apps/server/scripts/tenant.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
