@@ -13,6 +13,7 @@ interface Rule {
 }
 const vercel = JSON.parse(readFileSync(new URL('../../../../vercel.json', import.meta.url), 'utf8')) as {
   outputDirectory: string;
+  git?: { deploymentEnabled?: boolean };
   rewrites: Rule[];
   headers: Rule[];
 };
@@ -49,5 +50,9 @@ describe('vercel.json(웹 화면만 Vercel에 올린 시연)', () => {
     // 헬스·MCP·인가 경로는 넘기지 않아요(시연은 MCP를 늘 꺼요).
     expect(vercel.rewrites.some((r) => /^\/(health|mcp|\.well-known|oauth\/(authorize|token|revoke))/.test(r.source))).toBe(false);
     expect(vercel.outputDirectory).toBe('apps/web/dist');
+  });
+
+  it('GitHub에 올려도 저절로 배포하지 않아요. 같은 커밋으로 시연 서버(Fly)를 먼저, Vercel을 나중에 직접 올려요', () => {
+    expect(vercel.git?.deploymentEnabled).toBe(false);
   });
 });

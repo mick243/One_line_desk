@@ -4,6 +4,7 @@
   "installCommand": "npm ci --no-audit --no-fund",
   "buildCommand": "node scripts/vercel-build.mjs",
   "outputDirectory": "apps/web/dist",
+  "git": { "deploymentEnabled": false },
   "rewrites": [
     { "source": "/api/:path((?!ops(?:/|$)).*)", "destination": "https://one-line-desk-demo.fly.dev/api/:path" },
     { "source": "/oauth/consent", "destination": "/index.html" },
