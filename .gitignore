@@ -6,3 +6,7 @@ dist/
 coverage/
 .data/
 .vitest/
+
+.vercel
+.env*
+!.env.example

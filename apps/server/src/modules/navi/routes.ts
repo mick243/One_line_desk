@@ -3,8 +3,13 @@ import {
   type ChartUploadRequest,
   INQUIRY_QUESTION_MAX,
   INQUIRY_REASON_MAX,
+  INQUIRY_REPLY_MAX,
+  type InquiryDecisionRequest,
   type InquiryListResponse,
+  type InquiryReplyRequest,
   type InquiryRequest,
+  LEAVE_REJECT_REASON_MAX,
+  LEAVE_REQUEST_MAX_DAYS,
   KINDS,
   NAVI_ROW_ID_PATTERN,
   type NaviRowCardRequest,
@@ -160,6 +165,25 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
             question: { type: 'string', minLength: 1, maxLength: INQUIRY_QUESTION_MAX },
             reason: { type: 'string', minLength: 1, maxLength: INQUIRY_REASON_MAX },
             requestId: { type: 'string', pattern: '^[A-Za-z0-9-]{8,64}$' },
+            // 휴가 요청(ADR-24): 쓸 날과 하루·반차
+            leave: {
+              type: 'object',
+              required: ['days'],
+              additionalProperties: false,
+              properties: {
+                days: {
+                  type: 'array',
+                  minItems: 1,
+                  maxItems: LEAVE_REQUEST_MAX_DAYS,
+                  items: {
+                    type: 'object',
+                    required: ['date', 'kind'],
+                    additionalProperties: false,
+                    properties: { date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }, kind: { enum: ['full', 'half'] } },
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -205,6 +229,63 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
         ...accessFrom(req),
       });
       return item;
+    },
+  );
+
+  const ID_PARAMS = { type: 'object', required: ['id'], additionalProperties: false, properties: { id: { type: 'string', pattern: '^[0-9]{1,18}$' } } };
+
+  // 휴가 요청 승인·반려(ADR-24). 받은 부서 사람이 누른 고정 버튼이에요. 반려는 사유가 꼭 있어야 해요. 접속기록에 남겨요(ADR-20).
+  app.post<{ Params: { id: string }; Body: InquiryDecisionRequest }>(
+    '/api/navi/inquiries/:id/decision',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        params: ID_PARAMS,
+        body: {
+          type: 'object',
+          required: ['decision'],
+          additionalProperties: false,
+          properties: { decision: { enum: ['approved', 'rejected'] }, reason: { type: 'string', maxLength: LEAVE_REJECT_REASON_MAX } },
+        },
+      },
+    },
+    async (req) => {
+      const item = await inquiries.decide(req.deskUser!, req.params.id, req.body);
+      await ctx.access.record({
+        pseudonymId: req.deskUser!.pseudonymId,
+        action: 'inquiry.update',
+        subjectRefs: [`inquiry:${req.params.id}`],
+        ...accessFrom(req),
+      });
+      return item;
+    },
+  );
+
+  // 받은 팀의 답장(ADR-24). 글은 POST 본문으로만 오고 7일 보관해요.
+  app.post<{ Params: { id: string }; Body: InquiryReplyRequest }>(
+    '/api/navi/inquiries/:id/reply',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        params: ID_PARAMS,
+        body: {
+          type: 'object',
+          required: ['text', 'requestId'],
+          additionalProperties: false,
+          properties: { text: { type: 'string', minLength: 1, maxLength: INQUIRY_REPLY_MAX }, requestId: { type: 'string', pattern: '^[A-Za-z0-9-]{8,64}$' } },
+        },
+      },
+    },
+    async (req, reply) => {
+      if (ctx.config.demoWide) return reply.code(409).send({ error: 'demo-locked', message: '시연에서는 보내지 않아요' });
+      const out = await inquiries.reply(req.deskUser!, req.params.id, req.body);
+      await ctx.access.record({
+        pseudonymId: req.deskUser!.pseudonymId,
+        action: 'inquiry.update',
+        subjectRefs: [`inquiry:${req.params.id}`],
+        ...accessFrom(req),
+      });
+      return out;
     },
   );
 }

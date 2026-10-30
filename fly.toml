@@ -1,0 +1,47 @@
+# 시연 서버(Fly.io 도쿄, 10/30 Vercel 배포 회의). 웹 화면은 Vercel이 주고, Vercel이 /api/*를 이 서버로 넘겨요(vercel.json).
+# 실제 직원 자료·실제 IdP·파일럿·운영은 여기 두지 않아요(ADR-01 10/30 보강).
+#   처음: fly apps create one-line-desk-demo
+#         fly secrets set SESSION_SECRET=… PSEUDONYM_SECRET=… PROPOSAL_SECRET=… MCP_TOKEN_SECRET=… DESK_DEMO_PASSWORD=…
+#         (비밀 값 넷은 서로 다른 32자 이상, 시연 비밀번호는 12자 이상)
+#   배포: fly deploy --ha=false --build-arg DESK_BUILD=$(git rev-parse HEAD)   ← Vercel 웹과 같은 커밋이에요. 서버를 먼저, Vercel을 나중에 올려요
+#   확인: fly scale count 1 (메모리 세션·PGlite라 꼭 한 대. 늘리지 않아요),SMOKE_API_ONLY=1 SMOKE_BUILD=<SHA> node scripts/smoke.mjs https://one-line-desk-demo.fly.dev
+# 디스크(PGlite)는 재시작·배포 때 비워져요. 시연 자료를 매번 새로 넣어서 원하는 동작이에요.
+app = "one-line-desk-demo"
+primary_region = "nrt"
+# 서버가 받던 요청·보관 회차를 45초 안에 끝내고 닫아요(배포 준비 회의 A5). Fly 기본 신호는 SIGINT라 SIGTERM을 적어요.
+kill_signal = "SIGTERM"
+kill_timeout = 60
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  DESK_MOCK_LOGIN = "true"
+  PUBLIC_BASE_URL = "https://one-line-desk.vercel.app"
+  DESK_WEB_DIST = "none"
+  # 앞단이 Vercel이라 접속지는 모두 Vercel 주소예요. 믿지 않고, 시연 접속지는 법정 기록으로 쓰지 않아요.
+  TRUST_PROXY = "none"
+  SERVER_PORT = "3190"
+
+[http_service]
+  internal_port = 3190
+  force_https = true
+  # 비용을 줄이려고 몇 분 동안 요청이 없으면 재워요(10/30 사용자 결정). 재운 동안은 디스크 값만 내요.
+  # suspend는 메모리를 그대로 두어서 깨면 세션이 이어져요. Fly가 재우지 못하면 끄는데, 그때는 다음 접속에 자료를 새로 넣고 다시 로그인해요.
+  # 자는 동안 한 시간마다 도는 보관 잡은 멈췄다가 깨면 돌아요. 시연 자료는 가상이라 괜찮아요.
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    timeout = "3s"
+    method = "GET"
+    path = "/health/live"
+
+# PGlite가 처음 DB를 열 때 900MB 가까이 써서 1GB에서는 메모리 부족으로 죽었어요(10/30 첫 배포). 그래서 2GB예요.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "2gb"

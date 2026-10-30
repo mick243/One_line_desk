@@ -1,3 +1,4 @@
+import { RECORD_KEEP_DAYS } from '../retention';
 import type { OrderReasonCode } from './pantry';
 
 // 주문안 요청·응답 타입(ADR-08, R1·R16). 줄에는 묶음 표 수만 있고 투표자는 없어요.
@@ -17,7 +18,8 @@ export const ORDER_MESSAGES = {
   floorRequestShort: '요청이 모자라 최소 몫을 못 채웠어요',
   floorShort: '최소 몫을 못 채웠어요',
   editedLabel: '총무가 고침',
-  confirmSheet: '주문에 들어간 품목의 표가 닫혀요. 나머지는 다음 주기로 넘어가요. 실제 주문은 내보낸 파일로 기존 절차대로 해 주세요.',
+  // 나머지 요청은 다음 주기에도 남지만, 올린 지 7일이 되면 보관 잡이 내려요(ADR-21). 실제 동작대로 적어요(10/29 개선 회의 C1).
+  confirmSheet: `주문에 들어간 품목의 표가 닫혀요. 나머지는 다음 주기에도 남지만, 올린 지 ${RECORD_KEEP_DAYS}일이 되면 내려가요. 실제 주문은 내보낸 파일로 기존 절차대로 해 주세요.`,
 } as const;
 
 export interface OrderWarning {

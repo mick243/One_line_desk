@@ -12,9 +12,10 @@ const READY_DB_TIMEOUT_MS = 1000;
  * 건강 확인(L-17, 10/29 배포 준비 회의 A5). 관문 밖에는 열지 않아요(부하 분산기만).
  * - /health/live: 살아 있음. DB를 보지 않아서, DB가 잠깐 흔들려도 재시작(= 메모리 세션을 잃어 모두 로그아웃)이 이어지지 않아요.
  * - /health/ready(= /health): 받을 준비. DB(1초)와 첫 보관 회차를 봐요. 닫는 중에는 Fastify가 503으로 답해요.
- * 안쪽 정보(AI 공급자 이름 등)는 내보내지 않고, 떠 있는 판(build)만 알려요.
+ * 안쪽 정보(AI 공급자 이름 등)는 내보내지 않고, 떠 있는 판(build)과 보관 지우기가 마지막으로 다 된 시각만 알려요.
+ * 마지막 성공이 오래돼도 503으로 바꾸지 않아요(재시작이 이어지면 메모리 세션을 잃어요). 감시가 시각을 보고 알려요.
  */
-export function registerHealthRoutes(app: FastifyInstance, ctx: AppContext, retentionReady: () => boolean) {
+export function registerHealthRoutes(app: FastifyInstance, ctx: AppContext, retentionState: () => { done: boolean; lastOk: number | null }) {
   app.get('/health/live', async () => ({ ok: true }));
 
   const ready = async (_req: FastifyRequest, reply: FastifyReply) => {
@@ -25,13 +26,14 @@ export function registerHealthRoutes(app: FastifyInstance, ctx: AppContext, rete
       ),
       new Promise<boolean>((resolve) => setTimeout(() => resolve(false), READY_DB_TIMEOUT_MS).unref()),
     ]);
-    const retention = retentionReady();
-    const ok = dbOk && retention;
+    const retention = retentionState();
+    const ok = dbOk && retention.done;
     if (!ok) reply.code(503);
     return {
       ok,
       db: `${ctx.db.kind}-${dbOk ? 'connected' : 'error'}`,
-      retention: retention ? 'done' : 'pending',
+      retention: retention.done ? 'done' : 'pending',
+      retentionLastOk: retention.lastOk === null ? null : new Date(retention.lastOk).toISOString(),
       build: ctx.config.build,
       rulesVersion: RULES_VERSION,
     };
@@ -55,7 +57,10 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
         .map((a) => a.label),
       rulesVersion: RULES_VERSION,
       // 로그인 방식: 모의(가상 직원 고르기) 또는 IdP 리디렉트(임시 IdP·회사 IdP)
-      login: ctx.adapters.idp.oidc ? { kind: 'oidc' as const, label: ctx.adapters.idp.oidc.label } : { kind: 'mock' as const },
+      // password: 시연 비밀번호를 받아야 하는지(값은 내보내지 않아요)
+      login: ctx.adapters.idp.oidc
+        ? { kind: 'oidc' as const, label: ctx.adapters.idp.oidc.label }
+        : { kind: 'mock' as const, password: ctx.config.demoPassword !== undefined },
       // 회의 초대에 쓸 수 있는 바깥 길(ADR-17)
       inviteChannels: { calendar: ctx.adapters.calendar.capabilities.label, slack: ctx.adapters.messenger.capabilities.label },
     };

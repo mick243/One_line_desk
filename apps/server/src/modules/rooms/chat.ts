@@ -20,7 +20,7 @@ import type { AutoOutcome } from '../../core/plans';
 import { linkCard } from '../../core/router';
 import { parseSlots, parseTime, repeatedSlots } from '../../core/slots';
 import type { DeskUser } from '../../core/user';
-import { chatHelpCard, equipmentOverviewCard, loanCard, myReservationCard, overviewCard, roomEquipmentCard, whenText, withSubject } from './cards';
+import { chatHelpCard, dayText, equipmentOverviewCard, loanCard, myReservationCard, overviewCard, roomEquipmentCard, whenText, withSubject } from './cards';
 import type { RentParams, RoomEquipment } from './equipment';
 import { listRooms, myLoans, myUpcoming, type ReservationRow, type RoomRow } from './repo';
 import { checkQuery, kstIso, MINUTE } from './search';
@@ -423,21 +423,29 @@ export class RoomChat {
     return { reply: cancel ? `${counts}. 취소·반납은 카드의 버튼으로 한 번 더 확인하고 해요` : counts, cards, changed: false, code: cancel ? 'cancel' : 'my' };
   }
 
-  /** 회의실 현황. 말한 회의실이나 층("5층")만 보여 주고, 아니면 내 층 회의실부터예요(10/28 사용성 점검). */
+  /**
+   * 회의실 현황. 말한 회의실이나 층("5층")만 보여 주고, 아니면 내 층 회의실부터예요(10/28 사용성 점검).
+   * 빈 회의실을 물으면 오늘은 지금 빈 곳, 다른 날은 그날 예약 없는 곳이에요(10/30 QA·디자인 회의). 날짜는 "10월 31일(토)"로 써요.
+   */
   private async overview(user: DeskUser, text: string, room: RoomRow | null, aiSummarized: boolean, now: number): Promise<Omit<ChatResult, 'aiParsed'>> {
     const today = kstDate(now);
     const slots = parseSlots(text, now);
     const date = slots.date ?? today;
     const list = await this.desk.directory(date);
     if (list.linkOnly) return { reply: '회의실은 그룹웨어에서 봐요', cards: [linkCard('rooms', list.link ?? '')], changed: false, code: 'link' };
-    const mineFirst = [...list.rooms].sort((a, b) => Number(b.floor === user.floor) - Number(a.floor === user.floor));
-    const rooms = room ? list.rooms.filter((r) => r.id === room.id) : slots.floor ? list.rooms.filter((r) => r.floor === slots.floor) : mineFirst;
-    const shown = { ...list, rooms };
-    const onlyFree = !room && date === today && /빈\s*(방|회의실)|비어|비었/.test(text);
-    const where = !room && slots.floor ? `${slots.floor} ` : '';
+    const floor = !room ? slots.floor : undefined;
+    const rooms = room ? list.rooms.filter((r) => r.id === room.id) : floor ? list.rooms.filter((r) => r.floor === floor) : list.rooms;
+    const onlyFree = !room && /빈\s*(방|회의실)|비어|비었/.test(text);
+    const where = floor ? `${floor} ` : '';
+    const day = dayText(date, today);
     return {
-      reply: onlyFree ? `지금 비어 있는 ${where}회의실이에요` : `${date} ${where}회의실 현황이에요`,
-      cards: [overviewCard(shown, { onlyFree, checkedAt: now, aiSummarized })],
+      reply: onlyFree ? (date === today ? `지금 비어 있는 ${where}회의실이에요` : `${day} 예약 없는 ${where}회의실이에요`) : `${day} ${where}회의실 현황이에요`,
+      cards: [
+        overviewCard(
+          { ...list, rooms },
+          { today, myFloor: user.floor, onlyFree, floor, roomId: room?.id, checkedAt: now, aiSummarized, write: this.writeOn() },
+        ),
+      ],
       changed: false,
       code: 'overview',
     };

@@ -2,7 +2,7 @@ import type { OrderCycleChange, OrderPlanStatus, OrderReasonCode } from '@one-li
 import type { Queryable } from '../../../core/db';
 import type { FloorBasis, PlannedLine } from './plan';
 
-// 주문안 SQL(450_pantry_order.sql). 판 표(pantry_cards·pantry_cycles·pantry_floor_settings)는 확정 때만 바꿔요.
+// 주문안 SQL(460_pantry_order.sql). 판 표(pantry_cards·pantry_cycles·pantry_floor_settings)는 확정 때만 바꿔요.
 
 export interface PlanRow {
   id: string;

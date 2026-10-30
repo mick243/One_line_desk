@@ -46,6 +46,9 @@ export function Login({
   reauth?: boolean;
 }) {
   const [users, setUsers] = useState<MockUser[]>([]);
+  // 공개 주소에 올린 시연은 비밀번호를 받아요(10/30). 입력 값은 이 화면 상태에만 두고 저장하지 않아요.
+  const needsPassword = login.kind === 'mock' && login.password === true;
+  const [password, setPassword] = useState('');
   const [error, setError] = useState(() => {
     const reason = new URLSearchParams(window.location.search).get('login');
     // 표에 있는 이유만 받아요. "__proto__"·"constructor" 같은 값이 객체 원형을 꺼내 화면이 멈추지 않게 해요(QA D-A04).
@@ -65,8 +68,13 @@ export function Login({
 
   async function choose(idpSubject: string) {
     setError('');
-    if (await api.login(idpSubject)) onLoggedIn();
-    else setError('로그인하지 못했어요. 한 번 더 골라 주세요.');
+    if (needsPassword && !password) {
+      setError('시연 비밀번호를 먼저 넣어 주세요.');
+      return;
+    }
+    const result = await api.login(idpSubject, needsPassword ? password : undefined);
+    if (result.ok) onLoggedIn();
+    else setError(result.message ?? '로그인하지 못했어요. 한 번 더 골라 주세요.');
   }
 
   return (
@@ -105,6 +113,20 @@ export function Login({
           <p className='demo-warning'>
             여러 사람이 같은 가상 직원으로 들어와요. 보낸 문의·올린 품목·예약은 다른 사람도 볼 수 있어요. 진짜 이름·고민·연락처는 쓰지 마세요
           </p>
+          {needsPassword && (
+            <label className='demo-password'>
+              <span>시연 비밀번호</span>
+              <input
+                type='password'
+                autoComplete='current-password'
+                maxLength={200}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder='안내받은 비밀번호'
+              />
+              <small className='hint'>시연을 안내받은 사람만 들어와요. 비밀번호는 안내한 사람에게 물어 주세요.</small>
+            </label>
+          )}
           <ul className='choices'>
             {users.map((u) => (
               <li key={u.idpSubject}>

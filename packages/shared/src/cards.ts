@@ -1,3 +1,4 @@
+import type { RoomOverview } from './api/rooms';
 import type { Kind, ModuleKind } from './kinds';
 
 // 카드 머리 라벨은 넷이고, 글자로 보여 줘요. 색만으로 가르지 않아요(R7).
@@ -35,6 +36,25 @@ export type CardAction =
   | { type: 'navigate'; text: string; to: AppDestination }
   /** 담당 팀에 문의 보내기 양식을 열어요(ADR-16). 양식은 페이지가 띄우고, 보내기는 확인 시트를 거쳐요. */
   | { type: 'inquire'; text: string; rowId: string | null; team: string; task: string }
+  /**
+   * 휴가 신청 양식을 열어요(ADR-24). days는 질문에서 읽은 날(규칙·AI)로 미리 채우고, 사람이 고쳐요.
+   * remaining은 본인 남은 연차(본인 화면에만 와요). 보내기는 확인 시트를 거쳐요.
+   */
+  | {
+      type: 'leave-request';
+      text: string;
+      rowId: string;
+      team: string;
+      task: string;
+      days: { date: string; kind: 'full' | 'half' }[];
+      remaining: number;
+      /** 이번 연차 기간 마지막 날. 이 뒤의 날은 다음 기간 연차에서 빠져요. */
+      periodEnd: string;
+      /** 다음 연차 기간 첫날과 그 기간 남은 연차(본인 것) */
+      next: { periodStart: string; remaining: number };
+      /** 날짜 없이 양만 말했을 때("이틀 쓰고 싶어") 고를 일수 안내 */
+      planned?: number;
+    }
   /** 회의 참석자 고르기 양식을 열어요(ADR-17). 보내기는 확인 시트를 거쳐요. */
   | { type: 'invite'; text: string; reservationId: string; roomName: string; when: string };
 
@@ -66,6 +86,8 @@ export interface Card {
   /** 4 행동: 주 버튼 하나 + 보조 버튼 */
   actions: { primary?: CardAction; secondary: CardAction[] };
   wrong?: WrongInfo;
+  /** 회의실 현황 카드(variant 'rooms-overview')의 회의실 한 줄 목록. fields에도 같은 내용이 글로 있어요(따로 그리지 못하는 화면용). */
+  overview?: RoomOverview;
   /** 5 꼬리: 무엇이 바뀌고 무엇이 남는지 한 줄 */
   tail: string;
 }

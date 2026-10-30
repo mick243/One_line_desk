@@ -23,7 +23,7 @@ import type { DeskUser } from '../../core/user';
 import { type ChartRow, parseChart, toCsv } from './chart-csv';
 import { askHereCard, chooseRowCard, naviCard } from './cards';
 import { demoChartCsv } from './fixtures';
-import { myLeaveCard } from './leave';
+import { findLeaveRequestRow, myLeaveCard } from './leave';
 import * as repo from './repo';
 import type { StoredRow } from './repo';
 import { bigramSet, coverage, GENERIC_WORDS, keywords } from './text';
@@ -217,9 +217,11 @@ export function createNaviService(ctx: AppContext) {
 
     async ask(input: AskInput): Promise<AskOutcome> {
       // 휴가 질문이면 담당 카드 뒤에 본인 남은 연차 카드를 붙여요(ADR-18). 숫자는 서버가 계산해요.
-      const leave = await myLeaveCard(ctx, input.user, input.text);
+      // 분장표에 휴가 신청 행이 있으면 카드에 [휴가 신청하기]가 붙어 그 행의 주인 부서로 휴가 요청을 보내요(ADR-24).
+      const rows = await repo.allRows(ctx.db);
+      const leave = await myLeaveCard(ctx, input.user, input.text, findLeaveRequestRow(rows));
       const withLeave = (card: Card): Card[] => (leave ? [card, leave] : [card]);
-      const candidates = rankRows(input.text, await repo.allRows(ctx.db));
+      const candidates = rankRows(input.text, rows);
       if (candidates.length === 0) return { cards: withLeave(askHereCard()), found: false };
       const pick = await pickRow(ctx.gateway, input.text, candidates);
       const chosen = pick.index === null ? undefined : candidates[pick.index];

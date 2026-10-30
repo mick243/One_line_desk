@@ -1,6 +1,7 @@
 // 배포 연기 시험(10/29 배포 준비 회의 A7의 바닥 부분). 이미지를 띄운 뒤나 배포 직후에 읽기만으로 확인해요.
 // 로그인·쓰기는 하지 않고, 쿠키·토큰 값은 찍지 않아요. 상태와 머리 이름만 봐요.
 //   node scripts/smoke.mjs http://localhost:3190
+// 웹 화면을 Vercel이 주는 시연 서버(DESK_WEB_DIST=none)는 SMOKE_API_ONLY=1로 화면 검사를 건너뛰어요. 웹 쪽은 scripts/smoke-vercel.mjs예요.
 // 기대하는 CSP는 서버와 같은 파일에서 읽어요(Node 22.18·24부터 .ts를 바로 읽어요).
 import { HTML_CSP, NON_HTML_CSP } from '../packages/shared/src/web-headers.ts';
 
@@ -34,33 +35,42 @@ check('/health/ready 에 AI 공급자 이름이 없어요', !('ai' in ready));
 // 배포 잡이 기대하는 판을 넘기면(SMOKE_BUILD) 떠 있는 판이 맞는지도 봐요.
 if (process.env.SMOKE_BUILD) check(`떠 있는 판이 ${process.env.SMOKE_BUILD}이에요`, ready.build === process.env.SMOKE_BUILD);
 
-const home = await get('/');
-const html = await home.text();
-check('/ 는 HTML 200', home.status === 200 && isHtml(home));
-check('/ 는 저장하지 않아요(no-store)', home.headers.get('cache-control') === 'no-store');
-check('/ CSP가 운영 값과 같아요', home.headers.get('content-security-policy') === HTML_CSP);
-check('/ 틀(iframe)에 넣지 못해요', home.headers.get('x-frame-options') === 'DENY');
-check('/ 형식 추측·주소 넘김을 막아요', home.headers.get('x-content-type-options') === 'nosniff' && home.headers.get('referrer-policy') === 'no-referrer');
-check('응답에 무작위 요청 번호(x-request-id)가 있어요', /^[0-9a-f-]{36}$/.test(home.headers.get('x-request-id') ?? ''));
-check('응답에 떠 있는 판(x-desk-build)이 있어요', Boolean(home.headers.get('x-desk-build')));
-
-const consent = await get('/oauth/consent');
-check('/oauth/consent 는 화면(HTML)이에요', consent.status === 200 && isHtml(consent));
-
-const script = html.match(/src="(\/assets\/[^"]+\.js)"/)?.[1];
-check('index.html이 /assets의 JS를 불러요', Boolean(script));
-if (script) {
-  const js = await get(script, { 'accept-encoding': 'br, gzip' });
-  check('JS는 1년 동안 그대로 둬요(immutable)', js.status === 200 && (js.headers.get('cache-control') ?? '').includes('immutable'));
-  check('JS는 미리 압축한 br로 와요', js.headers.get('content-encoding') === 'br');
+const apiOnly = process.env.SMOKE_API_ONLY === '1';
+if (apiOnly) {
+  const root = await get('/');
+  check('화면을 주지 않는 서버는 / 가 404이고 HTML이 아니에요', root.status === 404 && !isHtml(root));
+  check('응답에 떠 있는 판(x-desk-build)이 있어요', Boolean(root.headers.get('x-desk-build')));
 }
 
-const missing = await get('/assets/smoke-missing.js');
-check('없는 /assets 파일은 404이고 HTML이 아니에요', missing.status === 404 && !isHtml(missing));
-// 쿼리에 넣은 표시가 응답에 돌아오지 않아야 해요(B5). 서버 로그에도 없는지는 CI가 컨테이너 로그로 따로 봐요.
-const page = await get('/smoke-no-such-page?q=SMOKE_CANARY');
-check('화면 주소가 아니면 404이고 HTML이 아니에요', page.status === 404 && !isHtml(page));
-check('404 응답에 쿼리가 돌아오지 않아요', !(await page.text()).includes('SMOKE_CANARY'));
+if (!apiOnly) {
+  const home = await get('/');
+  const html = await home.text();
+  check('/ 는 HTML 200', home.status === 200 && isHtml(home));
+  check('/ 는 저장하지 않아요(no-store)', home.headers.get('cache-control') === 'no-store');
+  check('/ CSP가 운영 값과 같아요', home.headers.get('content-security-policy') === HTML_CSP);
+  check('/ 틀(iframe)에 넣지 못해요', home.headers.get('x-frame-options') === 'DENY');
+  check('/ 형식 추측·주소 넘김을 막아요', home.headers.get('x-content-type-options') === 'nosniff' && home.headers.get('referrer-policy') === 'no-referrer');
+  check('응답에 무작위 요청 번호(x-request-id)가 있어요', /^[0-9a-f-]{36}$/.test(home.headers.get('x-request-id') ?? ''));
+  check('응답에 떠 있는 판(x-desk-build)이 있어요', Boolean(home.headers.get('x-desk-build')));
+
+  const consent = await get('/oauth/consent');
+  check('/oauth/consent 는 화면(HTML)이에요', consent.status === 200 && isHtml(consent));
+
+  const script = html.match(/src="(\/assets\/[^"]+\.js)"/)?.[1];
+  check('index.html이 /assets의 JS를 불러요', Boolean(script));
+  if (script) {
+    const js = await get(script, { 'accept-encoding': 'br, gzip' });
+    check('JS는 1년 동안 그대로 둬요(immutable)', js.status === 200 && (js.headers.get('cache-control') ?? '').includes('immutable'));
+    check('JS는 미리 압축한 br로 와요', js.headers.get('content-encoding') === 'br');
+  }
+
+  const missing = await get('/assets/smoke-missing.js');
+  check('없는 /assets 파일은 404이고 HTML이 아니에요', missing.status === 404 && !isHtml(missing));
+  // 쿼리에 넣은 표시가 응답에 돌아오지 않아야 해요(B5). 서버 로그에도 없는지는 CI가 컨테이너 로그로 따로 봐요.
+  const page = await get('/smoke-no-such-page?q=SMOKE_CANARY');
+  check('화면 주소가 아니면 404이고 HTML이 아니에요', page.status === 404 && !isHtml(page));
+  check('404 응답에 쿼리가 돌아오지 않아요', !(await page.text()).includes('SMOKE_CANARY'));
+}
 
 const me = await get('/api/me');
 check('/api/me 는 로그인 전 401이에요', me.status === 401);

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "npm ci --no-audit --no-fund",
+  "buildCommand": "node scripts/vercel-build.mjs",
+  "outputDirectory": "apps/web/dist",
+  "git": { "deploymentEnabled": false },
+  "rewrites": [
+    { "source": "/api/:path((?!ops(?:/|$)).*)", "destination": "https://one-line-desk-demo.fly.dev/api/:path" },
+    { "source": "/oauth/consent", "destination": "/index.html" },
+    { "source": "/r/:token", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/((?!api/).*)",
+      "headers": [
+        {
+          "key": "content-security-policy",
+          "value": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+        },
+        { "key": "x-frame-options", "value": "DENY" },
+        { "key": "referrer-policy", "value": "no-referrer" },
+        { "key": "permissions-policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
+        { "key": "cross-origin-opener-policy", "value": "same-origin" },
+        { "key": "x-content-type-options", "value": "nosniff" },
+        { "key": "x-robots-tag", "value": "noindex, nofollow" },
+        { "key": "cache-control", "value": "public, max-age=86400" }
+      ]
+    },
+    { "source": "/assets/(.*)", "headers": [{ "key": "cache-control", "value": "public, max-age=31536000, immutable" }] },
+    { "source": "/", "headers": [{ "key": "cache-control", "value": "no-store" }] },
+    { "source": "/index.html", "headers": [{ "key": "cache-control", "value": "no-store" }] },
+    { "source": "/oauth/consent", "headers": [{ "key": "cache-control", "value": "no-store" }] },
+    { "source": "/r/:token", "headers": [{ "key": "cache-control", "value": "no-store" }] }
+  ]
+}

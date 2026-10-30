@@ -511,6 +511,11 @@ describe('현황·장비 현황', () => {
     expect(fifth.reply).toBe('지금 비어 있는 5층 회의실이에요');
     expect(fifth.cards[0]!.fields.length).toBeGreaterThan(0);
     expect(fifth.cards[0]!.fields.every((f) => f.name.endsWith('· 5층'))).toBe(true);
+    // [그림으로 모든 회의실 보기]가 펼칠 조건은 현황 카드에만 있어요(10/30 QA·디자인 회의).
+    expect(free.cards[0]!.overview!.show).toEqual({ date: '2026-10-26', onlyFree: true });
+    expect(fifth.cards[0]!.overview!.show).toEqual({ date: '2026-10-26', onlyFree: true, floor: '5층' });
+    expect((await chat(me, '대회의실 현황')).cards[0]!.overview!.show).toEqual({ date: '2026-10-26', onlyFree: false, roomId: 'r-5c' });
+    expect(mine.cards.some((c) => c.overview)).toBe(false);
 
     const room = await chat(me, '5A 장비 뭐 있어?');
     expect(room.cards[0]!.fields).toEqual(
@@ -523,6 +528,75 @@ describe('현황·장비 현황', () => {
     expect(all.cards[0]!.fields).toEqual(expect.arrayContaining([{ name: '회의실 5A · 5층', value: '화상회의(점검 중)' }]));
     expect(all.cards[1]!.fields).toEqual(expect.arrayContaining([{ name: '노트북', value: '3대 남음 · 전체 3대' }]));
     expect((await t.db.query('select 1 from plans')).rows.length).toBe(before);
+  });
+
+  // 10/30 QA·디자인 회의: 대화 현황은 회의실마다 누를 수 있는 한 줄(variant)이에요. 누르면 회의실 자세히, 예약은 거기서 확인 시트를 거쳐요.
+  it('현황 카드는 한 줄 목록이고, 내 층 먼저·층 번호·이름 순이에요. 날짜는 "10월 26일(월)"로 쓰고 근거에 기준 시각이 있어요', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.staff);
+    const out = await chat(me, '회의실 현황 보여 줘');
+    expect(out.reply).toBe('오늘 10월 26일(월) 회의실 현황이에요');
+    const card = out.cards[0]!;
+    expect(card).toMatchObject({ variant: 'rooms-overview', label: '안내', headline: '오늘 10월 26일(월) 회의실 10곳 현황이에요' });
+    expect(card.evidence.text).toMatch(/^현황 \d\d:\d\d 기준$/);
+    const rows = card.overview!.rows;
+    expect(rows).toHaveLength(10);
+    expect(rows.slice(0, 3).every((r) => r.floor === '3층' && r.mine)).toBe(true);
+    const order = rows.map((r) => `${r.floor}|${r.name}`);
+    const rest = rows.filter((r) => !r.mine).map((r) => `${r.floor}|${r.name}`);
+    expect(rest).toEqual([...rest].sort((a, b) => parseInt(a, 10) - parseInt(b, 10) || a.localeCompare(b)));
+    expect(order.length).toBe(new Set(order).size);
+    // 글 칸도 같은 내용이에요(따로 그리지 못하는 화면용).
+    expect(card.fields[0]).toEqual({ name: `${rows[0]!.name} · ${rows[0]!.floor}`, value: expect.stringMatching(/^지금 비어 있어요|^사용 중/) });
+    expect(card.tail).toBe('회의실을 누르면 그날 일정을 보고, 확인 한 번으로 예약해요');
+  });
+
+  it('다른 날은 그날 기준이에요: "내일 현황"은 예약 수, "내일 빈 회의실"은 그날 예약 없는 곳만이에요', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.staff);
+    await chat(me, '내일 3시 6명 회의실 잡아 줘');
+    const day = await chat(me, '내일 회의실 현황');
+    expect(day.reply).toBe('10월 27일(화) 회의실 현황이에요');
+    expect(day.cards[0]!.overview).toMatchObject({ date: '2026-10-27', today: '2026-10-26' });
+    expect(day.cards[0]!.overview!.rows.every((r) => r.status.kind === 'day')).toBe(true);
+    const booked = day.cards[0]!.overview!.rows.filter((r) => r.status.kind === 'day' && r.status.bookings > 0).length;
+    expect(booked).toBeGreaterThan(0);
+
+    const free = await chat(me, '내일 빈 회의실 있어?');
+    expect(free.reply).toBe('10월 27일(화) 예약 없는 회의실이에요');
+    const rows = free.cards[0]!.overview!.rows;
+    expect(rows.length).toBe(10 - booked);
+    expect(rows.every((r) => r.status.kind === 'day' && r.status.bookings === 0)).toBe(true);
+    expect(free.cards[0]!.headline).toBe(`10월 27일(화) 예약 없는 회의실 ${10 - booked}곳이에요`);
+    expect(free.cards[0]!.overview!.show).toEqual({ date: '2026-10-27', onlyFree: true });
+  });
+
+  it('없는 층은 빈 카드 대신 "없어요"라고 해요. 응답에 예약자·회의 제목·가명 ID가 없고, 묻기만으로는 아무것도 쓰지 않아요', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.staff);
+    await chat(me, '오늘 4시 6명 회의실 잡아 줘');
+    const before = { plans: (await t.db.query('select 1 from plans')).rows.length, res: (await appReservations(t)).length };
+    const none = await chat(me, '9층 회의실 현황');
+    expect(none.cards[0]!.headline).toBe('9층 회의실이 없어요');
+    expect(none.cards[0]!.overview!.rows).toEqual([]);
+
+    const other = await t.loginAs(MOCK.dev);
+    const out = await chat(other, '지금 빈 회의실 잡아 줘');
+    const json = JSON.stringify(out);
+    for (const secret of ['pseudonym', 'subject', 'title', MOCK.staff, '하늘']) expect(json).not.toContain(secret);
+    expect((await t.db.query('select 1 from plans')).rows.length).toBe(before.plans);
+    expect(await appReservations(t)).toHaveLength(before.res);
+  });
+
+  it('회의실 쓰기가 꺼지면 현황 꼬리에 "잡아 줘" 대신 그룹웨어 안내가 붙어요(QA D-C03)', async () => {
+    const t = await setup();
+    const op = await t.loginAs(MOCK.operator);
+    expect((await op.call('PUT', '/api/ops/flag', { flag: 'roomsWrite', value: false })).status).toBe(200);
+    const me = await t.loginAs(MOCK.staff);
+    const out = await chat(me, '회의실 현황 보여 줘');
+    expect(out.cards[0]!.tail).toBe('회의실을 누르면 그날 일정을 봐요. 예약은 그룹웨어에서 해요');
+    expect(out.cards[0]!.tail).not.toContain('잡아 줘');
+    expect(out.cards[0]!.actions).toEqual({ secondary: [] });
   });
 
   it('점검 중인 설비는 찾기 조건에 맞지 않고, 총무만 상태를 바꿔요', async () => {

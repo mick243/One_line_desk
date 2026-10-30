@@ -15,7 +15,14 @@ describe('건강 확인: 살아 있음과 받을 준비(배포 준비 회의 A5)
     try {
       const ready = await t.app.inject({ method: 'GET', url: '/health/ready' });
       expect(ready.statusCode).toBe(200);
-      expect(ready.json()).toEqual({ ok: true, db: `${t.db.kind}-connected`, retention: 'done', build: 'dev', rulesVersion: expect.any(Number) });
+      expect(ready.json()).toEqual({
+        ok: true,
+        db: `${t.db.kind}-connected`,
+        retention: 'done',
+        retentionLastOk: null,
+        build: 'dev',
+        rulesVersion: expect.any(Number),
+      });
       expect((await t.app.inject({ method: 'GET', url: '/health' })).json()).toEqual(ready.json());
 
       t.db.query = async () => {
@@ -52,8 +59,9 @@ describe('건강 확인: 살아 있음과 받을 준비(배포 준비 회의 A5)
     }
   });
 
-  it('보관 단계 하나가 실패해도 나머지 단계는 지우고, 실패한 단계 이름을 돌려줘요', async () => {
+  it('보관 단계 하나가 실패해도 나머지 단계는 지우고, 실패한 단계 이름을 돌려줘요. 다 지운 마지막 시각을 ready에 실어요', async () => {
     const t = await createTestApp();
+    const lastOk = async () => (await t.app.inject({ method: 'GET', url: '/health/ready' })).json().retentionLastOk;
     try {
       vi.spyOn(t.ctx.notify, 'purge').mockRejectedValueOnce(new Error('boom'));
       const audit = vi.spyOn(t.ctx.audit, 'purge');
@@ -61,7 +69,16 @@ describe('건강 확인: 살아 있음과 받을 준비(배포 준비 회의 A5)
       expect(await t.runRetention()).toEqual(['notifications']);
       expect(audit).toHaveBeenCalledOnce();
       expect(access).toHaveBeenCalledOnce();
+      // 한 단계라도 실패한 회차는 성공 시각을 바꾸지 않아요(10/29 개선 회의 A6).
+      expect(await lastOk()).toBeNull();
       expect(await t.runRetention()).toEqual([]);
+      expect(await lastOk()).toBe(new Date(t.now()).toISOString());
+      // 그 뒤 실패하면 앞선 성공 시각이 그대로 남아요.
+      const okAt = await lastOk();
+      t.advance(60 * 60 * 1000);
+      vi.spyOn(t.ctx.audit, 'purge').mockRejectedValueOnce(new Error('boom'));
+      expect(await t.runRetention()).toEqual(['audit']);
+      expect(await lastOk()).toBe(okAt);
     } finally {
       await t.close();
     }

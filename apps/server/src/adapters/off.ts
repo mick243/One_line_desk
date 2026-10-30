@@ -26,4 +26,7 @@ export class OffLeave implements LeaveAdapter {
   async leaveOf(): Promise<LeaveRecord | null> {
     return null;
   }
+  async recordUses(): Promise<'not-connected'> {
+    return 'not-connected';
+  }
 }

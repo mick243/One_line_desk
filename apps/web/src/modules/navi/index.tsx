@@ -3,4 +3,5 @@
 export { ChartScreen } from './ChartScreen';
 export { InquiryInbox, MyInquiries } from './Inquiries';
 export { InquirySheet } from './InquirySheet';
+export { LeaveRequestSheet } from './LeaveRequestSheet';
 export { WrongSheet } from './WrongSheet';

@@ -95,6 +95,8 @@ export interface RoomCancelResponse {
 
 // 조건 칩 카드(S2 "조건 칩 줄"). 서버가 칸에 값을 넣고, 웹이 칩으로 그려 고치게 해요.
 export const ROOM_CONDITIONS_VARIANT = 'rooms-conditions';
+/** 대화의 회의실 현황 카드: 회의실마다 누를 수 있는 한 줄(10/30 QA·디자인 회의) */
+export const ROOM_OVERVIEW_VARIANT = 'rooms-overview';
 export const ROOM_CONDITION_MISSING = '알려 주세요';
 const ANY_EQUIPMENT = '없어도 돼요';
 const ANY_FLOOR = '상관없어요';
@@ -163,6 +165,51 @@ export interface RoomListItem extends RoomInfo {
   status: RoomStatus;
   /** 점검 중인 설비(ADR-19). equipment에는 쓸 수 있는 설비만 남아요. */
   repairs: Equipment[];
+}
+
+/** 회의실 상태 한 줄. 대화 현황 카드와 그림 카드가 같은 글을 써요(10/30 QA·디자인 회의). 시각은 서버가 준 한국 시각(HH:MM)이에요. */
+export function roomStatusText(status: RoomStatus): string {
+  if (status.kind === 'busy-now') return `사용 중 · ${status.freeAt}부터 비어요`;
+  if (status.kind === 'free-now') return status.nextBusyAt ? `지금 비어 있어요 · ${status.nextBusyAt}부터 예약` : '지금 비어 있어요 · 오늘 남은 예약 없음';
+  return status.bookings ? `예약 ${status.bookings}건` : '예약 없음';
+}
+
+const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+
+/** "10월 27일(화)". 날짜(YYYY-MM-DD)만 보고 만들어요. */
+export function roomDateLabel(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  return `${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일(${WEEKDAY_LABELS[d.getUTCDay()]})`;
+}
+
+/** 대화 현황 카드의 회의실 한 줄(10/30 QA·디자인 회의). 누르면 회의실 자세히가 열려요. 누가 잡았는지는 없어요(ADR-06). */
+export interface RoomOverviewRow {
+  id: string;
+  name: string;
+  floor: string;
+  capacity: number;
+  status: RoomStatus;
+  /** 점검 중인 설비가 있는지 */
+  repairs: boolean;
+  /** 묻는 사람의 층인지 */
+  mine: boolean;
+}
+
+/** [그림으로 모든 회의실 보기]가 펼칠 조건. 물은 날짜·조건 그대로예요. */
+export interface RoomShowQuery {
+  date: string;
+  /** 오늘이면 지금 빈 회의실, 다른 날이면 그날 예약 없는 회의실 */
+  onlyFree: boolean;
+  floor?: string;
+  roomId?: string;
+}
+
+export interface RoomOverview {
+  /** 물은 날짜와 서버의 오늘(YYYY-MM-DD) */
+  date: string;
+  today: string;
+  rows: RoomOverviewRow[];
+  show: RoomShowQuery;
 }
 
 /** GET /api/rooms/list?date=YYYY-MM-DD. 회의실이 "링크만"이면 회의실 대신 그룹웨어 링크만 와요(R4). */

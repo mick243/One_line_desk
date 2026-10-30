@@ -35,7 +35,8 @@ db/migrations/              NNN_<영역>_<무엇>.sql
 ```
 
 - **모듈 경계**: `modules/<a>/`는 `modules/<b>/`를 import하지 않아요. 다른 모듈의 기능이 필요하면 `core/services.ts`의 인터페이스를 거쳐요(ADR-01). 규칙 시험이 막아요. 모듈이 가져올 수 있는 것은 `core/*`, `context`, `adapters/types`, `@one-line-desk/shared`, 자기 폴더예요.
-- 마이그레이션 번호는 영역마다 나눠 써요: `0xx` 공통 · `1xx` navi · `2xx` notices · `3xx` rooms · `4xx` pantry · `5xx` mcp. 이미 적용된 파일은 고치지 않고 새 파일을 더해요.
+- 마이그레이션 번호는 영역마다 나눠 써요: `0xx` 공통 · `1xx` navi · `2xx` notices · `3xx` rooms · `4xx` pantry · `5xx` mcp. 이미 적용된 파일은 고치지 않고 새 파일을 더해요. 러너가 적용한 파일의 내용 확인값(sha256)을 남겨서, 고치면 적용·시작이 멈춰요.
+- 마이그레이션 합치기는 파일럿 DB를 만들기 전까지만 해요. 10/30에 17개를 영역별 7개(`010_core`·`110_navi`·`210_notices`·`310_rooms`·`410_pantry_board`·`460_pantry_order`·`510_mcp`)로 한 번 합쳤어요. 끝난 스키마가 옛 17개와 같은지(칸 순서·제약·색인·트리거·함수) 비교했어요. 그 뒤로는 합치지 않고 넓히기 → 좁히기 순서로 새 파일만 더해요.
 
 ## 3. 이름
 

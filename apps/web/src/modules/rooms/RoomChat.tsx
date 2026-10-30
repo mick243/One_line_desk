@@ -1,12 +1,23 @@
-import { type Card, checkInput, type Kind, type MyLoansResponse, type RoomChatPreview, type RoomChatResponse, roomChatPreview } from '@one-line-desk/shared';
-import { useEffect, useRef, useState } from 'react';
+import {
+  type Card,
+  checkInput,
+  type Kind,
+  type MyLoansResponse,
+  type RoomChatPreview,
+  type RoomChatResponse,
+  roomChatPreview,
+  type RoomShowQuery,
+} from '@one-line-desk/shared';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
 import { replaceCard, useActions } from '../../components/ActionHost';
 import { CardView } from '../../components/CardView';
 import { CheckedInput } from '../../components/CheckedInput';
 import { Icon } from '../../components/Icon';
 import { ScrollChips } from '../../components/ScrollChips';
-import { newRequestId } from '../../net';
+import { RoomChatContext } from './RoomOverviewCard';
+import { useSlow } from '../../components/useSlow';
+import { newRequestId, SLOW_MESSAGE } from '../../net';
 
 // 회의실 입력 칸(10/28 통합 개편, ADR-19). 빈 회의실 찾기와 회의실 채팅을 한 칸으로 합쳤어요.
 // - 묻는 말("내일 3시 6명", "빈 회의실 있어?")은 찾기만 하고, 시키는 말("잡아 줘·빌려 줘")은 조건이 다 있으면 바로 예약·대여해요.
@@ -29,6 +40,9 @@ const KEEP = 20;
 interface Turn {
   id: number;
   text: string;
+  /** [다시 보내기]도 같은 번호로 보내요. 앞 요청이 늦게라도 실행됐으면 서버가 그 결과를 돌려줘요(10/29 개선 회의 A3). */
+  requestId: string;
+  noAuto?: boolean;
   reply?: string;
   cards: Card[];
   aiParsed?: boolean;
@@ -66,6 +80,8 @@ export function RoomChat({
   recent = [],
   onSent,
   onRemoveRecent,
+  onShowRooms,
+  canEditFacilities = false,
 }: {
   auto: boolean;
   write: boolean;
@@ -75,38 +91,62 @@ export function RoomChat({
   recent?: string[];
   onSent?: (text: string) => void;
   onRemoveRecent?: (text: string) => void;
+  /**
+   * 현황 카드의 [그림으로 모든 회의실 보기]가 아래 회의실 카드를 그 조건으로 펼쳐요(10/30 QA·디자인 회의).
+   * 새 문장을 보내거나 대화를 지우거나 페이지를 떠나면 null로 접어요.
+   */
+  onShowRooms?: (show: RoomShowQuery | null) => void;
+  /** 현황 줄을 눌러 연 회의실 자세히에서 설비 상태를 바꿀 수 있는지(총무) */
+  canEditFacilities?: boolean;
 }) {
   const actions = useActions();
   const mode: Mode = !write ? 'read-only' : auto ? 'auto' : 'confirm';
   const [text, setText] = useState(autoRun ? '' : initialText);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [waiting, setWaiting] = useState(false);
+  const slow = useSlow(waiting);
   const next = useRef(0);
   const logRef = useRef<HTMLDivElement>(null);
   const latestRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const g = guide(mode, text);
 
   async function send(masked: string, opts: { noAuto?: boolean } = {}) {
     const id = ++next.current;
-    setTurns((list) => [...list, { id, text: masked, cards: [] }].slice(-KEEP));
+    // 보낼 때마다 새 요청 ID예요. 같은 요청이 두 번 가도 서버가 한 번만 실행해요.
+    const turn: Turn = { id, text: masked, requestId: newRequestId(), noAuto: opts.noAuto, cards: [] };
+    setTurns((list) => [...list, turn].slice(-KEEP));
     onSent?.(masked);
+    // 새로 물으면 앞서 펼친 그림 카드를 접어요. 지난 조건의 목록이 새 답과 섞여 보이지 않게 해요.
+    onShowRooms?.(null);
     setText('');
+    await ask(turn);
+  }
+
+  async function ask(turn: Turn) {
     setWaiting(true);
-    const done = (patch: Partial<Turn>) => setTurns((list) => list.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    const done = (patch: Partial<Turn>) => setTurns((list) => list.map((t) => (t.id === turn.id ? { ...t, ...patch } : t)));
     try {
-      // 보낼 때마다 새 요청 ID예요. 같은 요청이 두 번 가도 서버가 한 번만 실행해요.
       const res = await apiRequest<RoomChatResponse>('POST', '/api/rooms/chat', {
-        text: masked,
-        requestId: newRequestId(),
-        ...(opts.noAuto ? { noAuto: true } : {}),
+        text: turn.text,
+        requestId: turn.requestId,
+        ...(turn.noAuto ? { noAuto: true } : {}),
       });
-      done({ reply: res.reply, cards: res.cards, aiParsed: res.aiParsed });
+      done({ reply: res.reply, cards: res.cards, aiParsed: res.aiParsed, failed: false });
       if (res.changed) actions.refresh();
     } catch (e) {
+      // 보내지 못한 문장은 대화 줄에 남고 [다시 보내기]가 같은 요청 번호로 보내요. 입력 칸에 돌려놓지 않아요:
+      // 칸에서 다시 보내면 새 번호라서, 늦게 실행된 앞 요청과 겹쳐 두 번 예약될 수 있어요.
       done({ reply: e instanceof ApiFailure ? e.message : '지금 답하지 못했어요. 잠시 뒤에 다시 보내 주세요', failed: true });
     } finally {
       setWaiting(false);
     }
+  }
+
+  // [다시 보내기]: 같은 대화 줄에서 같은 요청 번호로 한 번 더 보내요.
+  function resend(turn: Turn) {
+    setTurns((list) => list.map((t) => (t.id === turn.id ? { ...t, reply: undefined, failed: false, cards: [] } : t)));
+    void ask(turn);
   }
 
   // 옮겨 온 문장은 한 번만, 자동 실행 없이 보내요. 걸리는 글자가 있으면 보내지 않고 칸에만 둬요(ADR-11).
@@ -131,6 +171,40 @@ export function RoomChat({
     if (log && el) log.scrollTop = el.offsetTop;
   }, [latest?.id, answered]);
 
+  // 대화가 시작되면(10/30 사용자 요청) 페이지 머리를 숨기고, 입력 칸은 아래 탭 바로 위에 떠서 늘 보여요(.room-composer.floating).
+  // 대화창은 위 막대부터 떠 있는 입력 칸 위까지 길게 차지해서 입력 칸이 대화를 가리지 않아요. 아래로 내리면 입력 칸은 회의실 목록 위에 떠요.
+  // 처음 한 번 대화창을 맨 위로 넘기고, 옮겨 간 입력 칸에 초점을 돌려줘요. 답을 읽던 자리에서 바로 이어 써요.
+  const chatting = latest !== undefined;
+  const composerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!chatting || !panel) return;
+    panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    composerRef.current?.querySelector('input')?.focus({ preventScroll: true });
+  }, [chatting]);
+  // 떠 있는 입력 칸 높이(가림·잠김 안내가 붙으면 늘어요)를 재서 대화창 높이와 페이지 아래 여백에 써요(--composer-h).
+  useEffect(() => {
+    const bar = composerRef.current;
+    if (!chatting || !bar) return;
+    const root = document.documentElement.style;
+    const observer = new ResizeObserver(() => root.setProperty('--composer-h', `${Math.ceil(bar.getBoundingClientRect().height)}px`));
+    observer.observe(bar);
+    return () => {
+      observer.disconnect();
+      root.removeProperty('--composer-h');
+    };
+  }, [chatting]);
+  // 페이지를 떠나면 펼친 회의실 카드를 접어요. 다시 오면 대화가 비어 있어서요.
+  useEffect(() => () => onShowRooms?.(null), []);
+
+  function clearChat() {
+    setTurns([]);
+    onShowRooms?.(null);
+  }
+
+  // 현황 카드의 [그림으로 모든 회의실 보기]·회의실 자세히가 쓰는 값(RoomOverviewCard)
+  const chatContext = useMemo(() => ({ showRooms: (show: RoomShowQuery) => onShowRooms?.(show), canEditFacilities }), [onShowRooms, canEditFacilities]);
+
   // 지운 칩 옆 칩의 [×]로 초점을 옮겨요. 키보드로 이어서 지울 수 있게 해요.
   function removeRecent(button: HTMLButtonElement, ex: string) {
     const chip = button.parentElement;
@@ -149,6 +223,13 @@ export function RoomChat({
             {t.aiParsed && <span className='chat-ai'>AI 해석</span>}
           </p>
         )}
+        {t.failed && !waiting && (
+          <button type='button' className='secondary small' onClick={() => resend(t)}>
+            다시 보내기
+          </button>
+        )}
+        {t.reply === undefined && <div className='skeleton' aria-label='답을 만드는 중' />}
+        {t.reply === undefined && slow && <p className='hint'>{SLOW_MESSAGE}</p>}
         {t.cards.map((card) => (
           <CardView
             key={card.id}
@@ -168,68 +249,86 @@ export function RoomChat({
     );
   }
 
-  return (
-    <section className='room-ask' aria-label='회의실 입력'>
-      <CheckedInput
-        scope='나만 보여요'
-        label='회의실, 무엇을 할까요?'
-        placeholder={mode === 'read-only' ? '예) 지금 빈 회의실 있어?' : mode === 'auto' ? '예) 내일 3시 6명 · 내일 3시 6명 잡아 줘' : '예) 내일 3시 6명'}
-        submitLabel={g.submit}
-        value={text}
-        onValueChange={setText}
-        onSubmit={(masked) => send(masked)}
-      />
-      <p className={`mode-line ${g.tone}`} role='status'>
-        {g.line}
-      </p>
-      {/* 최근 쓴 문장이 있으면 그걸, 아직 없으면(처음 쓸 때) 예시 문장을 보여 줘요. 누르면 칸에 채우기만 하고 보내지 않아요. */}
-      {recent.length > 0 ? (
-        <>
-          <p className='example-label'>최근 쓴 문장 · 이 창에서만 기억해요</p>
-          <ScrollChips label='최근 쓴 문장'>
-            {recent.slice(0, CHIP_MAX).map((ex) => (
-              <span key={ex} className='chip removable'>
-                <button type='button' className='chip-fill' onClick={() => setText(ex)}>
-                  {ex}
-                </button>
-                {onRemoveRecent && (
-                  <button type='button' className='chip-remove' aria-label={`"${ex}" 지우기`} onClick={(e) => removeRecent(e.currentTarget, ex)}>
-                    <Icon name='close' size={16} />
-                  </button>
-                )}
-              </span>
-            ))}
-          </ScrollChips>
-        </>
-      ) : (
-        <>
-          <p className='example-label'>이렇게 써 보세요</p>
-          <ScrollChips label='예시 문장'>
-            {(mode === 'auto' ? AUTO_EXAMPLES : mode === 'confirm' ? CONFIRM_EXAMPLES : READ_ONLY_EXAMPLES).slice(0, CHIP_MAX).map((ex) => (
-              <button key={ex} type='button' className='chip' onClick={() => setText(ex)}>
+  const input = (
+    <CheckedInput
+      scope='나만 보여요'
+      label='회의실, 무엇을 할까요?'
+      placeholder={mode === 'read-only' ? '예) 지금 빈 회의실 있어?' : mode === 'auto' ? '예) 내일 3시 6명 · 내일 3시 6명 잡아 줘' : '예) 내일 3시 6명'}
+      submitLabel={g.submit}
+      value={text}
+      onValueChange={setText}
+      onSubmit={(masked) => send(masked)}
+    />
+  );
+  const modeLine = (
+    <p className={`mode-line ${g.tone}`} role='status'>
+      {g.line}
+    </p>
+  );
+  // 최근 쓴 문장이 있으면 그걸, 아직 없으면(처음 쓸 때) 예시 문장을 보여 줘요. 누르면 칸에 채우기만 하고 보내지 않아요.
+  const chips =
+    recent.length > 0 ? (
+      <>
+        <p className='example-label'>최근 쓴 문장 · 이 창에서만 기억해요</p>
+        <ScrollChips label='최근 쓴 문장'>
+          {recent.slice(0, CHIP_MAX).map((ex) => (
+            <span key={ex} className='chip removable'>
+              <button type='button' className='chip-fill' onClick={() => setText(ex)}>
                 {ex}
               </button>
-            ))}
-          </ScrollChips>
-        </>
-      )}
-
-      {/* 대화가 있을 때만 위아래 구분선과 대화창이 생겨요. 대화를 지우면 구분선도 같이 사라져요. */}
-      {latest && (
-        <section className='room-results' aria-label='대화'>
-          <div className='room-chat-head'>
-            <p className='example-label'>대화</p>
-            <button type='button' className='link' onClick={() => setTurns([])}>
-              대화 지우기
+              {onRemoveRecent && (
+                <button type='button' className='chip-remove' aria-label={`"${ex}" 지우기`} onClick={(e) => removeRecent(e.currentTarget, ex)}>
+                  <Icon name='close' size={16} />
+                </button>
+              )}
+            </span>
+          ))}
+        </ScrollChips>
+      </>
+    ) : (
+      <>
+        <p className='example-label'>이렇게 써 보세요</p>
+        <ScrollChips label='예시 문장'>
+          {(mode === 'auto' ? AUTO_EXAMPLES : mode === 'confirm' ? CONFIRM_EXAMPLES : READ_ONLY_EXAMPLES).slice(0, CHIP_MAX).map((ex) => (
+            <button key={ex} type='button' className='chip' onClick={() => setText(ex)}>
+              {ex}
             </button>
-          </div>
-          {/* 키보드로도 창 안을 스크롤할 수 있게 초점을 받아요. */}
-          <div ref={logRef} className='room-log' role='log' aria-label='대화 내용' aria-busy={waiting} tabIndex={0}>
-            {turns.map(renderTurn)}
-            {waiting && !answered && <div className='skeleton' aria-label='답을 만드는 중' />}
-          </div>
-        </section>
-      )}
+          ))}
+        </ScrollChips>
+      </>
+    );
+
+  // 대화 전: 입력 칸 → 지금 동작 한 줄 → 문장 칩.
+  if (!chatting) {
+    return (
+      <section className='room-ask' aria-label='회의실 입력'>
+        {input}
+        {modeLine}
+        {chips}
+      </section>
+    );
+  }
+
+  // 대화 중: 대화창(대화만, 길게)과 아래 탭 위에 떠 있는 입력 칸(지금 동작 한 줄 → 입력 칸)이에요. 문장 칩은 대화창을 넓히려고 숨기고,
+  // 대화를 지우면 입력 칸이 맨 위로 돌아오면서 다시 보여요. 대화가 길면 대화 줄만 창 안에서 스크롤돼요.
+  return (
+    <section className='room-ask' aria-label='회의실 입력'>
+      <section ref={panelRef} className='room-results chatting' aria-label='대화'>
+        <div className='room-chat-head'>
+          <p className='example-label'>대화</p>
+          <button type='button' className='link' onClick={clearChat}>
+            대화 지우기
+          </button>
+        </div>
+        {/* 키보드로도 창 안을 스크롤할 수 있게 초점을 받아요. */}
+        <div ref={logRef} className='room-log' role='log' aria-label='대화 내용' aria-busy={waiting} tabIndex={0}>
+          <RoomChatContext.Provider value={chatContext}>{turns.map(renderTurn)}</RoomChatContext.Provider>
+        </div>
+      </section>
+      <div ref={composerRef} className='room-composer floating'>
+        {modeLine}
+        {input}
+      </div>
     </section>
   );
 }

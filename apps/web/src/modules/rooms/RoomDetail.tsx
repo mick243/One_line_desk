@@ -49,11 +49,11 @@ export function RoomDetail({
     void load();
   }, [load, actions.version]);
 
-  // 날짜를 바꾸거나 예약·취소가 끝나면 고른 시간과 확인 카드를 비워요.
+  // 날짜를 바꾸거나 내 예약·취소가 끝나면 고른 시간과 확인 카드를 비워요. 새 알림으로 일정만 다시 불러올 때는 그대로 둬요(10/29 개선 회의 A2).
   useEffect(() => {
     setStart(null);
     setCards(null);
-  }, [date, actions.version]);
+  }, [date, actions.writes]);
 
   const rows = useMemo(() => {
     if (!day) return [];

@@ -1,9 +1,10 @@
-import { INVITE_RESPONSE_LABEL, type MyReservationsResponse, ROOM_CONDITIONS_VARIANT } from '@one-line-desk/shared';
+import { INVITE_RESPONSE_LABEL, type MyReservationsResponse, ROOM_CONDITIONS_VARIANT, ROOM_OVERVIEW_VARIANT } from '@one-line-desk/shared';
 import { type ComponentType, useEffect, useState } from 'react';
 import { apiRequest } from '../../api';
 import { useActions } from '../../components/ActionHost';
 import type { CardViewProps } from '../../components/CardView';
 import { RoomConditionsCard } from './RoomConditionsCard';
+import { RoomOverviewCard } from './RoomOverviewCard';
 
 export { DemoInbox, InvitedMeetings } from './Invited';
 export { InviteSheet } from './InviteSheet';
@@ -106,4 +107,5 @@ export function MyReservations({ compact }: { compact?: boolean }) {
 /** card.variant → 회의실이 따로 그리는 카드 */
 export const roomsCardRenderers: Record<string, ComponentType<CardViewProps>> = {
   [ROOM_CONDITIONS_VARIANT]: RoomConditionsCard,
+  [ROOM_OVERVIEW_VARIANT]: RoomOverviewCard,
 };

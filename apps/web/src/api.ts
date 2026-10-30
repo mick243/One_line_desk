@@ -1,5 +1,5 @@
 import type { AskResponse, Kind, LockKind, ModuleKind, ModuleSwitch, PlanConfirmResponse, PlanCreateResponse, Role } from '@one-line-desk/shared';
-import { isOtherBuild, unavailableMessage } from './net';
+import { fetchWithin, isOtherBuild, TIMEOUT_MESSAGE, unavailableMessage } from './net';
 
 export interface PublicConfig {
   modules: Record<ModuleKind, ModuleSwitch>;
@@ -11,7 +11,8 @@ export interface PublicConfig {
   demoData: string[];
   rulesVersion: number;
   /** 로그인 방식: 모의(가상 직원 고르기) 또는 IdP 리디렉트(임시 IdP·회사 IdP) */
-  login: { kind: 'mock' } | { kind: 'oidc'; label: string };
+  /** password: 시연 비밀번호를 받아야 하는지(10/30, 웹 화면만 Vercel에 올린 시연) */
+  login: { kind: 'mock'; password?: boolean } | { kind: 'oidc'; label: string };
   /** 회의 초대에 쓸 수 있는 바깥 길(ADR-17) */
   inviteChannels: { calendar: string | null; slack: string | null };
 }
@@ -93,23 +94,20 @@ export function onNewVersion(listener: () => void): () => void {
 /** background: 사람이 누른 게 아닌 반복 요청(폴링). 서버가 쉬는 시간을 늘리지 않아요(ADR-20). */
 async function raw<T>(method: string, url: string, body?: unknown, opts: { background?: boolean } = {}): Promise<{ status: number; data: T }> {
   if (sessionEnded && !isAuthPath(url)) return { status: 401, data: { error: 'login-required', message: SESSION_ENDED_MESSAGE } as T };
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method,
-      credentials: 'same-origin',
-      headers: {
-        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
-        ...(method !== 'GET' ? { 'x-csrf-token': csrfToken } : {}),
-        ...(opts.background ? { 'x-desk-background': '1' } : {}),
-        'x-desk-build': WEB_BUILD,
-      },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    // 서버에 닿지 못해도 던지지 않고 실패로 돌려줘요. 화면이 뼈대로 멈추지 않고 문구를 보여 줘요(배포 준비 회의 D2).
-    return { status: 0, data: { error: 'unavailable', message: unavailableMessage(0, false) } as T };
-  }
+  const res = await fetchWithin((u, init) => fetch(u, init), url, {
+    method,
+    credentials: 'same-origin',
+    headers: {
+      ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+      ...(method !== 'GET' ? { 'x-csrf-token': csrfToken } : {}),
+      ...(opts.background ? { 'x-desk-background': '1' } : {}),
+      'x-desk-build': WEB_BUILD,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  // 서버에 닿지 못하거나 15초 안에 답이 없어도 던지지 않고 실패로 돌려줘요. 화면이 멈추지 않고 문구를 보여 줘요(배포 준비 회의 D2, 개선 회의 A3).
+  if (res === 'offline') return { status: 0, data: { error: 'unavailable', message: unavailableMessage(0, false) } as T };
+  if (res === 'timeout') return { status: 0, data: { error: 'timeout', message: TIMEOUT_MESSAGE } as T };
   if (!newVersion && isOtherBuild(res.headers.get('x-desk-build'), WEB_BUILD)) {
     newVersion = true;
     for (const listener of newVersionListeners) listener();
@@ -160,8 +158,10 @@ export const api = {
     const { status, data } = await raw<MockUser[]>('GET', '/api/auth/mock-users');
     return status === 200 ? data : [];
   },
-  async login(idpSubject: string): Promise<boolean> {
-    return (await raw('POST', '/api/auth/login', { idpSubject })).status === 200;
+  /** 모의 로그인. 실패하면 서버 문구(시연 비밀번호 틀림·잠시 막힘 등)를 돌려줘요. */
+  async login(idpSubject: string, password?: string): Promise<{ ok: true } | { ok: false; message?: string }> {
+    const { status, data } = await raw<{ message?: string }>('POST', '/api/auth/login', password === undefined ? { idpSubject } : { idpSubject, password });
+    return status === 200 ? { ok: true } : { ok: false, message: data?.message };
   },
   async logout(all: boolean): Promise<void> {
     await raw('POST', all ? '/api/auth/logout-all' : '/api/auth/logout');
