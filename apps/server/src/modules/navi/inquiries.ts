@@ -28,7 +28,7 @@ import { WEEKDAYS, weekdayOf } from '../../core/slots';
 import type { DeskUser } from '../../core/user';
 import { GENERAL_TASK } from './cards';
 import { GENERAL_DESK } from './fixtures';
-import { computeLeave, HALF_DAY } from './leave';
+import { HALF_DAY, leaveRequestBalance } from './leave';
 import * as repo from './repo';
 
 // 담당 팀에 문의 보내기(10/26, ADR-16).
@@ -162,9 +162,7 @@ export function createInquiryService(ctx: AppContext) {
     if (!i.senderSubject || !i.leaveDays) return null;
     const record = await ctx.adapters.leave.leaveOf(await personOf(i.senderSubject)).catch(() => null);
     if (!record) return null;
-    const b = computeLeave(record, kstDate(ctx.now()));
-    const inPeriod = i.leaveDays.filter((d) => d.date <= b.periodEnd);
-    return { remaining: b.remaining, after: b.remaining - leaveTotal(inPeriod), periodEnd: b.periodEnd };
+    return leaveRequestBalance(record, kstDate(ctx.now()), i.leaveDays);
   };
   const withReplies = async (rows: repo.InquiryRow[], view: 'inbox' | 'mine'): Promise<InquiryItem[]> => {
     const replies = await repo.repliesOf(

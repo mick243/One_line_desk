@@ -174,6 +174,37 @@ describe('휴가 요청(ADR-24)', () => {
   });
 });
 
+describe('연차 기간별 계산(10/30 버그: 다음 기간 날인데 "7.5일 → 7.5일"로만 보였어요)', () => {
+  it('다음 연차 기간 날은 이번 기간 연차에서 빼지 않고, 다음 기간 연차에서 따로 계산해요. 승인하면 다음 기간에서 빠져요', async () => {
+    // 도윤: 2025-12-01 입사라 이번 연차 기간은 2026-11-30까지예요. 2027년 2월은 다음 기간(근속 1년, 15일)이에요.
+    const { doyun, jihu } = await setup();
+    const action = (await leaveCard(doyun, '내 연차 몇 개 남았어?')).actions.secondary.find((a) => a.type === 'leave-request');
+    expect(action).toMatchObject({ periodEnd: '2026-11-30', next: { periodStart: '2026-12-01', remaining: 15 } });
+
+    await sendLeave(doyun, [
+      { date: '2027-02-04', kind: 'full' },
+      { date: '2027-02-08', kind: 'full' },
+    ]);
+    const [first] = await inbox(jihu);
+    const now = first!.leave!.balance!;
+    expect(now).toMatchObject({
+      periodEnd: '2026-11-30',
+      days: 0,
+      after: now.remaining,
+      next: { periodStart: '2026-12-01', remaining: 15, after: 13, days: 2 },
+    });
+
+    expect((await jihu.call('POST', `/api/navi/inquiries/${first!.id}/decision`, { decision: 'approved' })).status).toBe(200);
+    // 이번 기간과 다음 기간에 걸친 새 요청: 이번 기간 하루, 다음 기간 하루. 다음 기간은 승인된 2일이 이미 빠져 있어요.
+    await sendLeave(doyun, [
+      { date: '2026-11-27', kind: 'full' },
+      { date: '2027-03-02', kind: 'half' },
+    ]);
+    const second = (await inbox(jihu)).find((i) => i.state === 'new')!.leave!.balance!;
+    expect(second).toMatchObject({ remaining: now.remaining, after: now.remaining - 1, days: 1, next: { remaining: 13, after: 12.5, days: 0.5 } });
+  });
+});
+
 describe('답장(ADR-24)', () => {
   it('받은 팀이 답장하면 보낸 사람 내 문의에 이름과 함께 보이고, 알림에는 글이 없어요. 같은 requestId는 한 번만 들어가요', async () => {
     const { haneul, jihu } = await setup();

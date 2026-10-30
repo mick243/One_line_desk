@@ -6,6 +6,7 @@ import {
   type InquiryListResponse,
   LEAVE_REJECT_REASON_MAX,
   type LeaveDay,
+  type LeaveRequestBalance,
   maskLine,
 } from '@one-line-desk/shared';
 import { useEffect, useMemo, useState } from 'react';
@@ -97,6 +98,35 @@ function Replies({ item }: { item: InquiryItem }) {
 }
 
 /** 휴가 요청 칸: 쓸 날, (받은 팀·결정 전) 보낸 사람 남은 연차와 승인하면 남는 연차 */
+const leftText = (after: number) => (after >= 0 ? `${fmt(after)} 남아요` : `${fmt(-after)} 모자라요`);
+
+/**
+ * 연차 기간별 줄(10/30). 요청한 날이 다음 연차 기간(입사일 기준)이면 이번 기간 연차는 그대로이고 다음 기간 연차에서 빠져요.
+ * 기간을 말하지 않으면 "7.5일 → 7.5일"처럼 이유 없이 그대로인 것처럼 보여요.
+ */
+function balanceLines(b: LeaveRequestBalance): { text: string; short: boolean }[] {
+  const lines: { text: string; short: boolean }[] = [];
+  const thisEnd = `이번 연차 기간(${dayLabel(b.periodEnd)}까지)`;
+  if (b.days > 0 || !b.next) lines.push({ text: `${thisEnd} 남은 ${fmt(b.remaining)} → 승인하면 ${leftText(b.after)}`, short: b.after < 0 });
+  else lines.push({ text: `${thisEnd} 남은 ${fmt(b.remaining)} · 이 요청으로는 빠지지 않아요`, short: false });
+  if (b.next) {
+    lines.push({
+      text: `다음 연차 기간(${dayLabel(b.next.periodStart)}부터) 남은 ${fmt(b.next.remaining)} → 승인하면 ${leftText(b.next.after)}`,
+      short: b.next.after < 0,
+    });
+  }
+  return lines;
+}
+
+/** 승인 확인 시트 한 줄: 어느 기간 연차가 얼마에서 얼마로 줄어드는지 */
+function approveLine(b: LeaveRequestBalance): string {
+  const parts = [
+    ...(b.days > 0 ? [`이번 기간 남은 연차가 ${fmt(b.remaining)}에서 ${fmt(b.after)}로`] : []),
+    ...(b.next ? [`다음 기간(${dayLabel(b.next.periodStart)}부터) 남은 연차가 ${fmt(b.next.remaining)}에서 ${fmt(b.next.after)}로`] : []),
+  ];
+  return `승인하면 근태 기록에 들어가 ${parts.join(', ')} 줄어요.`;
+}
+
 function LeaveBlock({ item }: { item: InquiryItem }) {
   const leave = item.leave;
   if (!leave) return null;
@@ -106,12 +136,13 @@ function LeaveBlock({ item }: { item: InquiryItem }) {
       <p>
         <strong>쓸 날</strong> {daysText(leave.days)} · 연차 {fmt(leave.total)}
       </p>
-      {b && (
-        <p className={b.after < 0 ? 'leave-after short' : 'leave-after'}>
-          남은 연차 {fmt(b.remaining)} → 승인하면 {b.after >= 0 ? `${fmt(b.after)} 남아요` : `${fmt(-b.after)} 모자라요`}
-          <small> · 근태 기록으로 서버가 계산 · 이 요청 처리에만 보여요</small>
-        </p>
-      )}
+      {b &&
+        balanceLines(b).map((line, i) => (
+          <p key={i} className={line.short ? 'leave-after short' : 'leave-after'}>
+            {line.text}
+          </p>
+        ))}
+      {b && <p className='hint'>근태 기록으로 서버가 계산 · 이 요청 처리에만 보여요</p>}
       {b === null && <p className='hint'>근태 기록에서 남은 연차를 찾지 못했어요. 그룹웨어 근태에서 확인해 주세요.</p>}
     </div>
   );
@@ -145,7 +176,7 @@ function InboxItem({ item }: { item: InquiryItem }) {
         title: '휴가 요청을 승인할까요?',
         lines: [
           `${sender} · ${daysText(item.leave!.days)} · 연차 ${fmt(item.leave!.total)}`,
-          b ? `승인하면 근태 기록에 들어가 남은 연차가 ${fmt(b.remaining)}에서 ${fmt(b.after)}로 줄어요.` : '근태 기록에 들어가 남은 연차에서 빠져요.',
+          b ? approveLine(b) : '근태 기록에 들어가 남은 연차에서 빠져요.',
           '보낸 사람에게 승인 알림이 가요.',
         ],
         confirmLabel: '승인',

@@ -48,6 +48,10 @@ export type CardAction =
       task: string;
       days: { date: string; kind: 'full' | 'half' }[];
       remaining: number;
+      /** 이번 연차 기간 마지막 날. 이 뒤의 날은 다음 기간 연차에서 빠져요. */
+      periodEnd: string;
+      /** 다음 연차 기간 첫날과 그 기간 남은 연차(본인 것) */
+      next: { periodStart: string; remaining: number };
       /** 날짜 없이 양만 말했을 때("이틀 쓰고 싶어") 고를 일수 안내 */
       planned?: number;
     }

@@ -158,12 +158,29 @@ export interface InquiryDecisionRequest {
 
 /** 휴가 요청 계산(서버 규칙, ADR-18). 받은 팀 화면에서 그 요청을 보낸 사람 것만 보여요. 저장하지 않고 열 때마다 계산해요. */
 export interface LeaveRequestBalance {
-  /** 지금 남은 연차(이미 승인돼 근태 기록에 들어간 날 포함해 뺀 값) */
+  /** 이번 연차 기간 남은 연차(이미 승인돼 근태 기록에 들어간 날 포함해 뺀 값) */
   remaining: number;
-  /** 이 요청을 승인하면 남는 연차. 모자라면 음수예요. */
+  /** 이 요청을 승인하면 이번 기간에 남는 연차. 모자라면 음수예요. */
   after: number;
   /** 이번 연차 기간 마지막 날 */
   periodEnd: string;
+  /** 이 요청 중 이번 기간에 드는 일수 */
+  days: number;
+  /**
+   * 요청한 날이 다음 연차 기간(입사일 기준)에 들면 그 기간 계산이에요. 이번 기간에서는 빠지지 않아요.
+   * (10/30: "남은 7.5일 → 7.5일"처럼 이유 없이 그대로 보이던 문제)
+   */
+  next?: LeaveNextPeriod;
+}
+
+/** 다음 연차 기간에서 빠지는 몫 */
+export interface LeaveNextPeriod {
+  /** 다음 연차 기간 첫날 */
+  periodStart: string;
+  /** 다음 기간에 생기는 연차에서 이미 잡힌 날을 뺀 값 */
+  remaining: number;
+  after: number;
+  days: number;
 }
 
 export interface InquiryReply {

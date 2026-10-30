@@ -57,7 +57,12 @@ export function LeaveRequestSheet({ action, onClose }: { action: LeaveRequest; o
     ...sorted.filter((d, i) => d.date && sorted.findIndex((x) => x.date === d.date) !== i).map((d) => `${dayLabel(d.date)}을 두 번 골랐어요`),
   ];
   const sum = total(sorted);
-  const after = action.remaining - sum;
+  // 연차 기간(입사일 기준)별로 나눠요. 다음 기간 날은 이번 기간 연차가 아니라 다음 기간 연차에서 빠져요(10/30).
+  const thisSum = total(sorted.filter((d) => d.date && d.date <= action.periodEnd));
+  const nextSum = total(sorted.filter((d) => d.date > action.periodEnd));
+  const after = action.remaining - thisSum;
+  const nextAfter = action.next.remaining - nextSum;
+  const left = (n: number) => (n >= 0 ? `${fmt(n)} 남아요` : `${fmt(-n)} 모자라요`);
   const r = checkInput(reason.trim());
   const line = maskLine(r);
   const blocked = problems.length > 0 || !sorted.length || !r.text || r.locks.length > 0;
@@ -93,7 +98,7 @@ export function LeaveRequestSheet({ action, onClose }: { action: LeaveRequest; o
         {action.team}에 보내져요 · {action.task}
       </p>
       <p className='leave-remaining'>
-        지금 남은 연차 <strong>{fmt(action.remaining)}</strong>
+        지금 남은 연차 <strong>{fmt(action.remaining)}</strong> <small className='hint'>· 이번 연차 기간 {dayLabel(action.periodEnd)}까지</small>
       </p>
       {action.planned !== undefined && !action.days.length && <p className='hint'>말씀하신 {fmt(action.planned)}만큼 날을 골라 주세요.</p>}
       {action.days.length > 0 && <p className='hint'>질문에서 읽은 날을 채워 두었어요. 맞는지 보고 고쳐 주세요.</p>}
@@ -155,9 +160,19 @@ export function LeaveRequestSheet({ action, onClose }: { action: LeaveRequest; o
           {p}
         </p>
       ))}
-      <p className={`leave-after${after < 0 ? ' short' : ''}`} role='status'>
-        연차 {fmt(sum)}을 쓰면 {after >= 0 ? `${fmt(after)} 남아요` : `${fmt(-after)} 모자라요`}
-      </p>
+      <div role='status'>
+        {(thisSum > 0 || nextSum === 0) && (
+          <p className={`leave-after${after < 0 ? ' short' : ''}`}>
+            {nextSum > 0 ? `이번 연차 기간(${dayLabel(action.periodEnd)}까지) ` : ''}연차 {fmt(thisSum)}을 쓰면 {left(after)}
+          </p>
+        )}
+        {nextSum > 0 && (
+          <p className={`leave-after${nextAfter < 0 ? ' short' : ''}`}>
+            다음 연차 기간({dayLabel(action.next.periodStart)}부터) 연차 {fmt(nextSum)}을 쓰면 {left(nextAfter)}
+          </p>
+        )}
+        {nextSum > 0 && thisSum === 0 && <p className='hint'>고른 날이 다음 연차 기간이라 지금 남은 연차({fmt(action.remaining)})에서는 빠지지 않아요.</p>}
+      </div>
 
       <label className='inquiry-field'>
         <span className='inquiry-label'>

@@ -1,4 +1,4 @@
-import { type Card, type CardAction, GRADE, kstDate, personNameWords } from '@one-line-desk/shared';
+import { type Card, type CardAction, GRADE, kstDate, type LeaveDay, type LeaveRequestBalance, personNameWords } from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { LeaveRecord } from '../../adapters/types';
 import type { AppContext } from '../../context';
@@ -70,6 +70,28 @@ export function computeLeave(record: LeaveRecord, today: string): LeaveBalance {
   const usedHalf = inPeriod.filter((u) => u.kind === 'half').length;
   const used = usedFull + usedHalf * HALF_DAY;
   return { periodStart, periodEnd: addDays(nextStart, -1), firstYear, years, granted, usedFull, usedHalf, used, remaining: granted - used };
+}
+
+/** 다음 연차 기간(입사일 기준) 계산. 그 기간에 생기는 연차에서 그 기간에 이미 잡힌 날을 빼요. */
+export function nextPeriodLeave(record: LeaveRecord, current: LeaveBalance): LeaveBalance {
+  return computeLeave(record, addDays(current.periodEnd, 1));
+}
+
+const daysOf = (days: readonly LeaveDay[]) => days.reduce((n, d) => n + (d.kind === 'full' ? 1 : HALF_DAY), 0);
+
+/**
+ * 휴가 요청을 연차 기간별로 나눠 계산해요(ADR-24). 이번 기간 날은 이번 기간 남은 연차에서, 다음 기간 날은 다음 기간 연차에서 빠져요.
+ * 다음 기간보다 더 뒤의 날은 요청에서 막아요(1년 안).
+ */
+export function leaveRequestBalance(record: LeaveRecord, today: string, days: readonly LeaveDay[]): LeaveRequestBalance {
+  const cur = computeLeave(record, today);
+  const thisDays = daysOf(days.filter((d) => d.date <= cur.periodEnd));
+  const later = days.filter((d) => d.date > cur.periodEnd);
+  const out: LeaveRequestBalance = { remaining: cur.remaining, after: cur.remaining - thisDays, periodEnd: cur.periodEnd, days: thisDays };
+  if (!later.length) return out;
+  const next = nextPeriodLeave(record, cur);
+  const nextDays = daysOf(later);
+  return { ...out, next: { periodStart: next.periodStart, remaining: next.remaining, after: next.remaining - nextDays, days: nextDays } };
 }
 
 // ── 질문 해석(AI는 질문 글만 봐요) ──────────────────────────────────────────
@@ -324,7 +346,7 @@ export function findLeaveRequestRow(rows: readonly { id: string; task: string; t
  * [휴가 신청하기]: 질문에서 읽은 날(규칙, 양은 AI도)을 양식에 미리 채워요. 사람이 날·하루/반차를 고치고 확인 시트에서 보내요.
  * 날 없이 양만 말했으면("이틀 쓰고 싶어") 고를 일수만 알려 줘요.
  */
-function leaveRequestAction(target: LeaveRequestTarget, q: LeaveQuestion, balance: LeaveBalance): CardAction {
+function leaveRequestAction(target: LeaveRequestTarget, q: LeaveQuestion, balance: LeaveBalance, next: LeaveBalance | null): CardAction {
   const kind = q.planHalf > 0 && q.planFull === 0 ? ('half' as const) : ('full' as const);
   const planned = q.planFull + q.planHalf * HALF_DAY;
   return {
@@ -333,12 +355,21 @@ function leaveRequestAction(target: LeaveRequestTarget, q: LeaveQuestion, balanc
     ...target,
     days: q.planDates.map((date) => ({ date, kind })),
     remaining: balance.remaining,
+    periodEnd: balance.periodEnd,
+    // 다음 기간 날을 고르면 양식이 그 기간 연차로 따로 계산해요.
+    next: next ? { periodStart: next.periodStart, remaining: next.remaining } : { periodStart: addDays(balance.periodEnd, 1), remaining: 0 },
     ...(!q.planDates.length && planned > 0 ? { planned } : {}),
   };
 }
 
 /** 본인 연차 카드. 숫자는 모두 서버 계산이고, "AI 정리"는 모델이 질문(더 쓰려는 양)을 해석했을 때만 붙여요. */
-export function leaveCard(balance: LeaveBalance | null, q: LeaveQuestion, today: string, request?: LeaveRequestTarget | null): Card {
+export function leaveCard(
+  balance: LeaveBalance | null,
+  q: LeaveQuestion,
+  today: string,
+  request?: LeaveRequestTarget | null,
+  next: LeaveBalance | null = null,
+): Card {
   if (q.aboutOther) return otherPersonCard();
   if (!balance) {
     return makeCard({
@@ -386,7 +417,7 @@ export function leaveCard(balance: LeaveBalance | null, q: LeaveQuestion, today:
       ...(q.otherPeriod ? [{ name: '작년·내년', value: '이번 연차 기간만 보여요. 지난 기간은 그룹웨어 근태 메뉴에서 봐요' }] : []),
     ],
     evidence: { text: `인사 근태 기록으로 서버가 계산 · 근로기준법(개근 가정) · ${today} 기준`, aiSummarized: q.viaAi && plan > 0 },
-    ...(request ? { secondary: [leaveRequestAction(request, q, balance)] } : {}),
+    ...(request ? { secondary: [leaveRequestAction(request, q, balance, next)] } : {}),
     tail: LEAVE_TAIL,
   });
 }
@@ -418,5 +449,6 @@ export async function myLeaveCard(
   const names = await ctx.adapters.directory.personNameWords().catch(() => [] as string[]);
   if (namesOtherPerson(text, names, personNameWords(user.displayName))) return otherPersonCard();
   const record = await ctx.adapters.leave.leaveOf({ idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) }).catch(() => null);
-  return leaveCard(record ? computeLeave(record, today) : null, q, today, request);
+  const balance = record ? computeLeave(record, today) : null;
+  return leaveCard(balance, q, today, request, record && balance ? nextPeriodLeave(record, balance) : null);
 }
