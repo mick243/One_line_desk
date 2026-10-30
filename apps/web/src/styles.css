@@ -1725,6 +1725,57 @@ select {
   scrollbar-width: thin;
   scrollbar-color: var(--surface-3) transparent;
 }
+/* 대화 중(10/30): 대화창 높이를 화면(위 막대 56px·아래 탭·여백을 뺀 높이)에 맞춰요. 대화 줄만 창 안에서 스크롤되고,
+   입력 칸(.room-composer)은 대화창 맨 아래 제자리에 있어서 늘 보이고 대화를 가리지 않아요. 아주 낮은 화면은 최소 높이로 두고 페이지가 스크롤돼요. */
+.room-results.chatting {
+  height: calc(100vh - 56px - 92px);
+  height: calc(100dvh - 56px - 80px - env(safe-area-inset-bottom));
+  min-height: 420px;
+  padding-bottom: 12px;
+  scroll-margin-top: 64px;
+  scroll-margin-bottom: calc(84px + env(safe-area-inset-bottom));
+}
+.room-results.chatting .room-log {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+.room-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.room-composer .example-label {
+  margin: 0;
+}
+/* 대화 중 입력 칸은 메신저처럼 한 줄(칸 + 보내기)로 줄여서 대화가 보이는 자리를 넓혀요. "나만 보여요"는 칸 위에 작게 남겨요. */
+.room-composer .checked-input {
+  gap: 6px;
+  padding: 10px 12px;
+}
+.room-composer .checked-input .row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.room-composer .checked-input input {
+  flex: 1;
+  height: 48px;
+}
+.room-composer .checked-input button[type='submit'] {
+  flex: none;
+  width: auto;
+  min-height: 48px;
+  height: 48px;
+  padding: 0 16px;
+  white-space: nowrap;
+}
+.room-composer .mode-line {
+  padding: 6px 10px;
+  font-size: 0.75rem;
+}
 .room-log:focus-visible {
   outline-offset: 4px;
 }
