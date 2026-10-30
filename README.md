@@ -18,7 +18,7 @@ npm run dev
 
 웹은 http://localhost:5190, 서버는 http://localhost:3190 이에요. 가상 직원 다섯 명 중 하나를 골라 모의 로그인해요.
 
-- DB: `DATABASE_URL`이 없으면 내장 PGlite(`.data/pglite`)를 써요. 서버가 뜰 때 마이그레이션을 적용하고, 비어 있으면 가상 자료(분장표·공지·회의실 장부·탕비실 카탈로그와 요청)를 넣어요. 처음부터 다시 하려면 서버를 끄고 `.data/`를 지워요.
+- DB: `DATABASE_URL`이 없으면 내장 PGlite(`.data/pglite`)를 써요. 서버가 뜰 때 마이그레이션을 적용하고, 비어 있으면 가상 자료(분장표·공지·회의실 장부·탕비실 카탈로그와 요청)를 넣어요. 처음부터 다시 하려면 서버를 끄고 `.data/`를 지워요. 10/30에 마이그레이션을 7개로 합쳐서, 그 전에 만든 개발 DB는 서버가 "폴더에 없는 마이그레이션 기록이 있어요"로 멈춰요. 그때도 `.data/pglite`를 지우고, Docker PostgreSQL이면 `docker compose down -v` 뒤 다시 띄워요.
 - 실제 PostgreSQL: `cp .env.example .env` → `npm run db:up`(Docker, 5433) → `DATABASE_URL` 설정 → `npm run db:migrate`
 - 운영 이미지: `docker build -t one-line-desk .`. 서버와 웹 화면 파일을 한 이미지에 담고, 같은 서버가 화면도 줘요(보안 머리·캐시·미리 압축). 운영은 `.env`를 읽지 않아서 값을 모두 환경으로 넣어요. 띄운 뒤 `node scripts/smoke.mjs <주소>`로 바닥을 확인해요. 자세한 건 [Dockerfile](Dockerfile)과 [배포 준비 회의](docs/배포준비회의_2026-10-29.md)예요.
 - 시험을 실제 PostgreSQL에서: `npm run db:test:up`(Docker, 5434, 끄면 자료가 사라지는 시험 전용 DB) → `npm run test:pg`. 시험 DB마다 새 스키마를 만들고 끝나면 지워요. 다른 DB를 쓰려면 `TEST_DATABASE_URL`을 넣어요(DB 이름이 `_test`로 끝나야 해요). 기본 `npm test`는 그대로 PGlite예요.

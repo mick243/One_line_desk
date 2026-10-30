@@ -28,10 +28,17 @@ interface ActionsApi {
   run(action: CardAction, card?: Card, onResult?: ResultHandler): Promise<void>;
   /** 결과 카드를 시트로 보여 줘요(앱 확인 링크 진입 등). */
   show(shown: Shown): void;
-  /** 쓰기가 끝날 때마다 올라가요. 목록 화면은 이 값이 바뀌면 다시 불러요. */
+  /** 쓰기가 끝나거나 새 알림이 올 때마다 올라가요. 목록 화면은 이 값이 바뀌면 다시 불러요. */
   version: number;
+  /**
+   * 이 화면에서 내가 한 쓰기가 끝날 때만 올라가요. 양식(문의·초대)과 고른 칸은 이 값으로만 닫거나 비워요.
+   * 새 알림으로 목록만 다시 부를 때는 그대로라서, 쓰던 글이 사라지지 않아요(10/29 개선 회의 A2).
+   */
+  writes: number;
   /** 카드 버튼 밖에서 쓰기가 끝났을 때(회의실 채팅 자동 실행, ADR-19) 목록을 다시 불러요. */
   refresh(): void;
+  /** 남이 한 일(새 알림)로 목록만 다시 불러요. 열린 양식은 그대로예요. */
+  reload(): void;
 }
 
 const ActionsContext = createContext<ActionsApi | null>(null);
@@ -57,14 +64,24 @@ export function ActionHost({
   const [confirming, setConfirming] = useState<Confirming | null>(null);
   const [shown, setShown] = useState<Shown | null>(null);
   const [version, setVersion] = useState(0);
+  const [writes, setWrites] = useState(0);
   const [inviting, setInviting] = useState<InviteAction | null>(null);
 
-  const showOutcome = useCallback((res: PlanConfirmResponse) => {
+  // 내 쓰기가 끝났어요: 목록도 다시 부르고, 양식도 닫게 해요.
+  const wrote = useCallback(() => {
     setVersion((v) => v + 1);
-    if (res.status === 'done') setShown({ title: '결과', cards: [res.card] });
-    else if (res.status === 'blocked') setShown({ title: '결과', cards: [res.card, ...res.alternatives] });
-    else setShown({ title: '다시 찾았어요', message: res.message, cards: res.cards });
+    setWrites((w) => w + 1);
   }, []);
+
+  const showOutcome = useCallback(
+    (res: PlanConfirmResponse) => {
+      wrote();
+      if (res.status === 'done') setShown({ title: '결과', cards: [res.card] });
+      else if (res.status === 'blocked') setShown({ title: '결과', cards: [res.card, ...res.alternatives] });
+      else setShown({ title: '다시 찾았어요', message: res.message, cards: res.cards });
+    },
+    [wrote],
+  );
 
   const fail = useCallback((e: unknown) => {
     setShown({ title: '결과', message: e instanceof ApiFailure ? e.message : '지금 처리하지 못했어요', cards: [] });
@@ -119,7 +136,7 @@ export function ActionHost({
               showOutcome(res);
               onResult?.(resultCards(res));
             } else {
-              setVersion((v) => v + 1);
+              wrote();
               if (card) setShown({ title: '결과', message: '반영했어요', cards: [] });
             }
             return;
@@ -129,11 +146,11 @@ export function ActionHost({
         fail(e);
       }
     },
-    [fail, onNavigate, showOutcome],
+    [fail, onNavigate, showOutcome, wrote],
   );
 
-  const refresh = useCallback(() => setVersion((v) => v + 1), []);
-  const value = useMemo<ActionsApi>(() => ({ run, show: setShown, version, refresh }), [run, version, refresh]);
+  const reload = useCallback(() => setVersion((v) => v + 1), []);
+  const value = useMemo<ActionsApi>(() => ({ run, show: setShown, version, writes, refresh: wrote, reload }), [run, version, writes, wrote, reload]);
 
   return (
     <ActionsContext.Provider value={value}>
@@ -149,7 +166,7 @@ export function ActionHost({
               if (isOutcome(res)) {
                 showOutcome(res);
                 confirming.onResult?.(resultCards(res));
-              } else setVersion((v) => v + 1);
+              } else wrote();
             } catch (e) {
               setConfirming(null);
               fail(e);

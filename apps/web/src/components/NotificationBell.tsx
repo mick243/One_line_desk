@@ -16,7 +16,7 @@ function when(iso: string): string {
 }
 
 export function NotificationBell({ onNavigate }: { onNavigate: (to: AppDestination) => void }) {
-  const { version, refresh } = useActions();
+  const { version, reload } = useActions();
   const [data, setData] = useState<NotificationsResponse | null>(null);
   const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -31,7 +31,8 @@ export function NotificationBell({ onNavigate }: { onNavigate: (to: AppDestinati
         if (fresh) {
           setToast(fresh.title);
           // 새 알림이 오면 화면의 목록(내 문의·받은 문의함·나를 부른 회의·내 예약)도 다시 불러요(QA D-A03).
-          refresh();
+          // 목록만 다시 불러요. 쓰던 문의·초대 양식은 닫지 않아요(10/29 개선 회의 A2).
+          reload();
         }
       }
       seen.current = new Set(res.items.map((i) => i.id));
@@ -39,7 +40,7 @@ export function NotificationBell({ onNavigate }: { onNavigate: (to: AppDestinati
     } catch {
       // 알림을 못 불러와도 화면은 그대로 써요.
     }
-  }, [refresh]);
+  }, [reload]);
 
   useEffect(() => {
     void load();
@@ -94,7 +95,7 @@ export function NotificationBell({ onNavigate }: { onNavigate: (to: AppDestinati
                         void read([n.id]);
                         setOpen(false);
                         onNavigate(n.page);
-                        refresh();
+                        reload();
                       }}
                     >
                       <span>{n.title}</span>

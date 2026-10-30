@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildApp } from '../app';
 import { loadConfig } from '../config';
 import { insertCard, insertFlag, insertMerge, insertVote } from '../modules/pantry/repo';
 import { createTestApp, MOCK } from '../testing';
 import { applyMigrations, pendingMigrations } from './db';
+import { MIGRATIONS_DIR } from './db/migrate';
 import { createPgliteDb } from './db/pglite';
 import { errorSummary } from './logging';
 
@@ -68,6 +72,52 @@ describe('마이그레이션(L-22)', () => {
       await app.close();
     } finally {
       await db.close();
+    }
+  });
+
+  // 10/30 마이그레이션 합치기(17 → 7) 뒤: 기록과 폴더가 맞지 않으면 적용·시작 모두 멈춰요.
+  it('폴더에 없는 이름이 기록된 옛 DB(합치기 전 개발 DB)는 적용하지 않고 지우라고 알려요', async () => {
+    const db = await createPgliteDb();
+    try {
+      await applyMigrations(db);
+      await db.query("insert into schema_migrations (name, sha256) values ('001_base.sql', 'x')");
+      await expect(applyMigrations(db)).rejects.toThrow(/001_base\.sql.*\.data\/pglite/);
+      await expect(pendingMigrations(db)).rejects.toThrow(/폴더에 없는/);
+      const config = loadConfig({ DESK_MIGRATE_ON_START: 'false' });
+      await expect(buildApp({ config, db, seed: false, retentionTimer: false })).rejects.toThrow(/폴더에 없는/);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it('확인값 칸이 없는 옛 기록 표도 같은 안내로 멈춰요', async () => {
+    const db = await createPgliteDb();
+    try {
+      await db.exec('create table schema_migrations (name text primary key, applied_at timestamptz not null default now())');
+      await expect(applyMigrations(db)).rejects.toThrow(/확인값 없는 옛 기록/);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it('이미 적용한 파일을 고치면 멈추고, 줄 끝(CRLF·LF)만 다른 건 같은 파일로 봐요', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'desk-migrations-'));
+    const db = await createPgliteDb();
+    try {
+      cpSync(MIGRATIONS_DIR, dir, { recursive: true });
+      expect((await applyMigrations(db, dir)).length).toBeGreaterThan(0);
+
+      const file = join(dir, '210_notices.sql');
+      const original = readFileSync(file, 'utf8');
+      writeFileSync(file, original.replaceAll('\n', '\r\n'));
+      expect(await applyMigrations(db, dir)).toEqual([]);
+
+      writeFileSync(file, `${original}\ncreate index notices_posted on notices (posted_on);\n`);
+      await expect(applyMigrations(db, dir)).rejects.toThrow(/210_notices\.sql.*새 파일을 더해/);
+      await expect(pendingMigrations(db, dir)).rejects.toThrow(/바뀌었어요/);
+    } finally {
+      await db.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

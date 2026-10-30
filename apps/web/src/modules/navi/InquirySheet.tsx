@@ -53,11 +53,11 @@ export function InquirySheet({ action, initialQuestion, onClose }: { action: Inq
   // 같은 양식에서 두 번 눌러도 한 번만 보내요(서버 멱등 키).
   const requestId = useMemo(() => newRequestId(), []);
 
-  // 보내기가 끝나면(쓰기 횟수가 오르면) 양식을 닫아요. 확인 시트에서 [닫기]를 누르면 쓴 글이 그대로 남아요.
-  const startVersion = useRef(actions.version);
+  // 보내기가 끝나면(내 쓰기 횟수가 오르면) 양식을 닫아요. 확인 시트에서 [닫기]를 누르거나 새 알림이 와도 쓴 글이 그대로 남아요.
+  const startWrites = useRef(actions.writes);
   useEffect(() => {
-    if (actions.version !== startVersion.current) onClose();
-  }, [actions.version, onClose]);
+    if (actions.writes !== startWrites.current) onClose();
+  }, [actions.writes, onClose]);
 
   const q = checkInput(question.trim());
   const r = checkInput(reason.trim());

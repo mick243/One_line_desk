@@ -34,6 +34,8 @@ describe('담당 팀에 문의 보내기(ADR-16)', () => {
     const sent = await doyun.call('POST', '/api/navi/inquiries', { rowId: 'HR-01', question: QUESTION, reason: REASON, requestId: requestId() });
     expect(sent.status).toBe(200);
     expect(sent.body).toMatchObject({ status: 'done', card: { label: '확정', headline: '인사팀에 보냈어요' } });
+    // 답 글은 앱으로 오지 않아요. 실제 동작대로 "처리 상태"만 알린다고 적어요(10/29 개선 회의 C1).
+    expect(sent.body.card.evidence.text).toBe('처리 상태가 바뀌면 알려 드려요. 답은 그 팀이 따로 연락해요. 담당 찾기 "내 문의"에서도 볼 수 있어요');
 
     const jihu = await t.loginAs(MOCK.hr);
     const inbox = (await jihu.call('GET', '/api/navi/inquiries/inbox')).body as InquiryListResponse;
@@ -80,6 +82,31 @@ describe('담당 팀에 문의 보내기(ADR-16)', () => {
     expect(after.unread).toBe(0);
     const notifRows = (await t.db.query<{ title: string }>('select title from notifications')).rows;
     expect(JSON.stringify(notifRows)).not.toContain('INQCANARY7');
+  });
+
+  it('[ADR-21] 7일 지난 알림은 목록에 보이지 않고, 목록을 읽어도 지우지 않아요. 지우기는 보관 잡이 해요(10/29 개선 회의 A6)', async () => {
+    const t = await setup();
+    const doyun = await t.loginAs(MOCK.dev);
+    await doyun.call('POST', '/api/navi/inquiries', { rowId: 'HR-01', question: QUESTION, reason: REASON, requestId: requestId() });
+    const count = async () => (await t.db.query<{ n: number }>('select count(*)::int as n from notifications')).rows[0]!.n;
+    expect(await count()).toBe(1);
+
+    t.advance(8 * 24 * 60 * 60 * 1000);
+    const jihu = await t.loginAs(MOCK.hr);
+    const deletes: string[] = [];
+    const query = t.db.query.bind(t.db);
+    t.db.query = ((sql: string, params?: unknown[]) => {
+      if (/^\s*delete/i.test(sql)) deletes.push(sql);
+      return query(sql, params);
+    }) as typeof t.db.query;
+    const box = (await jihu.call('GET', '/api/notifications')).body as NotificationsResponse;
+    t.db.query = query;
+    expect(box).toEqual({ unread: 0, items: [] });
+    expect(deletes.filter((s) => s.includes('notifications'))).toEqual([]);
+    expect(await count()).toBe(1);
+
+    await t.runRetention();
+    expect(await count()).toBe(0);
   });
 
   it('[ADR-16] 받은 부서가 [확인했어요]·[처리했어요]를 누르면 보낸 사람에게 알림이 가요(다른 부서는 못 바꿔요)', async () => {

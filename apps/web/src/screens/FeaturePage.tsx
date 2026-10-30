@@ -5,7 +5,9 @@ import { api } from '../api';
 import { replaceCard, useActions } from '../components/ActionHost';
 import { CardView } from '../components/CardView';
 import { CheckedInput } from '../components/CheckedInput';
+import { useSlow } from '../components/useSlow';
 import { webModules } from '../modules/registry';
+import { OFFLINE_MESSAGE, SLOW_MESSAGE } from '../net';
 import type { Feature } from './features';
 
 // 보낸 문장은 이 페이지 메모리에만 있어요. 저장소·주소에는 두지 않아요(R13).
@@ -33,6 +35,9 @@ export function FeaturePage({
   const [cards, setCards] = useState<Card[] | null>(null);
   const [lines, setLines] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(false);
+  // 보내지 못한 문장. [다시 보내기]가 같은 문장을 한 번 더 보내요(10/29 개선 회의 A3). 입력 칸 글은 그대로예요.
+  const [retry, setRetry] = useState<string | null>(null);
+  const slow = useSlow(loading);
   const [wrongCard, setWrongCard] = useState<Card | null>(null);
   const [inquiry, setInquiry] = useState<Extract<CardAction, { type: 'inquire' }> | null>(null);
   const { WrongSheet, InquirySheet } = webModules;
@@ -41,12 +46,22 @@ export function FeaturePage({
     setSent(masked);
     setCards(null);
     setLines(null);
+    setRetry(null);
     setLoading(true);
-    const result = await api.ask(masked, feature.module);
-    setLoading(false);
-    if (result.status === 'ok') setCards(result.response.cards);
-    else if (result.status === 'locked') setLines(result.locks.map((l) => l.message));
-    else setLines([result.message]);
+    try {
+      const result = await api.ask(masked, feature.module);
+      if (result.status === 'ok') setCards(result.response.cards);
+      else if (result.status === 'locked') setLines(result.locks.map((l) => l.message));
+      else {
+        setLines([result.message]);
+        setRetry(masked);
+      }
+    } catch {
+      setLines([OFFLINE_MESSAGE]);
+      setRetry(masked);
+    } finally {
+      setLoading(false);
+    }
   }
 
   // 옮겨 온 문장은 이미 공통 검사를 지난 글이지만, 한 번 더 보고 걸리면 보내지 않아요(ADR-11).
@@ -106,11 +121,17 @@ export function FeaturePage({
 
       <section className='results' aria-live='polite' aria-busy={loading}>
         {loading && <div className='skeleton' aria-label='찾는 중' />}
+        {loading && slow && <p className='hint'>{SLOW_MESSAGE}</p>}
         {lines?.map((l) => (
           <p key={l} className='lock-line'>
             {l}
           </p>
         ))}
+        {retry && !loading && (
+          <button type='button' className='secondary small' onClick={() => void ask(retry)}>
+            다시 보내기
+          </button>
+        )}
         {cards?.map((card) => (
           <CardView
             key={card.id}

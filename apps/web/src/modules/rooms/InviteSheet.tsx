@@ -44,11 +44,11 @@ export function InviteSheet({ action, onClose }: { action: Invite; onClose: () =
     return () => window.clearTimeout(id);
   }, [query]);
 
-  // 보내기가 끝나면(쓰기 횟수가 오르면) 양식을 닫아요.
-  const startVersion = useRef(actions.version);
+  // 보내기가 끝나면(내 쓰기 횟수가 오르면) 양식을 닫아요. 새 알림이 와도 고른 사람은 그대로예요.
+  const startWrites = useRef(actions.writes);
   useEffect(() => {
-    if (actions.version !== startVersion.current) onClose();
-  }, [actions.version, onClose]);
+    if (actions.writes !== startWrites.current) onClose();
+  }, [actions.writes, onClose]);
 
   const picked = new Set(chosen.map((p) => p.ref));
   const full = chosen.length >= INVITE_MAX;

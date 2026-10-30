@@ -183,6 +183,7 @@ export async function buildApp(opts: BuildOptions) {
   // 보관 기간 지우기(L-33): 화면을 열지 않아도 지워요. 듣기 시작한 뒤 한 번, 그 뒤 한 시간마다예요.
   // 10/28 사용자 결정: 접속기록(법정 1년) 말고는 모두 7일(RECORD_KEEP_DAYS)이에요. 모듈 기록은 각 모듈 retention이 지워요.
   // 단계마다 따로 잡아서 한 단계가 실패해도 나머지는 지워요. 실패한 단계 이름을 돌려주고 retention-failed를 남겨요(배포 준비 회의 A5).
+  let retentionLastOk: number | null = null;
   const runRetention = async (): Promise<string[]> => {
     const before = recordCutoff(ctx.now());
     const steps: [string, () => Promise<unknown>][] = [
@@ -203,6 +204,8 @@ export async function buildApp(opts: BuildOptions) {
         app.log.error({ msg: 'retention-failed', step, err: errorSummary(err) });
       }
     }
+    // 모든 단계가 지운 마지막 시각이에요. /health/ready에 실어서 감시가 "오래 못 지움"을 알아채요(앞선 회의 A6).
+    if (!failed.length) retentionLastOk = ctx.now();
     return failed;
   };
 
@@ -227,7 +230,7 @@ export async function buildApp(opts: BuildOptions) {
     retentionTimer = setInterval(scheduledRetention, RETENTION_EVERY_MS);
     retentionTimer.unref();
   }
-  registerHealthRoutes(app, ctx, () => firstRetentionDone);
+  registerHealthRoutes(app, ctx, () => ({ done: firstRetentionDone, lastOk: retentionLastOk }));
 
   // 닫을 때(SIGTERM): 돌던 보관 회차가 끝나기를 기다린 뒤 DB를 닫아요(배포 준비 회의 A5).
   app.addHook('onClose', async () => {

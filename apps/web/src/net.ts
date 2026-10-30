@@ -4,6 +4,40 @@
 export const UNAVAILABLE_MESSAGE = '지금 앱을 고치는 중이에요. 쓴 글은 이 화면에 있어요. 잠시 뒤에 다시 보내 주세요';
 /** 요청이 서버에 닿지 못했을 때(망 끊김) */
 export const OFFLINE_MESSAGE = '지금 앱에 연결하지 못했어요. 쓴 글은 이 화면에 있어요. 연결을 확인하고 다시 보내 주세요';
+/** 시간 한도 안에 답이 오지 않았을 때(10/29 개선 회의 A3) */
+export const TIMEOUT_MESSAGE = '답이 늦어서 기다리지 않았어요. 쓴 글은 이 화면에 있어요. 잠시 뒤에 다시 보내 주세요';
+/** 답을 기다린 지 SLOW_MS가 넘었을 때 */
+export const SLOW_MESSAGE = '아직 찾는 중이에요';
+
+/** 요청 하나를 기다리는 최대 시간이에요. 넘으면 끊고 TIMEOUT_MESSAGE를 보여 줘요. */
+export const REQUEST_TIMEOUT_MS = 15_000;
+/** 이보다 오래 기다리면 SLOW_MESSAGE를 보여 줘요. */
+export const SLOW_MS = 5_000;
+
+/**
+ * 시간 한도를 건 fetch예요. 던지지 않고, 닿지 못하면 'offline', 한도를 넘기면 'timeout'을 돌려줘요.
+ * 쓰기 요청은 저절로 다시 보내지 않아요. 사람이 [다시 보내기]를 누르면 같은 요청 번호로 보내서 서버가 한 번만 처리해요.
+ */
+export async function fetchWithin(
+  fetcher: (url: string, init: RequestInit) => Promise<Response>,
+  url: string,
+  init: RequestInit,
+  ms = REQUEST_TIMEOUT_MS,
+): Promise<Response | 'offline' | 'timeout'> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, ms);
+  try {
+    return await fetcher(url, { ...init, signal: controller.signal });
+  } catch {
+    return timedOut ? 'timeout' : 'offline';
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * 우리 서버가 답하지 않은 응답인지. 배포로 서버가 내려간 사이 관문이 주는 502·503·504와,

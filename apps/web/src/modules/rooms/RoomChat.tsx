@@ -6,7 +6,8 @@ import { CardView } from '../../components/CardView';
 import { CheckedInput } from '../../components/CheckedInput';
 import { Icon } from '../../components/Icon';
 import { ScrollChips } from '../../components/ScrollChips';
-import { newRequestId } from '../../net';
+import { useSlow } from '../../components/useSlow';
+import { newRequestId, SLOW_MESSAGE } from '../../net';
 
 // 회의실 입력 칸(10/28 통합 개편, ADR-19). 빈 회의실 찾기와 회의실 채팅을 한 칸으로 합쳤어요.
 // - 묻는 말("내일 3시 6명", "빈 회의실 있어?")은 찾기만 하고, 시키는 말("잡아 줘·빌려 줘")은 조건이 다 있으면 바로 예약·대여해요.
@@ -29,6 +30,9 @@ const KEEP = 20;
 interface Turn {
   id: number;
   text: string;
+  /** [다시 보내기]도 같은 번호로 보내요. 앞 요청이 늦게라도 실행됐으면 서버가 그 결과를 돌려줘요(10/29 개선 회의 A3). */
+  requestId: string;
+  noAuto?: boolean;
   reply?: string;
   cards: Card[];
   aiParsed?: boolean;
@@ -81,6 +85,7 @@ export function RoomChat({
   const [text, setText] = useState(autoRun ? '' : initialText);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [waiting, setWaiting] = useState(false);
+  const slow = useSlow(waiting);
   const next = useRef(0);
   const logRef = useRef<HTMLDivElement>(null);
   const latestRef = useRef<HTMLDivElement>(null);
@@ -88,25 +93,38 @@ export function RoomChat({
 
   async function send(masked: string, opts: { noAuto?: boolean } = {}) {
     const id = ++next.current;
-    setTurns((list) => [...list, { id, text: masked, cards: [] }].slice(-KEEP));
+    // 보낼 때마다 새 요청 ID예요. 같은 요청이 두 번 가도 서버가 한 번만 실행해요.
+    const turn: Turn = { id, text: masked, requestId: newRequestId(), noAuto: opts.noAuto, cards: [] };
+    setTurns((list) => [...list, turn].slice(-KEEP));
     onSent?.(masked);
     setText('');
+    await ask(turn);
+  }
+
+  async function ask(turn: Turn) {
     setWaiting(true);
-    const done = (patch: Partial<Turn>) => setTurns((list) => list.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    const done = (patch: Partial<Turn>) => setTurns((list) => list.map((t) => (t.id === turn.id ? { ...t, ...patch } : t)));
     try {
-      // 보낼 때마다 새 요청 ID예요. 같은 요청이 두 번 가도 서버가 한 번만 실행해요.
       const res = await apiRequest<RoomChatResponse>('POST', '/api/rooms/chat', {
-        text: masked,
-        requestId: newRequestId(),
-        ...(opts.noAuto ? { noAuto: true } : {}),
+        text: turn.text,
+        requestId: turn.requestId,
+        ...(turn.noAuto ? { noAuto: true } : {}),
       });
-      done({ reply: res.reply, cards: res.cards, aiParsed: res.aiParsed });
+      done({ reply: res.reply, cards: res.cards, aiParsed: res.aiParsed, failed: false });
       if (res.changed) actions.refresh();
     } catch (e) {
+      // 보내지 못한 문장은 대화 줄에 남고 [다시 보내기]가 같은 요청 번호로 보내요. 입력 칸에 돌려놓지 않아요:
+      // 칸에서 다시 보내면 새 번호라서, 늦게 실행된 앞 요청과 겹쳐 두 번 예약될 수 있어요.
       done({ reply: e instanceof ApiFailure ? e.message : '지금 답하지 못했어요. 잠시 뒤에 다시 보내 주세요', failed: true });
     } finally {
       setWaiting(false);
     }
+  }
+
+  // [다시 보내기]: 같은 대화 줄에서 같은 요청 번호로 한 번 더 보내요.
+  function resend(turn: Turn) {
+    setTurns((list) => list.map((t) => (t.id === turn.id ? { ...t, reply: undefined, failed: false, cards: [] } : t)));
+    void ask(turn);
   }
 
   // 옮겨 온 문장은 한 번만, 자동 실행 없이 보내요. 걸리는 글자가 있으면 보내지 않고 칸에만 둬요(ADR-11).
@@ -149,6 +167,13 @@ export function RoomChat({
             {t.aiParsed && <span className='chat-ai'>AI 해석</span>}
           </p>
         )}
+        {t.failed && !waiting && (
+          <button type='button' className='secondary small' onClick={() => resend(t)}>
+            다시 보내기
+          </button>
+        )}
+        {t.reply === undefined && <div className='skeleton' aria-label='답을 만드는 중' />}
+        {t.reply === undefined && slow && <p className='hint'>{SLOW_MESSAGE}</p>}
         {t.cards.map((card) => (
           <CardView
             key={card.id}
@@ -226,7 +251,6 @@ export function RoomChat({
           {/* 키보드로도 창 안을 스크롤할 수 있게 초점을 받아요. */}
           <div ref={logRef} className='room-log' role='log' aria-label='대화 내용' aria-busy={waiting} tabIndex={0}>
             {turns.map(renderTurn)}
-            {waiting && !answered && <div className='skeleton' aria-label='답을 만드는 중' />}
           </div>
         </section>
       )}

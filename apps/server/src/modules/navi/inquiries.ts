@@ -49,7 +49,8 @@ function sentCard(i: repo.InquiryRow): Card {
       { name: '받는 곳', value: i.team },
       { name: '상태', value: INQUIRY_STATE_LABEL[i.state] },
     ],
-    evidence: { text: '답이 오면 알림으로 알려 드려요. 담당 찾기 "내 문의"에서도 볼 수 있어요', aiSummarized: false },
+    // 답 글은 앱으로 오지 않아요. 알림은 받은 팀이 상태를 바꿀 때만 가요(10/29 개선 회의 C1).
+    evidence: { text: '처리 상태가 바뀌면 알려 드려요. 답은 그 팀이 따로 연락해요. 담당 찾기 "내 문의"에서도 볼 수 있어요', aiSummarized: false },
     tail: SENT_TAIL,
   });
 }
