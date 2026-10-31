@@ -1,5 +1,5 @@
 import { ConnectedApps, ConsentScreen, LinkEntry } from './mcp';
-import { ChartScreen, InquiryInbox, InquirySheet, LeaveRequestSheet, MyInquiries, WrongSheet } from './navi';
+import { ChartScreen, InquiryInbox, InquirySheet, ItHelpScreen, LeaveRequestSheet, MyInquiries, OnboardingScreen, WrongSheet } from './navi';
 import { BoardScreen, MyRequests, OpsScreen, pantryCardRenderers } from './pantry';
 import { DemoInbox, InvitedMeetings, InviteSheet, MyLoans, MyReservations, RoomChat, RoomDirectory, roomsCardRenderers } from './rooms';
 import type { WebModules } from './types';
@@ -15,6 +15,8 @@ export const webModules: WebModules = {
   BoardScreen,
   OpsScreen,
   ChartScreen,
+  ItHelpScreen,
+  OnboardingScreen,
   MyReservations,
   MyLoans,
   RoomChat,

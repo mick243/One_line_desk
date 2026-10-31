@@ -1,5 +1,7 @@
 import {
   type ChartApplyResponse,
+  INQUIRY_WEEK_MIN,
+  type InquiryStatsResponse,
   type ChartListResponse,
   type ChartPreviewResponse,
   type PlanSheet,
@@ -94,6 +96,8 @@ export function ChartScreen({ me }: ScreenProps) {
           </>
         )}
       </section>
+
+      <InquiryStats />
 
       <UploadPanel department={me.department} onApplied={() => setReload((n) => n + 1)} />
     </div>
@@ -254,6 +258,80 @@ function UploadPanel({ department, onApplied }: { department: string; onApplied:
           }}
         />
       )}
+    </section>
+  );
+}
+
+/**
+ * 받은 문의 주간 셈(10/31 넓힐 후보 ④). 우리 부서로 온 문의를 보낸 주별로 센 건수예요. 사람·글은 없어요.
+ * 그 주 문의가 다 지워진 뒤(보관 7일)에 세서, 보이는 건 지난 한 주 남짓이에요. 10건이 안 되면 숫자를 접어요.
+ * 좋고 나쁨을 색으로 나누거나 부서끼리 견주지 않아요(10/31 디자이너).
+ */
+function InquiryStats() {
+  const [data, setData] = useState<InquiryStatsResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    apiRequest<InquiryStatsResponse>('GET', '/api/navi/inquiry-stats')
+      .then((d) => alive && setData(d))
+      .catch((e: unknown) => alive && setError(failureText(e)));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const day = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+
+  return (
+    <section className='card inquiry-stats'>
+      <h2>받은 문의 주간 셈</h2>
+      {error && (
+        <p className='lock-line' role='alert'>
+          {error}
+        </p>
+      )}
+      {!data && !error && <div className='skeleton' aria-hidden='true' />}
+      {data && data.weeks.length === 0 && <p className='empty'>아직 다 센 주가 없어요. 문의는 보낸 지 7일이 지나 지워질 때 세요.</p>}
+      {data && data.weeks.length > 0 && (
+        <div className='chart-table-wrap'>
+          <table className='chart-table'>
+            <thead>
+              <tr>
+                <th scope='col'>보낸 주</th>
+                <th scope='col' className='num'>
+                  받은 문의
+                </th>
+                <th scope='col' className='num'>
+                  처리함
+                </th>
+                <th scope='col' className='num'>
+                  처리 전에 지워짐
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.weeks.map((w) => (
+                <tr key={w.week}>
+                  <th scope='row'>
+                    {day(w.from)}~{day(w.to)}
+                  </th>
+                  {w.folded ? (
+                    <td colSpan={3} className='hint'>
+                      {INQUIRY_WEEK_MIN}건이 안 돼서 숫자를 접었어요
+                    </td>
+                  ) : (
+                    <>
+                      <td className='num'>{w.sent}</td>
+                      <td className='num'>{w.handled}</td>
+                      <td className='num'>{w.expiredOpen}</td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className='hint'>사람·글은 세지 않고 부서 건수만 세요. 셈도 7일 뒤 지워져요.</p>
     </section>
   );
 }

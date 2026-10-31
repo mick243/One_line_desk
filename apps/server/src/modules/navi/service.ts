@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+  addDays,
   type Card,
   CHART_ALIAS_SEPARATOR,
   CHART_COLUMNS,
@@ -9,7 +10,13 @@ import {
   type ChartPreviewResponse,
   type ChartRowSummary,
   GRADE,
+  INQUIRY_WEEK_MIN,
+  type InquiryStatsResponse,
+  type InquiryWeekStat,
   kstDate,
+  type OnboardingItem,
+  type OnboardingResponse,
+  RECORD_KEEP_DAYS,
   WRONG_REASONS,
   type WrongFeedbackRequest,
   type WrongReason,
@@ -137,16 +144,26 @@ export function feedbackDay(now: number): string {
   return new Date(`${kstDate(now)}T00:00:00+09:00`).toISOString();
 }
 
+/** ISO 주(2026-W44)의 월요일·일요일(YYYY-MM-DD) */
+export function isoWeekRange(week: string): { from: string; to: string } {
+  const [y, w] = week.split('-W').map(Number) as [number, number];
+  // 1월 4일이 든 주가 1주예요.
+  const jan4 = new Date(Date.UTC(y, 0, 4));
+  const monday = new Date(jan4.getTime() - ((jan4.getUTCDay() + 6) % 7) * 86_400_000 + (w - 1) * 7 * 86_400_000);
+  const from = monday.toISOString().slice(0, 10);
+  return { from, to: addDays(from, 6) };
+}
+
 function dayStart(date: string): number {
   return Date.parse(`${date}T00:00:00+09:00`);
 }
 
-const COMPARED: (keyof ChartRow)[] = ['task', 'team', 'desk', 'deskUrl', 'nextStep', 'processingPeriod', 'aliases'];
+const COMPARED: (keyof ChartRow)[] = ['task', 'team', 'desk', 'deskUrl', 'nextStep', 'processingPeriod', 'aliases', 'onboardingWeek'];
 
 function show(row: ChartRow, key: keyof ChartRow): string {
   const v = row[key];
   if (Array.isArray(v)) return v.join(CHART_ALIAS_SEPARATOR);
-  return v ?? '';
+  return v === null ? '' : String(v);
 }
 
 function changedFields(before: ChartRow | undefined, after: ChartRow): ChartChange['fields'] {
@@ -199,20 +216,77 @@ async function diffChart(q: Queryable, department: string, fileRows: ChartRow[])
 }
 
 export function createNaviService(ctx: AppContext) {
+  // 분장표 주인이 반영한 행이 있는지(실제 분장표). adapters()가 동기라 기억해 두고, 서버가 뜰 때·seed 뒤·반영 뒤에 다시 읽어요.
+  // 처음 값은 참이에요: 읽기 전에는 실제 자료로 봐서 MCP 시연 클라이언트가 열리지 않는 쪽으로 둬요.
+  let realChart = true;
+  const refreshSource = async () => {
+    realChart = await repo.hasUploadedRows(ctx.db);
+  };
+
   return {
+    /** 실제 분장표인지(띠·MCP 모의 자료 판정). 회사마다 서버 한 대(ADR-23)라 메모리 값으로 충분해요. */
+    hasRealChart: () => realChart,
+    refreshSource,
+
     async ownerDepartments(): Promise<Set<string>> {
       const owners = await repo.ownerDepartments(ctx.db);
       // 분장표를 가져오기 전(빈 표)에는 디렉터리의 임시 값을 그대로 써요. 가져온 뒤에는 분장표가 기준이에요(R17).
       return owners.size > 0 ? owners : ctx.adapters.directory.chartOwnerDepartments();
     },
 
-    /** 비어 있을 때만 가상 분장표를 넣어요. 여러 번 불러도 한 번만 들어가요. */
+    /**
+     * 비어 있을 때만 가상 분장표를 넣어요. 여러 번 불러도 한 번만 들어가요.
+     * 이미 있으면 가상 분장표와 내용이 같은 행만 출처를 demo로 되돌려요(130 마이그레이션 전 시연 DB).
+     */
     async seed(): Promise<void> {
-      if ((await repo.countRows(ctx.db)) > 0) return;
       const rows = parseChart(demoChartCsv());
+      const empty = (await repo.countRows(ctx.db)) === 0;
       await ctx.db.tx(async (q) => {
-        for (const row of rows) await repo.insertRowIfAbsent(q, { ...row, revisedOn: row.revisedOn ?? kstDate(ctx.now()) });
+        for (const row of rows) {
+          if (empty) await repo.insertRowIfAbsent(q, { ...row, revisedOn: row.revisedOn ?? kstDate(ctx.now()) });
+          else await repo.markDemoRow(q, row);
+        }
       });
+      await refreshSource();
+    },
+
+    /** 신규 입사자 첫 2주 할 일(넓힐 후보 ①). 분장표 "온보딩 주차" 칸이 붙은 행만, 읽기만 해요. 진행은 저장하지 않아요. */
+    async onboarding(): Promise<OnboardingResponse> {
+      const rows = await repo.onboardingRows(ctx.db);
+      const item = (r: StoredRow): OnboardingItem => ({
+        rowId: r.id,
+        task: r.task,
+        team: r.team,
+        desk: r.desk,
+        ...(r.deskUrl ? { deskUrl: r.deskUrl } : {}),
+        nextStep: r.nextStep,
+        ...(r.processingPeriod ? { processingPeriod: r.processingPeriod } : {}),
+        revisedOn: r.revisedOn,
+      });
+      return {
+        weeks: ([1, 2] as const).map((week) => ({ week, items: rows.filter((r) => r.onboardingWeek === week).map(item) })).filter((w) => w.items.length > 0),
+      };
+    },
+
+    /**
+     * 받은 문의 주간 셈(넓힐 후보 ④). 분장표 주인이 자기 부서 것만 봐요. 사람·글은 없어요.
+     * 그 주 문의가 다 지워진 주(다 센 주)만 보여 주고, 10건이 안 되면 숫자를 접어요.
+     */
+    async inquiryStats(user: DeskUser): Promise<InquiryStatsResponse> {
+      const today = kstDate(ctx.now());
+      const weeks = await repo.inquiryWeeksOf(ctx.db, user.department);
+      const stats: InquiryWeekStat[] = [];
+      for (const w of weeks) {
+        const { from, to } = isoWeekRange(w.week);
+        // 그 주 마지막 문의가 지워지는 날(일요일 + 보관 기간) 뒤에야 다 센 거예요.
+        if (addDays(to, RECORD_KEEP_DAYS + 1) > today) continue;
+        stats.push(
+          w.sent < INQUIRY_WEEK_MIN
+            ? { week: w.week, from, to, folded: true }
+            : { week: w.week, from, to, folded: false, sent: w.sent, handled: w.handled, expiredOpen: w.expiredOpen },
+        );
+      }
+      return { department: user.department, weeks: stats };
     },
 
     async ask(input: AskInput): Promise<AskOutcome> {
@@ -330,6 +404,7 @@ export function createNaviService(ctx: AppContext) {
           const diff = await diffChart(q, user.department, fileRows);
           const revisedOn = kstDate(now);
           for (const row of diff.rows) await repo.upsertRow(q, { ...row, revisedOn });
+          if (diff.rows.length > 0) realChart = true;
           return {
             applied: diff.rows.length,
             revisedOn,
