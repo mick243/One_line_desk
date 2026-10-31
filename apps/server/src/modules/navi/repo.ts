@@ -15,11 +15,12 @@ interface RowRecord {
   aliases: string[];
   revised_on: string;
   owner_department: string;
+  onboarding_week: number | null;
 }
 
 export type StoredRow = ChartRow & { revisedOn: string };
 
-const ROW_COLUMNS = `id, task, team, desk, desk_url, next_step, processing_period, aliases, to_char(revised_on, 'YYYY-MM-DD') as revised_on, owner_department`;
+const ROW_COLUMNS = `id, task, team, desk, desk_url, next_step, processing_period, aliases, to_char(revised_on, 'YYYY-MM-DD') as revised_on, owner_department, onboarding_week`;
 
 function toRow(r: RowRecord): StoredRow {
   return {
@@ -33,6 +34,7 @@ function toRow(r: RowRecord): StoredRow {
     aliases: r.aliases ?? [],
     revisedOn: r.revised_on,
     ownerDepartment: r.owner_department,
+    onboardingWeek: r.onboarding_week === 1 || r.onboarding_week === 2 ? r.onboarding_week : null,
   };
 }
 
@@ -62,26 +64,65 @@ export async function ownerDepartments(q: Queryable): Promise<Set<string>> {
   return new Set(rows.map((r) => r.owner_department));
 }
 
-/** 가져오기·반영 모두 이 하나로 써요. 사람 이름 칸은 받지도 않아요. */
+const rowParams = (row: StoredRow) => [
+  row.id,
+  row.task,
+  row.team,
+  row.desk,
+  row.deskUrl,
+  row.nextStep,
+  row.processingPeriod,
+  row.aliases,
+  row.revisedOn,
+  row.ownerDepartment,
+  row.onboardingWeek,
+];
+
+/** S5 반영은 이 하나로 써요. 출처는 분장표 주인이 올린 것(upload)이에요. 사람 이름 칸은 받지도 않아요. */
 export async function upsertRow(q: Queryable, row: StoredRow): Promise<void> {
   await q.query(
-    `insert into navi_rows (id, task, team, desk, desk_url, next_step, processing_period, aliases, revised_on, owner_department)
-     values ($1, $2, $3, $4, $5, $6, $7, $8::text[], $9::date, $10)
+    `insert into navi_rows (id, task, team, desk, desk_url, next_step, processing_period, aliases, revised_on, owner_department, onboarding_week, source)
+     values ($1, $2, $3, $4, $5, $6, $7, $8::text[], $9::date, $10, $11, 'upload')
      on conflict (id) do update set task = excluded.task, team = excluded.team, desk = excluded.desk, desk_url = excluded.desk_url,
        next_step = excluded.next_step, processing_period = excluded.processing_period, aliases = excluded.aliases,
-       revised_on = excluded.revised_on, owner_department = excluded.owner_department`,
-    [row.id, row.task, row.team, row.desk, row.deskUrl, row.nextStep, row.processingPeriod, row.aliases, row.revisedOn, row.ownerDepartment],
+       revised_on = excluded.revised_on, owner_department = excluded.owner_department, onboarding_week = excluded.onboarding_week, source = 'upload'`,
+    rowParams(row),
   );
 }
 
-/** 비어 있을 때만 넣어요(seed). 이미 있으면 건드리지 않아요. */
+/** 비어 있을 때만 넣어요(seed). 이미 있으면 건드리지 않아요. 출처는 가상 분장표(demo)예요. */
 export async function insertRowIfAbsent(q: Queryable, row: StoredRow): Promise<void> {
   await q.query(
-    `insert into navi_rows (id, task, team, desk, desk_url, next_step, processing_period, aliases, revised_on, owner_department)
-     values ($1, $2, $3, $4, $5, $6, $7, $8::text[], $9::date, $10)
+    `insert into navi_rows (id, task, team, desk, desk_url, next_step, processing_period, aliases, revised_on, owner_department, onboarding_week, source)
+     values ($1, $2, $3, $4, $5, $6, $7, $8::text[], $9::date, $10, $11, 'demo')
      on conflict (id) do nothing`,
-    [row.id, row.task, row.team, row.desk, row.deskUrl, row.nextStep, row.processingPeriod, row.aliases, row.revisedOn, row.ownerDepartment],
+    rowParams(row),
   );
+}
+
+/**
+ * 가상 분장표 행과 내용이 같은 행만 demo로 되돌려요(130 마이그레이션 전에 만든 시연 DB는 모두 upload로 시작해요).
+ * 개정일·온보딩 주차는 견주지 않아요.
+ */
+export async function markDemoRow(q: Queryable, row: ChartRow): Promise<void> {
+  await q.query(
+    `update navi_rows set source = 'demo', onboarding_week = coalesce(onboarding_week, $10)
+      where id = $1 and source = 'upload' and task = $2 and team = $3 and desk = $4 and desk_url is not distinct from $5
+        and next_step = $6 and processing_period is not distinct from $7 and aliases = $8::text[] and owner_department = $9`,
+    [row.id, row.task, row.team, row.desk, row.deskUrl, row.nextStep, row.processingPeriod, row.aliases, row.ownerDepartment, row.onboardingWeek],
+  );
+}
+
+/** 분장표 주인이 반영한(upload) 행이 하나라도 있는지. 있으면 실제 분장표로 봐요. */
+export async function hasUploadedRows(q: Queryable): Promise<boolean> {
+  const { rows } = await q.query<{ found: boolean }>(`select exists (select 1 from navi_rows where source = 'upload') as found`);
+  return rows[0]?.found === true;
+}
+
+/** 온보딩 주차가 붙은 행(1·2주차). 누구나 읽는 목록이에요. */
+export async function onboardingRows(q: Queryable): Promise<StoredRow[]> {
+  const { rows } = await q.query<RowRecord>(`select ${ROW_COLUMNS} from navi_rows where onboarding_week is not null order by onboarding_week, id`);
+  return rows.map(toRow);
 }
 
 export interface FeedbackRecord {
@@ -183,11 +224,48 @@ export async function purgeFeedback(q: Queryable, before: number): Promise<void>
   await q.query('delete from navi_feedback where at < $1', [new Date(before).toISOString()]);
 }
 
-/** 보관 기간이 지난 문의와 답장을 지워요(7일). 문의가 지워지면 답장도 같이 지워져요. */
-export async function purgeInquiries(q: Queryable, before: number): Promise<void> {
+/**
+ * 보관 기간이 지난 문의와 답장을 지워요(7일). 한 트랜잭션 안에서 해요.
+ * 지우기 직전에 지우는 문의를 보낸 주 × 받은 부서로 세어 navi_inquiry_weeks에 더해요(넓힐 후보 ④).
+ * 문의는 한 번만 지워지니 한 번만 세져요. 처리 전(새 문의·확인함)에 지워진 건은 expired_open이에요.
+ */
+export async function purgeInquiries(q: Queryable, before: number, now: number): Promise<void> {
   const cutoff = new Date(before).toISOString();
   await q.query('delete from navi_inquiry_replies where created_at < $1', [cutoff]);
-  await q.query('delete from navi_inquiries where created_at < $1', [cutoff]);
+  // 지운 행(returning)으로 세요. 목록 열기와 정시 지우기가 겹쳐도, 늦게 온 쪽은 지울 행이 없어서 두 번 세지 않아요.
+  await q.query(
+    `with gone as (delete from navi_inquiries where created_at < $1 returning created_at, department, state)
+     insert into navi_inquiry_weeks (week, department, sent, handled, expired_open, updated_at)
+     select to_char(created_at at time zone 'Asia/Seoul', 'IYYY-"W"IW'), department, count(*)::int,
+            (count(*) filter (where state not in ('new', 'seen')))::int, (count(*) filter (where state in ('new', 'seen')))::int, $2::timestamptz
+       from gone
+      group by 1, 2
+     on conflict (week, department) do update set sent = navi_inquiry_weeks.sent + excluded.sent,
+       handled = navi_inquiry_weeks.handled + excluded.handled, expired_open = navi_inquiry_weeks.expired_open + excluded.expired_open,
+       updated_at = excluded.updated_at`,
+    [cutoff, new Date(now).toISOString()],
+  );
+}
+
+export interface InquiryWeekRow {
+  week: string;
+  sent: number;
+  handled: number;
+  expiredOpen: number;
+}
+
+/** 한 부서의 주간 셈. 다 센 주(그 주 문의가 모두 지워진 주)만 화면에 나가요. */
+export async function inquiryWeeksOf(q: Queryable, department: string): Promise<InquiryWeekRow[]> {
+  const { rows } = await q.query<InquiryWeekRow>(
+    `select week, sent, handled, expired_open as "expiredOpen" from navi_inquiry_weeks where department = $1 order by week desc`,
+    [department],
+  );
+  return rows;
+}
+
+/** 셈 행도 마지막으로 더한 뒤 7일이 지나면 지워요(ADR-21). */
+export async function purgeInquiryWeeks(q: Queryable, before: number): Promise<void> {
+  await q.query('delete from navi_inquiry_weeks where updated_at < $1', [new Date(before).toISOString()]);
 }
 
 /** 받은 문의함 순서: 아직 끝나지 않은 것(새 문의·확인함) 먼저, 그다음 최근 순 */
@@ -275,4 +353,44 @@ export async function repliesOf(q: Queryable, inquiryIds: string[]): Promise<Rep
     [inquiryIds],
   );
   return rows;
+}
+
+// ── IT FAQ(넓힐 후보 ②). 기준 자료라 지우지 않아요. ─────────────────────
+
+export interface ItFaqRow {
+  id: string;
+  title: string;
+  aliases: string[];
+  errorCodes: string[];
+  steps: string[];
+  revisedOn: string;
+  rowId: string | null;
+}
+
+export async function countItFaqs(q: Queryable): Promise<number> {
+  const { rows } = await q.query<{ n: number }>('select count(*)::int as n from navi_it_faqs');
+  return rows[0]?.n ?? 0;
+}
+
+export async function allItFaqs(q: Queryable): Promise<ItFaqRow[]> {
+  const { rows } = await q.query<ItFaqRow>(
+    `select id, title, aliases, error_codes as "errorCodes", steps, to_char(revised_on, 'YYYY-MM-DD') as "revisedOn", row_id as "rowId"
+       from navi_it_faqs order by id`,
+  );
+  return rows;
+}
+
+/** 비어 있을 때만 넣어요(seed). 출처는 가상 FAQ(demo)예요. 분장표에 없는 행을 가리키면 행을 비워 둬요. */
+export async function insertItFaqIfAbsent(q: Queryable, f: ItFaqRow): Promise<void> {
+  await q.query(
+    `insert into navi_it_faqs (id, title, aliases, error_codes, steps, revised_on, row_id, source)
+     values ($1, $2, $3::text[], $4::text[], $5::text[], $6::date, (select id from navi_rows where id = $7), 'demo')
+     on conflict (id) do nothing`,
+    [f.id, f.title, f.aliases, f.errorCodes, f.steps, f.revisedOn, f.rowId],
+  );
+}
+
+export async function hasUploadedItFaqs(q: Queryable): Promise<boolean> {
+  const { rows } = await q.query<{ found: boolean }>(`select exists (select 1 from navi_it_faqs where source = 'upload') as found`);
+  return rows[0]?.found === true;
 }

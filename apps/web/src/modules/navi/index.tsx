@@ -3,5 +3,7 @@
 export { ChartScreen } from './ChartScreen';
 export { InquiryInbox, MyInquiries } from './Inquiries';
 export { InquirySheet } from './InquirySheet';
+export { ItHelpScreen } from './ItHelpScreen';
 export { LeaveRequestSheet } from './LeaveRequestSheet';
+export { OnboardingScreen } from './OnboardingScreen';
 export { WrongSheet } from './WrongSheet';

@@ -20,7 +20,7 @@ describe('공통 바닥', () => {
   it('건강 확인은 DB와 떠 있는 판을 알려 주고, AI 공급자 이름은 내보내지 않아요(배포 준비 회의 A5)', async () => {
     const { app, db } = await setup();
     const res = (await app.inject({ method: 'GET', url: '/health' })).json();
-    expect(res).toMatchObject({ ok: true, db: `${db.kind}-connected`, build: 'dev', rulesVersion: 2 });
+    expect(res).toMatchObject({ ok: true, db: `${db.kind}-connected`, build: 'dev', rulesVersion: 3 });
     expect(res.ai).toBeUndefined();
   });
 

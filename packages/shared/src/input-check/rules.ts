@@ -1,7 +1,8 @@
 // 공통 입력 검사 규칙(ADR-11). 브라우저와 서버가 이 파일 하나를 같이 써요.
 // 규칙을 바꾸면 RULES_VERSION을 올려요. 서버는 같은 버전 규칙으로 다시 검사해요.
 // 2: 외국인등록번호·띄어 쓴 주민번호·카드(Luhn)·계좌·여권·면허·콜론 없는 비밀번호 문장·PEM 키, 0폭·글 방향 문자 지우기, 제어 문자 잠금(QA-2·3·10·19)
-export const RULES_VERSION = 2;
+// 3: 사용자 폴더 경로(C:\Users\<이름>, /home/<이름>, /Users/<이름>)의 이름 부분 가림. IT 오류 문장에 자주 들어 있어요(10/31 넓힐 후보 ②)
+export const RULES_VERSION = 3;
 
 export type LockKind = 'key-token' | 'grade3' | 'health' | 'control';
 
@@ -86,12 +87,18 @@ export const LOCK_MESSAGE: Record<LockKind, string> = {
   control: '보이지 않는 특수 글자가 있어요. 지우고 다시 보내 주세요',
 };
 
-export type MaskKind = 'email' | 'ip';
+export type MaskKind = 'path' | 'email' | 'ip';
 
 // 바꾼 뒤에만 보내요. 풀기는 없어요.
 export const MASK_RULES: { kind: MaskKind; label: string; pattern: RegExp }[] = [
+  // 사용자 폴더 이름(대개 사번·이름)을 바꿔요. 그 뒤 경로(\AppData\…)는 남겨서 어떤 오류인지 알아볼 수 있게 해요.
+  {
+    kind: 'path',
+    label: '[사용자 폴더]',
+    pattern: /(?:\b[A-Za-z]:[\\/]+(?:Users|Documents and Settings)[\\/]+|(?<![\w.-])\/(?:home|Users)\/)[^\\/\s"'<>:|?*]+/gi,
+  },
   { kind: 'email', label: '[이메일]', pattern: /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g },
   { kind: 'ip', label: '[IP]', pattern: /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/g },
 ];
 
-export const MASK_NAME: Record<MaskKind, string> = { email: '이메일', ip: 'IP' };
+export const MASK_NAME: Record<MaskKind, string> = { path: '사용자 폴더', email: '이메일', ip: 'IP' };

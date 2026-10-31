@@ -2,6 +2,7 @@ import { recordCutoff } from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
 import type { DeskModule } from '../../core/module';
 import { createInquiryService } from './inquiries';
+import { createItHelpService } from './it-help';
 import * as repo from './repo';
 import { registerNaviRoutes } from './routes';
 import { createNaviService } from './service';
@@ -14,18 +15,31 @@ import { createNaviService } from './service';
 export function createNaviModule(ctx: AppContext): DeskModule {
   const navi = createNaviService(ctx);
   const inquiries = createInquiryService(ctx);
+  const itHelp = createItHelpService(ctx);
   // 분장표 주인 역할 계산(core/guard.ts)이 이걸 써요.
   ctx.services.navi = { ownerDepartments: () => navi.ownerDepartments() };
 
   return {
     kind: 'navi',
     ask: (input) => navi.ask(input),
-    register: (app) => registerNaviRoutes(app, ctx, navi, inquiries),
-    seed: () => navi.seed(),
-    adapters: () => [{ name: 'mock-chart', label: '업무 분장표(가상 분장표)', mock: true }],
-    // 보관 기간(7일, 10/28): 문의와 "틀렸어요" 기록
+    register: (app) => registerNaviRoutes(app, ctx, navi, inquiries, itHelp),
+    async seed() {
+      await navi.seed();
+      await itHelp.seed();
+    },
+    async init() {
+      await navi.refreshSource();
+      await itHelp.refreshSource();
+    },
+    // 분장표 주인이 S5로 반영한 행이 하나라도 있으면 실제 분장표예요(130 출처 칸). 띠와 MCP 모의 자료 판정이 이 값을 봐요.
+    adapters: () => [
+      navi.hasRealChart() ? { name: 'chart', label: '업무 분장표', mock: false } : { name: 'mock-chart', label: '업무 분장표(가상 분장표)', mock: true },
+      itHelp.hasRealFaqs() ? { name: 'it-faq', label: 'IT FAQ', mock: false } : { name: 'mock-it-faq', label: 'IT FAQ(가상 FAQ)', mock: true },
+    ],
+    // 보관 기간(7일, 10/28): 문의(지우며 주간 셈에 더해요)·주간 셈·"틀렸어요" 기록
     async retention() {
       await inquiries.purge();
+      await repo.purgeInquiryWeeks(ctx.db, recordCutoff(ctx.now()));
       await repo.purgeFeedback(ctx.db, recordCutoff(ctx.now()));
     },
   };

@@ -152,7 +152,7 @@ function overlapping(record: LeaveRecord | null, days: readonly LeaveDay[]): str
 }
 
 export function createInquiryService(ctx: AppContext) {
-  const purge = () => repo.purgeInquiries(ctx.db, recordCutoff(ctx.now()));
+  const purge = () => ctx.db.tx((q) => repo.purgeInquiries(q, recordCutoff(ctx.now()), ctx.now()));
   const personOf = async (subject: string) => {
     const profile = await ctx.adapters.directory.getProfile(subject).catch(() => null);
     return { idpSubject: subject, ...(profile?.email ? { email: profile.email } : {}) };

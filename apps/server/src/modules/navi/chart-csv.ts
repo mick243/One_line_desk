@@ -16,6 +16,8 @@ export interface ChartRow {
   /** YYYY-MM-DD. 파일에 없으면 null이고, 반영할 때 서버가 오늘로 채워요. */
   revisedOn: string | null;
   ownerDepartment: string;
+  /** 신규 입사자 첫 2주 할 일이면 1·2, 아니면 null(넓힐 후보 ①) */
+  onboardingWeek: 1 | 2 | null;
 }
 
 export const CHART_FORMAT_MESSAGE = '분장표 양식으로 올려 주세요';
@@ -23,7 +25,7 @@ export const chartFormatError = () => new DeskError('chart-format', 422, CHART_F
 
 const REQUIRED: ChartColumn[] = ['id', 'task', 'team', 'desk', 'nextStep', 'ownerDepartment'];
 const MAX_ROWS = 500;
-const MAX_LEN: Record<Exclude<ChartColumn, 'aliases' | 'revisedOn'>, number> = {
+const MAX_LEN: Record<Exclude<ChartColumn, 'aliases' | 'revisedOn' | 'onboardingWeek'>, number> = {
   id: 9,
   task: 60,
   team: 40,
@@ -146,6 +148,7 @@ export function parseChart(text: string): ChartRow[] {
       ],
       revisedOn: get('revisedOn') || null,
       ownerDepartment: get('ownerDepartment'),
+      onboardingWeek: onboardingWeek(get('onboardingWeek')),
     };
     validateRow(row);
     if (seen.has(row.id)) throw chartFormatError();
@@ -155,10 +158,18 @@ export function parseChart(text: string): ChartRow[] {
   return rows;
 }
 
+/** "온보딩 주차" 칸: 비우면 null, 1·2(또는 "1주차"·"2주차")만 받아요. */
+function onboardingWeek(value: string): 1 | 2 | null {
+  if (value === '') return null;
+  const m = /^([12])(?:\s*주차)?$/.exec(value);
+  if (!m) throw chartFormatError();
+  return m[1] === '1' ? 1 : 2;
+}
+
 function validateRow(row: ChartRow): void {
   if (!ROW_ID.test(row.id)) throw chartFormatError();
   for (const col of REQUIRED) {
-    const value = row[col as Exclude<ChartColumn, 'aliases'>];
+    const value = row[col as Exclude<ChartColumn, 'aliases' | 'onboardingWeek'>];
     if (typeof value !== 'string' || value.length === 0) throw chartFormatError();
   }
   for (const [col, max] of Object.entries(MAX_LEN) as [keyof typeof MAX_LEN, number][]) {
@@ -183,7 +194,7 @@ export function toCsv(rows: ChartRow[]): string {
       .map((c) => {
         const v = row[c];
         if (Array.isArray(v)) return cell(v.join(CHART_ALIAS_SEPARATOR));
-        return cell(v ?? '');
+        return cell(v === null ? '' : String(v));
       })
       .join(',');
   return `﻿${cols.map((c) => CHART_COLUMNS[c]).join(',')}\r\n${rows.map(line).join('\r\n')}\r\n`;

@@ -28,6 +28,7 @@ describe('분장표 파일 읽기', () => {
       aliases: ['시험', '테스트'],
       revisedOn: '2026-10-01',
       ownerDepartment: '재무팀',
+      onboardingWeek: null,
     });
   });
 

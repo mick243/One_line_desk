@@ -46,6 +46,8 @@ export const CHART_COLUMNS = {
   processingPeriod: '처리 기간',
   revisedOn: '개정일',
   ownerDepartment: '주인 부서',
+  // 신규 입사자 첫 2주 할 일(1·2, 비우면 아님). 없어도 되는 칸이에요(10/31 넓힐 후보 ①).
+  onboardingWeek: '온보딩 주차',
 } as const;
 export type ChartColumn = keyof typeof CHART_COLUMNS;
 /** "다른 말" 칸 안에서 여러 값을 나누는 글자 */
@@ -224,4 +226,90 @@ export interface InquiryItem {
 export interface InquiryListResponse {
   enabled: boolean;
   items: InquiryItem[];
+}
+
+// ── 신규 입사자 첫 2주 할 일(10/31 넓힐 후보 ①) ───────────────────
+// 분장표 "온보딩 주차" 칸(1·2)이 붙은 행을 주차별로 보여 줘요. 누가 무엇을 했는지(진행)는 저장하지 않아요(ADR-21).
+
+export interface OnboardingItem {
+  rowId: string;
+  task: string;
+  team: string;
+  desk: string;
+  deskUrl?: string;
+  nextStep: string;
+  processingPeriod?: string;
+  /** YYYY-MM-DD */
+  revisedOn: string;
+}
+
+/** GET /api/navi/onboarding. 누구나 읽어요. 신규 입사자인지는 묻지도 판단하지도 않아요. */
+export interface OnboardingResponse {
+  weeks: { week: 1 | 2; items: OnboardingItem[] }[];
+}
+
+// ── 부서 간 문의 셈(10/31 넓힐 후보 ④, 사용자 결정: 받은 부서 주간 건수 · 7일 보관) ──
+
+/** 이보다 적은 주는 숫자를 접어요(작은 묶음으로 사람을 알아보지 못하게). */
+export const INQUIRY_WEEK_MIN = 10;
+
+export interface InquiryWeekStat {
+  /** ISO 주(예: 2026-W44, 한국 시간) */
+  week: string;
+  /** 그 주 월요일·일요일(YYYY-MM-DD) */
+  from: string;
+  to: string;
+  /** 10건이 안 돼서 숫자를 접었으면 true이고 숫자 칸이 없어요. */
+  folded: boolean;
+  sent?: number;
+  handled?: number;
+  /** 처리 전(새 문의·확인함)에 보관 기간이 지나 지워진 건 */
+  expiredOpen?: number;
+}
+
+/** GET /api/navi/inquiry-stats. 분장표 주인이 자기 부서(받은 쪽) 것만 봐요. */
+export interface InquiryStatsResponse {
+  department: string;
+  weeks: InquiryWeekStat[];
+}
+
+// ── IT 오류 문장 → IT FAQ 원문 단계(10/31 넓힐 후보 ②) ─────────────
+// 붙여 넣은 오류 문장은 저장하지 않아요. 화면이 공통 입력 검사로 가린 글만 POST 본문으로 보내요.
+// 사용자 결정(10/31): 복사 버튼은 만들지 않고, 해결이 안 되면 앱 안 문의(확인 시트 → [보내기])로만 IT팀에 보내요.
+
+/** 붙여넣기 한도. 문의 글 한도와 같아서 보낼 때 잘리지 않아요. */
+export const IT_HELP_TEXT_MAX = INQUIRY_QUESTION_MAX;
+
+export interface ItHelpRequest {
+  text: string;
+}
+
+export interface ItFaq {
+  id: string;
+  title: string;
+  /** FAQ 원문 단계(고치지 않고 그대로) */
+  steps: string[];
+  /** YYYY-MM-DD */
+  revisedOn: string;
+}
+
+/** POST /api/navi/it-help. 붙여 넣은 글은 응답에 다시 싣지 않아요. */
+export interface ItHelpResponse {
+  /** 근거 점수를 넘은 FAQ 하나. 못 찾았으면 없어요. */
+  faq?: ItFaq;
+  /** 비슷한 다른 FAQ 제목(최대 3개) */
+  others: { id: string; title: string }[];
+  /** 해결이 안 될 때 문의를 보낼 분장표 행(IT지원팀). 분장표에 없으면 null이에요. */
+  inquiryRowId: string | null;
+  /** 받는 팀 이름(문의 시트 머리에 써요) */
+  inquiryTeam: string;
+  /** 그 행의 업무 이름(문의 시트에 써요) */
+  inquiryTask: string;
+}
+
+/** 해결이 안 됐을 때 IT팀 문의 글을 채우는 틀. 가린 글만 받아요. 브라우저가 만들고, 사람이 확인 시트에서 고친 뒤 [보내기]를 눌러요. */
+export function itInquiryDraft(input: { maskedText: string; faqTitle?: string }): string {
+  const head = input.faqTitle ? `IT FAQ "${input.faqTitle}"의 단계를 해 봤는데 해결되지 않았어요.` : '비슷한 IT FAQ를 찾지 못했어요.';
+  const body = `${head}\n\n오류 글(가린 글):\n${input.maskedText.trim()}`;
+  return body.length > INQUIRY_QUESTION_MAX ? `${body.slice(0, INQUIRY_QUESTION_MAX - 1)}…` : body;
 }

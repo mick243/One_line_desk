@@ -15,7 +15,7 @@ describe('공통 입력 검사', () => {
     const r = checkInput('kim@example.com 에서 10.0.0.12 접속이 안 돼요, lee@corp.co.kr 도요');
     expect(r.locks).toEqual([]);
     expect(r.text).toBe('[이메일] 에서 [IP] 접속이 안 돼요, [이메일] 도요');
-    expect(r.masked).toEqual({ email: 2, ip: 1 });
+    expect(r.masked).toEqual({ path: 0, email: 2, ip: 1 });
     expect(maskLine(r)).toBe('이메일 2곳, IP 1곳을 [이메일] · [IP]로 바꿔 보내요');
   });
 
@@ -47,7 +47,7 @@ describe('공통 입력 검사', () => {
 describe('입력 검사 규칙 2(QA-2·3·10·19)', () => {
   it.each(QA_LOCKED)('%s → 잠가요', (_name, text, kind) => {
     const r = checkInput(text);
-    expect(r.rulesVersion).toBe(2);
+    expect(r.rulesVersion).toBe(3);
     expect(r.locks.map((l) => l.kind)).toContain(kind);
   });
 
@@ -109,4 +109,32 @@ describe('입력 검사 규칙 2(QA-2·3·10·19)', () => {
   ])('정상 문장은 잠그지 않아요: %s', (text) => {
     expect(checkInput(text).locks).toEqual([]);
   });
+});
+
+describe('입력 검사 규칙 3: 사용자 폴더 경로 가림(넓힐 후보 ②)', () => {
+  it.each([
+    [String.raw`C:\Users\kimgaram\AppData\Local\Temp\setup.log 를 열 수 없어요`, String.raw`[사용자 폴더]\AppData\Local\Temp\setup.log 를 열 수 없어요`],
+    ['파일 c:/users/gaon.lee/Desktop/report.xlsx 저장 실패', '파일 [사용자 폴더]/Desktop/report.xlsx 저장 실패'],
+    ['/home/dev01/.ssh/config: permission denied', '[사용자 폴더]/.ssh/config: permission denied'],
+    ['open /Users/nara/Library/Logs/app.log failed', 'open [사용자 폴더]/Library/Logs/app.log failed'],
+    [String.raw`C:\Documents and Settings\park\NTUSER.DAT`, String.raw`[사용자 폴더]\NTUSER.DAT`],
+  ])('%s', (raw, masked) => {
+    const r = checkInput(raw);
+    expect(r.locks).toEqual([]);
+    expect(r.text).toBe(masked);
+    expect(r.masked.path).toBe(1);
+  });
+
+  it('가림 줄에 사용자 폴더 수가 나와요', () => {
+    expect(maskLine(checkInput(String.raw`C:\Users\a\x 와 /home/b/y`))).toBe('사용자 폴더 2곳을 [사용자 폴더]로 바꿔 보내요');
+  });
+
+  it.each([String.raw`C:\Program Files\App\app.exe 오류`, 'https://example.com/home/index.html 이 안 열려요', '0x80070005 접근 거부', '/var/log/syslog 확인'])(
+    '사용자 폴더가 아닌 경로는 그대로 둬요: %s',
+    (raw) => {
+      const r = checkInput(raw);
+      expect(r.masked.path).toBe(0);
+      expect(r.text).toBe(raw);
+    },
+  );
 });

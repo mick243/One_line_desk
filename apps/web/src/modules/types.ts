@@ -39,6 +39,10 @@ export interface WebModules {
   OpsScreen: ComponentType<ScreenProps>;
   /** S5 분장표 수정 제안함 */
   ChartScreen: ComponentType<ScreenProps>;
+  /** 담당 찾기 아래: IT 오류 문장 → IT FAQ 원문 단계(10/31 넓힐 후보 ②) */
+  ItHelpScreen: ComponentType<{ onBack: () => void }>;
+  /** 담당 찾기 아래: 신규 입사자 첫 2주 할 일(10/31 넓힐 후보 ①) */
+  OnboardingScreen: ComponentType<{ onBack: () => void }>;
   /** 담당 팀에 문의 보내기 양식(ADR-16). 담당 카드의 [○○에 문의하기]로 열려요. */
   InquirySheet: ComponentType<{ action: Extract<CardAction, { type: 'inquire' }>; initialQuestion: string; onClose: () => void }>;
   /** 휴가 신청 양식(ADR-24). 연차 카드의 [휴가 신청하기]로 열려요. 보내기는 확인 시트를 거쳐요. */

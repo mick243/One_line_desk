@@ -179,6 +179,7 @@ export async function buildApp(opts: BuildOptions) {
   if (opts.seed ?? config.seedDemo) {
     for (const module of modules) await module.seed?.();
   }
+  for (const module of modules) await module.init?.();
 
   // 보관 기간 지우기(L-33): 화면을 열지 않아도 지워요. 듣기 시작한 뒤 한 번, 그 뒤 한 시간마다예요.
   // 10/28 사용자 결정: 접속기록(법정 1년) 말고는 모두 7일(RECORD_KEEP_DAYS)이에요. 모듈 기록은 각 모듈 retention이 지워요.

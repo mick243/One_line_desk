@@ -36,7 +36,7 @@ function entryFromPath(): { kind: 'consent' } | { kind: 'link'; token: string } 
 /** 운영(S4)은 같이 채워요 탭, 분장표 수정 제안함(S5)은 담당 찾기 탭 아래에 있어요. */
 function tabOf(view: View): Tab {
   if (view === 'ops') return 'board';
-  if (view === 'chart') return 'navi';
+  if (view === 'chart' || view === 'it-help' || view === 'onboarding') return 'navi';
   return view;
 }
 
@@ -130,6 +130,8 @@ export function App() {
     BoardScreen,
     OpsScreen,
     ChartScreen,
+    ItHelpScreen,
+    OnboardingScreen,
     ConsentScreen,
     LinkEntry,
     MyReservations,
@@ -198,6 +200,15 @@ export function App() {
                 )}
                 {current === 'navi' && (
                   <>
+                    <section className='card navi-more'>
+                      <h2>이런 것도 찾아 줘요</h2>
+                      <button type='button' className='link' onClick={() => go('it-help')}>
+                        IT 오류가 났나요? 오류 글을 붙여 넣어 보세요
+                      </button>
+                      <button type='button' className='link' onClick={() => go('onboarding')}>
+                        처음 왔어요 · 첫 2주에 할 일 보기
+                      </button>
+                    </section>
                     <InquiryInbox />
                     <MyInquiries />
                   </>
@@ -225,6 +236,8 @@ export function App() {
             )}
             {!entry && current === 'ops' && <OpsScreen me={me} />}
             {!entry && current === 'chart' && <ChartScreen me={me} />}
+            {!entry && current === 'it-help' && <ItHelpScreen onBack={() => go('navi')} />}
+            {!entry && current === 'onboarding' && <OnboardingScreen onBack={() => go('navi')} />}
             {!entry && current === 'mine' && <Mine me={me} switches={config} onLoggedOut={() => setMe(null)} onOpen={(to) => go(to)} />}
           </main>
           <TabBar current={tabOf(current)} onChange={(t) => go(t)} modules={config.modules} />

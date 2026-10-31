@@ -45,6 +45,7 @@ export const NAME_BLOCK_LABEL: Record<NameBlockKind, string> = {
   grade3: '주민번호·카드·계좌·비밀번호',
   health: '건강 정보',
   control: '줄바꿈·특수 글자',
+  path: '사용자 폴더',
   email: '이메일',
   ip: 'IP',
   phone: '전화번호',

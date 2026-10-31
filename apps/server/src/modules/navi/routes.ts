@@ -4,6 +4,9 @@ import {
   INQUIRY_QUESTION_MAX,
   INQUIRY_REASON_MAX,
   INQUIRY_REPLY_MAX,
+  type InquiryStatsResponse,
+  IT_HELP_TEXT_MAX,
+  type ItHelpRequest,
   type InquiryDecisionRequest,
   type InquiryListResponse,
   type InquiryReplyRequest,
@@ -13,6 +16,7 @@ import {
   KINDS,
   NAVI_ROW_ID_PATTERN,
   type NaviRowCardRequest,
+  type OnboardingResponse,
   WRONG_REASONS,
   type WrongFeedbackRequest,
 } from '@one-line-desk/shared';
@@ -21,6 +25,7 @@ import { accessFrom } from '../../core/access-record';
 import type { AppContext } from '../../context';
 import { DeskError } from '../../core/errors';
 import type { InquiryService } from './inquiries';
+import type { ItHelpService } from './it-help';
 import type { NaviService } from './service';
 
 // navi 경로. 묻기(/api/ask)와 따로인 피드백 경로·행 카드·S5(분장표 주인만)예요.
@@ -45,7 +50,7 @@ async function rejectUnknownFeedbackKeys(req: FastifyRequest, reply: FastifyRepl
   return undefined;
 }
 
-export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: NaviService, inquiries: InquiryService) {
+export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: NaviService, inquiries: InquiryService, itHelp: ItHelpService) {
   const owner = [ctx.guards.user, ctx.guards.role('chart-owner')];
   const assertNotOff = () => {
     if (ctx.ops.get().modules.navi === 'off') throw featureOff();
@@ -98,6 +103,54 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
       return { status: 'done' as const, card: await navi.rowCard(req.body.rowId) };
     },
   );
+
+  // 신규 입사자 첫 2주 할 일(넓힐 후보 ①). 누구나 읽어요. 진행은 저장하지 않아요.
+  app.get('/api/navi/onboarding', { preHandler: ctx.guards.user }, async (): Promise<OnboardingResponse> => {
+    assertNotOff();
+    return navi.onboarding();
+  });
+
+  // IT 오류 문장 → IT FAQ(넓힐 후보 ②). 가린 글이 POST 본문으로만 오고 저장하지 않아요. 감사 로그도 남기지 않아요(글·FAQ 번호 없음).
+  app.post<{ Body: ItHelpRequest }>(
+    '/api/navi/it-help',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['text'],
+          additionalProperties: false,
+          properties: { text: { type: 'string', minLength: 1, maxLength: IT_HELP_TEXT_MAX } },
+        },
+      },
+    },
+    async (req, reply) => {
+      assertNotOff();
+      if (!ctx.rateLimiter.hit(req.deskUser!.pseudonymId, 'it-help')) {
+        return reply.code(429).send({ error: 'rate-limited', message: '요청이 많아요. 잠시 뒤에 다시 보내 주세요.' });
+      }
+      return itHelp.match(req.body.text);
+    },
+  );
+
+  // 다른 후보 제목을 눌렀을 때 그 FAQ 원문 단계(읽기만). FAQ 번호도 주소에 남지 않게 POST 본문으로 받아요.
+  app.post<{ Body: { id: string } }>(
+    '/api/navi/it-help/faq',
+    {
+      preHandler: ctx.guards.user,
+      schema: { body: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: { type: 'string', pattern: '^ITF-[0-9]{2,3}$' } } } },
+    },
+    async (req) => {
+      assertNotOff();
+      return itHelp.faq(req.body.id);
+    },
+  );
+
+  // 받은 문의 주간 셈(넓힐 후보 ④). 분장표 주인이 자기 부서 것만 봐요. 사람·글 없는 건수예요.
+  app.get('/api/navi/inquiry-stats', { preHandler: owner }, async (req): Promise<InquiryStatsResponse> => {
+    assertNotOff();
+    return navi.inquiryStats(req.deskUser!);
+  });
 
   // S5 분장표 수정 제안함(분장표 주인만, 자기 부서 행만)
   app.get('/api/navi/chart', { preHandler: owner }, async (req) => {

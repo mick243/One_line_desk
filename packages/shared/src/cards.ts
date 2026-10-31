@@ -59,7 +59,7 @@ export type CardAction =
   | { type: 'invite'; text: string; reservationId: string; roomName: string; when: string };
 
 /** 앱 안 페이지. 기능마다 페이지가 따로 있어요(10/26 화면 구조 변경, ADR-02 개정). */
-export type AppDestination = 'home' | 'navi' | 'rooms' | 'notices' | 'board' | 'mine' | 'ops' | 'chart';
+export type AppDestination = 'home' | 'navi' | 'rooms' | 'notices' | 'board' | 'mine' | 'ops' | 'chart' | 'it-help' | 'onboarding';
 
 /** "틀렸어요" 시트에 필요한 것. 안내·제안 카드에만 붙어요(화면설계 카드 문법). */
 export interface WrongInfo {
