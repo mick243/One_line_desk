@@ -5,7 +5,7 @@ import { OffLeave } from '../../adapters/off';
 import type { LeaveUse } from '../../adapters/types';
 import { AiGateway, type LlmProvider, type ProviderResult, type StructuredRequest } from '../../core/ai/gateway';
 import { createTestApp, MOCK } from '../../testing';
-import { computeLeave, ruleLeaveQuestion } from './leave';
+import { computeLeave, isOfficialLeaveQuestion, ruleLeaveQuestion } from './leave';
 
 // 담당 찾기 "내 남은 연차"(ADR-18). 숫자는 서버 규칙, AI는 질문 해석만, 본인 것만이에요.
 // 시험 시계는 2026-10-26(월)이에요. 가상 연차 자료는 adapters/mock/leave.ts예요.
@@ -44,6 +44,25 @@ describe('연차 계산(근로기준법, 입사일 기준)', () => {
       used: 3,
       remaining: 15,
     });
+  });
+});
+
+describe('공가(11/1)', () => {
+  it('공가로 쓴 날은 남은 연차 계산에서 빼지 않아요', () => {
+    const uses: LeaveUse[] = [
+      { date: '2026-04-01', kind: 'full' },
+      { date: '2026-04-02', kind: 'full', type: 'official' },
+      { date: '2026-04-03', kind: 'half', type: 'annual' },
+    ];
+    const b = computeLeave({ hireDate: '2020-03-02', uses }, '2026-10-26');
+    expect(b).toMatchObject({ usedFull: 1, usedHalf: 1, used: 1.5 });
+  });
+
+  it('공가 질문은 규칙으로만 알아봐요', () => {
+    for (const q of ['예비군 훈련 공가 신청', '민방위 가는 날 어떻게 해요?', '법원 증인 출석이라 쉬어야 해요', '공가 쓰고 싶어요']) {
+      expect(isOfficialLeaveQuestion(q)).toBe(true);
+    }
+    for (const q of ['내 연차 몇 개 남았어?', '투표소 위치 알려줘', '법인카드 신청']) expect(isOfficialLeaveQuestion(q)).toBe(false);
   });
 });
 

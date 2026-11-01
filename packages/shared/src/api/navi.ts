@@ -129,6 +129,21 @@ export const LEAVE_REJECT_REASON_MAX = 500;
 /** 한 번에 신청할 수 있는 날 수 */
 export const LEAVE_REQUEST_MAX_DAYS = 30;
 
+/** 휴가 요청 종류(11/1). 공가는 연차에서 빠지지 않아요. 병가는 결정 뒤에 더해요(docs/병가준비_2026-11-01.md). */
+export const LEAVE_TYPES = ['annual', 'official'] as const;
+export type LeaveType = (typeof LEAVE_TYPES)[number];
+export const LEAVE_TYPE_LABEL: Record<LeaveType, string> = { annual: '연차', official: '공가' };
+
+/** 공가 사유는 정해진 것만 골라요. 자유 글 사유 칸은 따로 있어요. */
+export const OFFICIAL_LEAVE_REASONS = ['reserve', 'vote', 'summons', 'duty'] as const;
+export type OfficialLeaveReason = (typeof OFFICIAL_LEAVE_REASONS)[number];
+export const OFFICIAL_LEAVE_REASON_LABEL: Record<OfficialLeaveReason, string> = {
+  reserve: '예비군·민방위 훈련',
+  vote: '선거 투표',
+  summons: '법원·관공서 출석',
+  duty: '그 밖의 공적 의무',
+};
+
 /** 휴가 하루. 반차는 0.5일이에요. */
 export interface LeaveDay {
   /** YYYY-MM-DD(한국 날짜) */
@@ -142,8 +157,11 @@ export interface InquiryRequest {
   question: string;
   reason: string;
   requestId: string;
-  /** 휴가 요청이면 쓸 날(ADR-24). 받는 팀(인사팀)이 승인하면 근태 기록에 들어가요. */
-  leave?: { days: LeaveDay[] };
+  /**
+   * 휴가 요청이면 쓸 날(ADR-24). 받는 팀(인사팀)이 승인하면 근태 기록에 들어가요.
+   * type이 없으면 연차예요. 공가(official)는 officialReason이 꼭 있어야 하고 연차에서 빠지지 않아요.
+   */
+  leave?: { days: LeaveDay[]; type?: LeaveType; officialReason?: OfficialLeaveReason };
 }
 
 /** POST /api/navi/inquiries/:id/reply. 받은 팀이 보내는 답장이에요. 7일 보관해요. */
@@ -210,8 +228,8 @@ export interface InquiryItem {
   /** 받은 문의함: [확인했어요]·[처리했어요](휴가 요청은 [확인했어요]만, 승인·반려는 decision으로) */
   actions: CardAction[];
   kind: 'general' | 'leave';
-  /** 휴가 요청이면 날과 일수. balance는 받은 문의함에서, 아직 결정 전일 때만 와요. */
-  leave?: { days: LeaveDay[]; total: number; balance?: LeaveRequestBalance | null };
+  /** 휴가 요청이면 종류·날·일수. balance는 받은 문의함에서, 아직 결정 전인 연차 요청일 때만 와요(공가는 연차에서 빠지지 않아요). */
+  leave?: { type: LeaveType; officialReason?: OfficialLeaveReason; days: LeaveDay[]; total: number; balance?: LeaveRequestBalance | null };
   /** 반려 사유(반려했을 때만) */
   decisionReason?: string;
   /** 승인했는데 근태 기록에 넣지 못했으면 false(근태 연결 안 함). 그룹웨어 근태에 직접 반영해야 해요. */

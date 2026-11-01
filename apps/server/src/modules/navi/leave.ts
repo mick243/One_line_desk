@@ -1,4 +1,14 @@
-import { type Card, type CardAction, GRADE, kstDate, type LeaveDay, type LeaveRequestBalance, personNameWords } from '@one-line-desk/shared';
+import {
+  type Card,
+  type CardAction,
+  GRADE,
+  kstDate,
+  type LeaveDay,
+  type LeaveRequestBalance,
+  OFFICIAL_LEAVE_REASON_LABEL,
+  OFFICIAL_LEAVE_REASONS,
+  personNameWords,
+} from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { LeaveRecord } from '../../adapters/types';
 import type { AppContext } from '../../context';
@@ -65,7 +75,8 @@ export function computeLeave(record: LeaveRecord, today: string): LeaveBalance {
   const periodStart = firstYear ? record.hireDate : addMonths(record.hireDate, 12 * years);
   const nextStart = addMonths(record.hireDate, 12 * (years + 1));
   const granted = firstYear ? Math.min(FIRST_YEAR_MAX, completed(record.hireDate, today, 1)) : Math.min(MAX_DAYS, BASE_DAYS + Math.floor((years - 1) / 2));
-  const inPeriod = record.uses.filter((u) => u.date >= periodStart && u.date < nextStart);
+  // 공가는 연차가 아니라서 세지 않아요.
+  const inPeriod = record.uses.filter((u) => (u.type ?? 'annual') === 'annual' && u.date >= periodStart && u.date < nextStart);
   const usedFull = inPeriod.filter((u) => u.kind === 'full').length;
   const usedHalf = inPeriod.filter((u) => u.kind === 'half').length;
   const used = usedFull + usedHalf * HALF_DAY;
@@ -346,7 +357,12 @@ export function findLeaveRequestRow(rows: readonly { id: string; task: string; t
  * [휴가 신청하기]: 질문에서 읽은 날(규칙, 양은 AI도)을 양식에 미리 채워요. 사람이 날·하루/반차를 고치고 확인 시트에서 보내요.
  * 날 없이 양만 말했으면("이틀 쓰고 싶어") 고를 일수만 알려 줘요.
  */
-function leaveRequestAction(target: LeaveRequestTarget, q: LeaveQuestion, balance: LeaveBalance, next: LeaveBalance | null): CardAction {
+function leaveRequestAction(
+  target: LeaveRequestTarget,
+  q: Pick<LeaveQuestion, 'planDates' | 'planFull' | 'planHalf'>,
+  balance: LeaveBalance,
+  next: LeaveBalance | null,
+): Extract<CardAction, { type: 'leave-request' }> {
   const kind = q.planHalf > 0 && q.planFull === 0 ? ('half' as const) : ('full' as const);
   const planned = q.planFull + q.planHalf * HALF_DAY;
   return {
@@ -360,6 +376,58 @@ function leaveRequestAction(target: LeaveRequestTarget, q: LeaveQuestion, balanc
     next: next ? { periodStart: next.periodStart, remaining: next.remaining } : { periodStart: addDays(balance.periodEnd, 1), remaining: 0 },
     ...(!q.planDates.length && planned > 0 ? { planned } : {}),
   };
+}
+
+// ── 공가(11/1) ────────────────────────────────────────────────────────────
+// 예비군·민방위·투표·법원 출석 같은 공적 의무로 쉬는 날이에요. 연차에서 빠지지 않아요.
+// 질문은 규칙으로만 알아봐요(AI 안 불러요). 카드에는 연차 숫자를 넣지 않아요.
+
+const OFFICIAL_WORDS = /공가|예비군|민방위/;
+const OFFICIAL_DUTY = /투표|법원|증인|배심원|소환|출석\s*요구/;
+const OFFICIAL_ASK = /휴가|쉬|빠지|빠져|신청|공가/;
+
+export function isOfficialLeaveQuestion(text: string): boolean {
+  return OFFICIAL_WORDS.test(text) || (OFFICIAL_DUTY.test(text) && OFFICIAL_ASK.test(text));
+}
+
+const OFFICIAL_TAIL = '공가는 연차에서 빠지지 않아요. 증빙 파일은 앱이 받지 않아요';
+
+/** 공가 카드. [공가 신청하기]는 휴가 신청 양식을 공가로 열어요. 근태 기록이 없으면 신청은 그룹웨어 근태 메뉴로 안내해요. */
+export function officialLeaveCard(
+  today: string,
+  text: string,
+  request: LeaveRequestTarget | null,
+  balance: LeaveBalance | null,
+  next: LeaveBalance | null,
+): Card {
+  const { dates } = readPlanDates(text, today);
+  const canRequest = request && balance;
+  return makeCard({
+    id: 'navi-official-leave',
+    kind: 'navi',
+    label: '안내',
+    headline: '공가는 연차에서 빠지지 않아요',
+    fields: [
+      { name: '공가 사유', value: OFFICIAL_LEAVE_REASONS.map((r) => OFFICIAL_LEAVE_REASON_LABEL[r]).join(' · ') },
+      ...(dates.length ? [{ name: '읽은 날', value: dates.map(dayLabel).join(' · ') }] : []),
+      { name: '증빙', value: '훈련 통지서·출석 요구서 같은 증빙은 인사팀에 따로 내 주세요' },
+      ...(canRequest ? [{ name: '받는 곳', value: `${request.team}(${request.task})` }] : [{ name: '신청하는 곳', value: LEAVE_DESK }]),
+    ],
+    evidence: { text: '회사 공가 규정은 인사팀에 확인해 주세요', aiSummarized: false },
+    ...(canRequest
+      ? {
+          secondary: [
+            {
+              ...leaveRequestAction(request, { planDates: dates, planFull: 0, planHalf: 0 }, balance, next),
+              text: '공가 신청하기',
+              days: dates.map((date) => ({ date, kind: 'full' as const })),
+              leaveType: 'official' as const,
+            },
+          ],
+        }
+      : {}),
+    tail: OFFICIAL_TAIL,
+  });
 }
 
 /** 본인 연차 카드. 숫자는 모두 서버 계산이고, "AI 정리"는 모델이 질문(더 쓰려는 양)을 해석했을 때만 붙여요. */
@@ -442,13 +510,20 @@ export async function myLeaveCard(
   request?: LeaveRequestTarget | null,
 ): Promise<Card | null> {
   const today = kstDate(ctx.now());
+  const person = { idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) };
+  if (isOfficialLeaveQuestion(text)) {
+    // 공가 카드는 숫자를 보여 주지 않아요. 남은 연차는 양식에서 연차로 바꿀 때만 쓰려고 본인 것만 읽어요.
+    const record = request ? await ctx.adapters.leave.leaveOf(person).catch(() => null) : null;
+    const balance = record ? computeLeave(record, today) : null;
+    return officialLeaveCard(today, text, request ?? null, balance, record && balance ? nextPeriodLeave(record, balance) : null);
+  }
   const q = await readLeaveQuestion(ctx.gateway, text, today);
   if (!q.about) return null;
   if (q.aboutOther) return otherPersonCard();
   // "도윤 연차 몇 개 남았어?"처럼 호칭 없이 이름만 쓰면 규칙(OTHER_PERSON)이 못 알아봐요. 직원 명단 이름과 대조해요(QA D-A02).
   const names = await ctx.adapters.directory.personNameWords().catch(() => [] as string[]);
   if (namesOtherPerson(text, names, personNameWords(user.displayName))) return otherPersonCard();
-  const record = await ctx.adapters.leave.leaveOf({ idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) }).catch(() => null);
+  const record = await ctx.adapters.leave.leaveOf(person).catch(() => null);
   const balance = record ? computeLeave(record, today) : null;
   return leaveCard(balance, q, today, request, record && balance ? nextPeriodLeave(record, balance) : null);
 }

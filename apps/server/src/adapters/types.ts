@@ -79,11 +79,13 @@ export interface CalendarAdapter {
   cancelEvent(uid: string): Promise<void>;
 }
 
-/** 휴가를 한 번 쓴 기록. 날짜와 하루·반나절만 있어요. 사유는 받지 않아요. */
+/** 휴가를 한 번 쓴 기록. 날짜·하루/반나절·종류만 있어요. 사유는 받지 않아요. */
 export interface LeaveUse {
   /** YYYY-MM-DD(한국 날짜). 앞으로 쓸 예정인 날도 들어 있어요. */
   date: string;
   kind: 'full' | 'half';
+  /** 없으면 연차예요. 공가(official)는 남은 연차 계산에서 빼지 않아요(11/1). */
+  type?: 'annual' | 'official';
 }
 
 /** 인사 근태 시스템의 본인 연차 자료(등급 2). 그 사람 화면에만 보이고, AI·로그·DB에는 넣지 않아요(ADR-18). */

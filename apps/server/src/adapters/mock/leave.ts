@@ -1,6 +1,6 @@
 import type { AdapterCapabilities, LeaveAdapter, LeaveRecord, LeaveUse } from '../types';
 
-// 시연용 가상 인사 근태 기록이에요. 실제 사람이 아니에요. 가상 직원 15명(모의 직원·임시 IdP 같은 사람)의 입사일과 휴가 쓴 날만 있어요.
+// 시연용 가상 인사 근태 기록이에요. 실제 사람이 아니에요. 가상 직원 16명(모의 직원·임시 IdP 같은 사람)의 입사일과 휴가 쓴 날만 있어요.
 // 회사 메일로 찾아서 모의 로그인·임시 IdP 어느 쪽으로 들어와도 같은 기록을 봐요.
 
 const full = (...dates: string[]): LeaveUse[] => dates.map((date) => ({ date, kind: 'full' as const }));
@@ -17,7 +17,11 @@ const RECORDS: Record<string, LeaveRecord> = {
   },
   // 입사 1년 미만: 개근한 달마다 1일
   'doyun@corp.example': { hireDate: '2025-12-01', uses: [...full('2026-03-13', '2026-08-14'), ...half('2026-06-05')] },
-  'seoyeon@corp.example': { hireDate: '2022-07-01', uses: [...full('2026-08-03', '2026-08-04'), ...half('2026-10-02')] },
+  // 6월 16일은 공가(예비군)라 연차에서 빠지지 않아요.
+  'seoyeon@corp.example': {
+    hireDate: '2022-07-01',
+    uses: [...full('2026-08-03', '2026-08-04'), ...half('2026-10-02'), { date: '2026-06-16', kind: 'full', type: 'official' }],
+  },
   'jihu@corp.example': {
     hireDate: '2016-01-04',
     uses: [
