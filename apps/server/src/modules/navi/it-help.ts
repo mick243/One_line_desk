@@ -118,13 +118,12 @@ export function createItHelpService(ctx: AppContext) {
     hasRealFaqs: () => realFaqs,
     refreshSource,
 
-    /** 비어 있을 때만 가상 IT FAQ를 넣어요. 분장표 seed 뒤에 불러요(FAQ가 분장표 행을 가리켜요). */
+    /** 가상 IT FAQ를 넣거나 맞춰요. 분장표 seed 뒤에 불러요(FAQ가 분장표 행을 가리켜요). */
     async seed(): Promise<void> {
-      if ((await repo.countItFaqs(ctx.db)) === 0) {
-        await ctx.db.tx(async (q) => {
-          for (const f of demoItFaqs()) await repo.insertItFaqIfAbsent(q, f);
-        });
-      }
+      // 가상 FAQ는 늘 고정 파일 내용으로 맞춰요(시연 DB에 나중에 고친 행 연결·다른 말이 들어가게). 회사가 올린 FAQ는 그대로예요.
+      await ctx.db.tx(async (q) => {
+        for (const f of demoItFaqs()) await repo.upsertDemoItFaq(q, f);
+      });
       await refreshSource();
     },
 
@@ -151,7 +150,8 @@ export function createItHelpService(ctx: AppContext) {
         ctx.db,
         [found?.faq.rowId, ...faqs.map((f) => f.rowId)].filter((x): x is string => typeof x === 'string'),
       );
-      const inquiryRow = rows.find((r) => r.id === found?.faq.rowId) ?? rows[0] ?? null;
+      // 못 찾았으면 IT지원팀의 "IT 오류 문의" 같은 일반 오류 행으로 보내요. 첫 행("노트북·PC 고장")으로 가던 문제(11/1 QA M3).
+      const inquiryRow = rows.find((r) => r.id === found?.faq.rowId) ?? rows.find((r) => r.task.includes('오류')) ?? rows[0] ?? null;
       return {
         ...(found ? { faq: { id: found.faq.id, title: found.faq.title, steps: found.faq.steps, revisedOn: found.faq.revisedOn } } : {}),
         others,

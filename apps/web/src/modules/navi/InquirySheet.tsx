@@ -17,8 +17,10 @@ function Field({
   max,
   rows,
   placeholder,
+  required = false,
 }: {
   label: string;
+  required?: boolean;
   value: string;
   onChange: (v: string) => void;
   max: number;
@@ -30,7 +32,10 @@ function Field({
   return (
     <label className='inquiry-field'>
       <span className='inquiry-label'>
-        {label}
+        <span>
+          {label}
+          {required && <em className='required'> 꼭 적어 주세요</em>}
+        </span>
         <small>
           {value.length} / {max}
         </small>
@@ -46,7 +51,20 @@ function Field({
   );
 }
 
-export function InquirySheet({ action, initialQuestion, onClose }: { action: Inquire; initialQuestion: string; onClose: () => void }) {
+/** 사유 예시는 문의 맥락에 맞춰 바꿔요. "은행 제출용"이 IT 오류·온보딩 문의에 맞지 않던 문제(11/1 QA M4). */
+const DEFAULT_REASON_PLACEHOLDER = '왜 필요한지, 언제까지 필요한지 적어 주세요(예: 다음 주 출장 전에 필요해요)';
+
+export function InquirySheet({
+  action,
+  initialQuestion,
+  reasonPlaceholder = DEFAULT_REASON_PLACEHOLDER,
+  onClose,
+}: {
+  action: Inquire;
+  initialQuestion: string;
+  reasonPlaceholder?: string;
+  onClose: () => void;
+}) {
   const actions = useActions();
   const [question, setQuestion] = useState(initialQuestion);
   const [reason, setReason] = useState('');
@@ -93,9 +111,10 @@ export function InquirySheet({ action, initialQuestion, onClose }: { action: Inq
         rows={4}
         placeholder='무엇이 궁금한지, 무엇을 해 달라는지 적어 주세요'
       />
-      <Field label='사유' value={reason} onChange={setReason} max={INQUIRY_REASON_MAX} rows={2} placeholder='왜 필요한지 적어 주세요(예: 은행 제출용)' />
+      <Field label='사유' required value={reason} onChange={setReason} max={INQUIRY_REASON_MAX} rows={2} placeholder={reasonPlaceholder} />
       <p className='hint'>키·비밀번호·주민번호·건강 정보는 적지 말아 주세요. 적으면 보낼 수 없어요.</p>
       {isDemoLogin() && <p className='demo-warning'>시연에서는 받는 팀 가상 직원으로 들어온 다른 사람도 이 글을 봐요. 진짜 고민은 쓰지 마세요</p>}
+      {(!q.text || !r.text) && <p className='hint send-hint'>{!q.text ? '문의 내용을' : '사유를'} 적으면 보낼 수 있어요</p>}
       <button type='button' className='primary' disabled={blocked} onClick={send}>
         보내기
       </button>

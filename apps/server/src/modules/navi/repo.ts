@@ -113,10 +113,12 @@ export async function markDemoRow(q: Queryable, row: ChartRow): Promise<void> {
   );
 }
 
-/** 분장표 주인이 반영한(upload) 행이 하나라도 있는지. 있으면 실제 분장표로 봐요. */
-export async function hasUploadedRows(q: Queryable): Promise<boolean> {
-  const { rows } = await q.query<{ found: boolean }>(`select exists (select 1 from navi_rows where source = 'upload') as found`);
-  return rows[0]?.found === true;
+/** 분장표 출처: 주인이 반영한(upload) 행과 가상(demo) 행이 있는지. upload가 하나라도 있으면 실제 분장표로 봐요. */
+export async function chartSources(q: Queryable): Promise<{ upload: boolean; demo: boolean }> {
+  const { rows } = await q.query<{ upload: boolean; demo: boolean }>(
+    `select exists (select 1 from navi_rows where source = 'upload') as upload, exists (select 1 from navi_rows where source = 'demo') as demo`,
+  );
+  return { upload: rows[0]?.upload === true, demo: rows[0]?.demo === true };
 }
 
 /** 온보딩 주차가 붙은 행(1·2주차). 누구나 읽는 목록이에요. */
@@ -367,11 +369,6 @@ export interface ItFaqRow {
   rowId: string | null;
 }
 
-export async function countItFaqs(q: Queryable): Promise<number> {
-  const { rows } = await q.query<{ n: number }>('select count(*)::int as n from navi_it_faqs');
-  return rows[0]?.n ?? 0;
-}
-
 export async function allItFaqs(q: Queryable): Promise<ItFaqRow[]> {
   const { rows } = await q.query<ItFaqRow>(
     `select id, title, aliases, error_codes as "errorCodes", steps, to_char(revised_on, 'YYYY-MM-DD') as "revisedOn", row_id as "rowId"
@@ -380,12 +377,17 @@ export async function allItFaqs(q: Queryable): Promise<ItFaqRow[]> {
   return rows;
 }
 
-/** 비어 있을 때만 넣어요(seed). 출처는 가상 FAQ(demo)예요. 분장표에 없는 행을 가리키면 행을 비워 둬요. */
-export async function insertItFaqIfAbsent(q: Queryable, f: ItFaqRow): Promise<void> {
+/**
+ * 가상 FAQ를 넣어요(seed). 이미 있는 가상 FAQ(demo)는 새 내용으로 바꾸고, 회사가 올린 FAQ(upload)는 건드리지 않아요.
+ * 분장표에 없는 행을 가리키면 행을 비워 둬요.
+ */
+export async function upsertDemoItFaq(q: Queryable, f: ItFaqRow): Promise<void> {
   await q.query(
     `insert into navi_it_faqs (id, title, aliases, error_codes, steps, revised_on, row_id, source)
      values ($1, $2, $3::text[], $4::text[], $5::text[], $6::date, (select id from navi_rows where id = $7), 'demo')
-     on conflict (id) do nothing`,
+     on conflict (id) do update set title = excluded.title, aliases = excluded.aliases, error_codes = excluded.error_codes,
+       steps = excluded.steps, revised_on = excluded.revised_on, row_id = excluded.row_id
+     where navi_it_faqs.source = 'demo'`,
     [f.id, f.title, f.aliases, f.errorCodes, f.steps, f.revisedOn, f.rowId],
   );
 }

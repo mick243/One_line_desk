@@ -78,7 +78,9 @@ export function OnboardingScreen({ onBack }: { onBack: () => void }) {
         </section>
       ))}
 
-      {inquiry && <InquirySheet action={inquiry} initialQuestion='' onClose={() => setInquiry(null)} />}
+      {inquiry && (
+        <InquirySheet action={inquiry} initialQuestion='' reasonPlaceholder='예: 이번 주에 입사해서 처음 신청해요' onClose={() => setInquiry(null)} />
+      )}
     </div>
   );
 }

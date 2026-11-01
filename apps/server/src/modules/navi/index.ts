@@ -33,7 +33,12 @@ export function createNaviModule(ctx: AppContext): DeskModule {
     },
     // 분장표 주인이 S5로 반영한 행이 하나라도 있으면 실제 분장표예요(130 출처 칸). 띠와 MCP 모의 자료 판정이 이 값을 봐요.
     adapters: () => [
-      navi.hasRealChart() ? { name: 'chart', label: '업무 분장표', mock: false } : { name: 'mock-chart', label: '업무 분장표(가상 분장표)', mock: true },
+      // 일부 부서만 올렸으면 띠에 "일부 가상"으로 남겨요. MCP 판정은 실제(mock: false)로 해서 잠금이 닫히는 쪽이에요(11/1 QA M6).
+      !navi.hasRealChart()
+        ? { name: 'mock-chart', label: '업무 분장표(가상 분장표)', mock: true }
+        : navi.hasPartialChart()
+          ? { name: 'chart', label: '업무 분장표(일부 부서는 아직 가상 분장표)', mock: false, partial: true }
+          : { name: 'chart', label: '업무 분장표', mock: false },
       itHelp.hasRealFaqs() ? { name: 'it-faq', label: 'IT FAQ', mock: false } : { name: 'mock-it-faq', label: 'IT FAQ(가상 FAQ)', mock: true },
     ],
     // 보관 기간(7일, 10/28): 문의(지우며 주간 셈에 더해요)·주간 셈·"틀렸어요" 기록

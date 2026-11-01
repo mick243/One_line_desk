@@ -41,6 +41,11 @@
           "subGroups": []
         },
         {
+          "name": "IT지원팀",
+          "path": "/부서/IT지원팀",
+          "subGroups": []
+        },
+        {
           "name": "디자인팀",
           "path": "/부서/디자인팀",
           "subGroups": []
@@ -412,6 +417,24 @@
         }
       ],
       "groups": ["/부서/개발팀", "/층/5층"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000016",
+      "username": "harin",
+      "firstName": "하린",
+      "lastName": "가상 IT",
+      "email": "harin@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/IT지원팀", "/층/4층"],
       "requiredActions": []
     },
     {

@@ -43,7 +43,7 @@ export function Mine({
   const { modules } = switches;
   const retention = retentionLines(switches);
   const [confirmAll, setConfirmAll] = useState(false);
-  const { MyReservations, MyRequests, ConnectedApps, InvitedMeetings, DemoInbox } = webModules;
+  const { MyReservations, MyRequests, MyInquiries, ConnectedApps, InvitedMeetings, DemoInbox } = webModules;
 
   async function logout(all: boolean) {
     await api.logout(all);
@@ -75,6 +75,7 @@ export function Mine({
       <MyReservations />
       <InvitedMeetings />
       <MyRequests />
+      {switches.modules.navi === 'on' && <MyInquiries />}
 
       {(hasFacilities || hasChart) && (
         <section className='card'>

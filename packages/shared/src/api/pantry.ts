@@ -47,6 +47,8 @@ export const NAME_BLOCK_LABEL: Record<NameBlockKind, string> = {
   control: '줄바꿈·특수 글자',
   path: '사용자 폴더',
   id: '오류 추적 번호',
+  account: '계정',
+  host: 'PC 이름',
   email: '이메일',
   ip: 'IP',
   phone: '전화번호',

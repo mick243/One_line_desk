@@ -140,8 +140,12 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
       preHandler: ctx.guards.user,
       schema: { body: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: { type: 'string', pattern: '^ITF-[0-9]{2,3}$' } } } },
     },
-    async (req) => {
+    async (req, reply) => {
       assertNotOff();
+      // 붙여넣기와 같은 횟수 상한을 같이 써요(11/1 QA L3).
+      if (!ctx.rateLimiter.hit(req.deskUser!.pseudonymId, 'it-help')) {
+        return reply.code(429).send({ error: 'rate-limited', message: '요청이 많아요. 잠시 뒤에 다시 보내 주세요.' });
+      }
       return itHelp.faq(req.body.id);
     },
   );

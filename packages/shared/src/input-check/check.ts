@@ -48,7 +48,7 @@ export function checkInput(raw: string): InputCheckResult {
   }
   if (HEALTH_PATTERNS.some((p) => p.test(probe))) lockKinds.add('health');
 
-  const masked: Record<MaskKind, number> = { path: 0, email: 0, ip: 0, id: 0 };
+  const masked = Object.fromEntries(MASK_RULES.map((r) => [r.kind, 0])) as Record<MaskKind, number>;
   let text = clean;
   for (const rule of MASK_RULES) {
     text = text.replace(rule.pattern, () => {

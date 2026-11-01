@@ -53,7 +53,7 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
       autoActions: s.autoActions,
       standalone: isPantryStandalone(s),
       demoData: demoAdapters()
-        .filter((a) => a.mock)
+        .filter((a) => a.mock || a.partial)
         .map((a) => a.label),
       rulesVersion: RULES_VERSION,
       // 로그인 방식: 모의(가상 직원 고르기) 또는 IdP 리디렉트(임시 IdP·회사 IdP)

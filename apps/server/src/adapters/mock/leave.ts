@@ -36,6 +36,7 @@ const RECORDS: Record<string, LeaveRecord> = {
   'siwoo@corp.example': { hireDate: '2023-01-09', uses: [...full('2026-02-02'), ...half('2026-05-15', '2026-07-24')] },
   'dain@corp.example': { hireDate: '2012-04-02', uses: full('2026-05-01', '2026-10-19', '2026-10-20') },
   'juwon@corp.example': { hireDate: '2005-06-07', uses: [...full('2026-06-08', '2026-08-24', '2026-08-25'), ...half('2026-09-30')] },
+  'harin@corp.example': { hireDate: '2023-03-02', uses: [...full('2026-05-04')] },
 };
 
 export class MockLeave implements LeaveAdapter {

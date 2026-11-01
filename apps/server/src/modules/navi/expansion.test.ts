@@ -41,7 +41,8 @@ describe('분장표 출처(10/31)', () => {
     const csv = toCsv(rows);
     const preview = await staff.call('POST', '/api/navi/chart/preview', { csv });
     expect((await staff.call('POST', '/api/navi/chart/apply', { csv, baseVersion: preview.body.baseVersion })).status).toBe(200);
-    expect(chartAdapter(t)).toEqual({ name: 'chart', label: '업무 분장표', mock: false });
+    // 재무팀만 올렸으니 다른 부서는 아직 가상이에요. 띠에는 남고(partial), MCP 판정은 실제예요(11/1 QA M6).
+    expect(chartAdapter(t)).toEqual({ name: 'chart', label: '업무 분장표(일부 부서는 아직 가상 분장표)', mock: false, partial: true });
     const { rows: sources } = await t.db.query<{ id: string; source: string }>("select id, source from navi_rows where source = 'upload'");
     expect(sources).toEqual([{ id: 'FIN-04', source: 'upload' }]);
   });
@@ -104,7 +105,7 @@ describe('② IT 오류 문장 → IT FAQ', () => {
     const body = res.body as ItHelpResponse;
     expect(body.faq).toMatchObject({ id: 'ITF-01', revisedOn: '2026-10-20' });
     expect(body.faq!.steps[0]).toBe('작업 중인 파일을 저장하고 PC를 다시 시작해 주세요.');
-    expect(body).toMatchObject({ inquiryRowId: 'IT-03', inquiryTeam: 'IT지원팀' });
+    expect(body).toMatchObject({ inquiryRowId: 'IT-06', inquiryTeam: 'IT지원팀', inquiryTask: 'IT 오류 문의' });
     // 코드 조각·"오류" 같은 흔한 말만 겹친 FAQ는 다른 후보로 띄우지 않아요.
     expect(body.others).toEqual([]);
     expect(JSON.stringify(body)).not.toContain('ITHELPCANARY');
@@ -128,7 +129,8 @@ describe('② IT 오류 문장 → IT FAQ', () => {
     const none = (await dev.call('POST', '/api/navi/it-help', { text: '점심 메뉴 추천해 주세요' })).body as ItHelpResponse;
     expect(none.faq).toBeUndefined();
     expect(none.others).toEqual([]);
-    expect(none.inquiryRowId).toMatch(/^IT-0\d$/);
+    // 못 찾으면 첫 IT 행이 아니라 일반 오류 행(IT 오류 문의)으로 보내요(11/1 QA M3).
+    expect(none).toMatchObject({ inquiryRowId: 'IT-06', inquiryTask: 'IT 오류 문의' });
   });
 
   it('키·주민번호처럼 잠기는 글은 422이고, 다른 후보는 POST 본문의 번호로만 열어요', async () => {
@@ -243,5 +245,62 @@ describe('④ 받은 부서 주간 문의 셈', () => {
     const t = await setup();
     const dev = await t.loginAs(MOCK.dev);
     expect((await dev.call('GET', '/api/navi/inquiry-stats')).status).toBe(403);
+  });
+});
+
+describe('QA 중간 항목(11/1)', () => {
+  it('M7·M8: 옛 양식은 온보딩 주차를 그대로 두고, 틀린 값은 행과 칸을 알려 줘요', async () => {
+    const t = await setup();
+    const staff = await t.loginAs(MOCK.staff);
+    // FIN-02는 가상 분장표에서 2주차예요. "온보딩 주차" 칸이 없는 파일로 다른 칸만 바꿔요.
+    const finance = parseChart(demoChartCsv()).filter((r) => r.ownerDepartment === '재무팀');
+    // "온보딩 주차" 칸을 빼고 내보낸 옛 양식이에요(마지막 칸이 온보딩 주차).
+    const dropLast = (csv: string) =>
+      csv
+        .split('\r\n')
+        .map((line) => (line ? line.split(',').slice(0, -1).join(',') : line))
+        .join('\r\n');
+    const old = dropLast(toCsv(finance.map((r) => (r.id === 'FIN-02' ? { ...r, nextStep: '바뀐 안내' } : r))));
+    expect(old.split('\r\n')[0]).not.toContain('온보딩 주차');
+    const preview = await staff.call('POST', '/api/navi/chart/preview', { csv: old });
+    expect(preview.status).toBe(200);
+    expect(preview.body.changes).toEqual([expect.objectContaining({ rowId: 'FIN-02', fields: [expect.objectContaining({ name: '지금 할 일' })] })]);
+    await staff.call('POST', '/api/navi/chart/apply', { csv: old, baseVersion: preview.body.baseVersion });
+    const { rows } = await t.db.query<{ onboarding_week: number | null }>("select onboarding_week from navi_rows where id = 'FIN-02'");
+    expect(rows).toEqual([{ onboarding_week: 2 }]);
+
+    const bad = toCsv(finance.map((r) => (r.id === 'FIN-01' ? { ...r, onboardingWeek: 3 as unknown as 1 } : r)));
+    const res = await staff.call('POST', '/api/navi/chart/preview', { csv: bad });
+    expect(res.status).toBe(422);
+    expect(res.body.message).toBe('분장표 양식으로 올려 주세요. FIN-01 행 "온보딩 주차" 칸은 1·2만 써요(아니면 비워 두세요)');
+  });
+
+  it('M9: 첫날 질문에는 첫 2주 할 일로, IT 행·오류 말에는 IT 오류 화면으로 가는 버튼이 붙어요', async () => {
+    const t = await setup();
+    await t.modules.find((m) => m.kind === 'navi')!.seed!();
+    const dev = await t.loginAs(MOCK.dev);
+    const ask = async (text: string) =>
+      (await dev.call('POST', '/api/ask', { text, kind: 'navi' })).body.cards[0].actions.secondary as { type: string; to?: string }[];
+    expect(await ask('첫날인데 뭐부터 해야 돼요?')).toContainEqual({ type: 'navigate', text: '첫 2주에 할 일 보기', to: 'onboarding' });
+    expect(await ask('사내 와이파이가 안 돼요')).toContainEqual({ type: 'navigate', text: '오류 창 글로 해결 방법 찾기', to: 'it-help' });
+    const plain = await ask('재직증명서 어디서 떼요?');
+    expect(plain.some((a) => a.type === 'navigate')).toBe(false);
+  });
+
+  it('M2: IT 오류 문의는 IT지원팀 하린의 받은 문의함에 와요', async () => {
+    const t = await setup();
+    const dev = await t.loginAs(MOCK.dev);
+    const sent = await dev.call('POST', '/api/navi/inquiries', {
+      rowId: 'IT-06',
+      question: 'IT FAQ 단계를 해 봤는데 안 돼요',
+      reason: '오늘 아침부터 메일을 못 보내요',
+      requestId: requestId(),
+    });
+    expect(sent.status).toBe(200);
+    const harin = await t.loginAs('mock|emp-016');
+    expect(harin.me.department).toBe('IT지원팀');
+    const inbox = (await harin.call('GET', '/api/navi/inquiries/inbox')).body;
+    expect(inbox.enabled).toBe(true);
+    expect(inbox.items).toEqual([expect.objectContaining({ task: 'IT 오류 문의', team: 'IT지원팀' })]);
   });
 });

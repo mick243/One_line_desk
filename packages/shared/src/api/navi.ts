@@ -310,6 +310,10 @@ export interface ItHelpResponse {
 /** 해결이 안 됐을 때 IT팀 문의 글을 채우는 틀. 가린 글만 받아요. 브라우저가 만들고, 사람이 확인 시트에서 고친 뒤 [보내기]를 눌러요. */
 export function itInquiryDraft(input: { maskedText: string; faqTitle?: string }): string {
   const head = input.faqTitle ? `IT FAQ "${input.faqTitle}"의 단계를 해 봤는데 해결되지 않았어요.` : '비슷한 IT FAQ를 찾지 못했어요.';
-  const body = `${head}\n\n오류 글(가린 글):\n${input.maskedText.trim()}`;
-  return body.length > INQUIRY_QUESTION_MAX ? `${body.slice(0, INQUIRY_QUESTION_MAX - 1)}…` : body;
+  const label = '\n\n오류 글(개인정보를 가린 글):\n';
+  const text = input.maskedText.trim();
+  const room = INQUIRY_QUESTION_MAX - head.length - label.length;
+  // 넘치면 앞을 줄이고 끝을 남겨요. 오류 원인은 대개 끝에 있어요(11/1 QA M5).
+  const kept = text.length > room ? `…${text.slice(text.length - room + 1)}` : text;
+  return `${head}${label}${kept}`;
 }
