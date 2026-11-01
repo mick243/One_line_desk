@@ -202,6 +202,26 @@ describe('공가 요청(11/1)', () => {
     expect((await sendOfficial(haneul, { leave: { days, type: 'sick' } })).status).toBe(400);
   });
 
+  it('DB도 휴가 종류 모양을 지켜요: 빈 종류·공가인데 사유 코드 없음·연차에 사유 코드·일반 문의에 종류는 들어가지 않아요', async () => {
+    const { t } = await setup();
+    const insert = (kind: string, leaveType: string | null, code: string | null) =>
+      t.db.query(
+        `insert into navi_inquiries (row_id, task, team, department, sender_pseudonym, sender_name, sender_department, question, reason,
+           kind, leave_days, sender_subject, leave_type, leave_reason_code)
+         values ('HR-02', '휴가 신청', '인사팀', '인사팀', 'p-test', '가상', '재무팀', '휴가 신청', '사유', $1, $2::jsonb, $3, $4, $5)`,
+        [kind, kind === 'leave' ? '[{"date":"2026-11-03","kind":"full"}]' : null, kind === 'leave' ? 'sub-test' : null, leaveType, code],
+      );
+    await expect(insert('leave', null, null)).rejects.toThrow();
+    await expect(insert('leave', 'official', null)).rejects.toThrow();
+    await expect(insert('leave', 'annual', 'reserve')).rejects.toThrow();
+    await expect(insert('leave', 'sick', null)).rejects.toThrow();
+    await expect(insert('leave', 'official', 'flu')).rejects.toThrow();
+    await expect(insert('general', 'annual', null)).rejects.toThrow();
+    await expect(insert('leave', 'annual', null)).resolves.toBeDefined();
+    await expect(insert('leave', 'official', 'vote')).resolves.toBeDefined();
+    await expect(insert('general', null, null)).resolves.toBeDefined();
+  });
+
   it('보내면 인사팀이 공가로 받고 남은 연차는 오지 않아요. 승인해도 남은 연차가 그대로예요', async () => {
     const { t, haneul, jihu } = await setup();
     const before = await remainingOf(haneul);
