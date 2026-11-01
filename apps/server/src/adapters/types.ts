@@ -4,6 +4,8 @@ export interface AdapterCapabilities {
   /** 화면 띠에서 보여 줄 한글 이름 */
   label: string;
   mock: boolean;
+  /** 실제 자료와 가상 자료가 섞여 있어요(분장표를 일부 부서만 올렸을 때). 띠에는 보이지만 MCP 판정은 실제(mock: false)로 해요. */
+  partial?: boolean;
 }
 
 export interface EmployeeProfile {

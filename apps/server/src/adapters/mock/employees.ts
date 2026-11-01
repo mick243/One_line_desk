@@ -16,7 +16,7 @@ const person = (n: number, displayName: string, id: string, department: string, 
 });
 
 // 시연용 가상 직원이에요. 실제 사람이 아니에요. 임시 IdP(idp/realm-one-line-desk.json)와 같은 사람들이에요.
-// 로그인 고르기 목록에는 앞의 다섯 명만 보이고, 나머지는 참석자 검색에서만 찾을 수 있어요.
+// 로그인 고르기 목록에는 앞의 다섯 명과 IT지원팀 하린만 보이고, 나머지는 참석자 검색에서만 찾을 수 있어요.
 const EMPLOYEES: MockEmployee[] = [
   person(1, '가상 직원 하늘', 'haneul', '재무팀', '3층', [], true),
   person(2, '가상 직원 도윤', 'doyun', '개발팀', '5층', [], true),
@@ -33,6 +33,8 @@ const EMPLOYEES: MockEmployee[] = [
   person(13, '가상 직원 시우', 'siwoo', '영업팀', '3층'),
   person(14, '가상 직원 다인', 'dain', '정보보안팀', '4층'),
   person(15, '가상 직원 주원', 'juwon', '개발팀', '5층'),
+  // IT 오류 붙여넣기에서 보낸 문의를 받을 사람(11/1 QA M2). 로그인 목록에 보여요.
+  person(16, '가상 IT 하린', 'harin', 'IT지원팀', '4층', [], true),
 ];
 
 const strip = ({ active: _active, login: _login, ...profile }: MockEmployee): EmployeeProfile => profile;

@@ -307,11 +307,36 @@ export function InquiryInbox() {
   );
 }
 
-/** 내 문의: 내가 보낸 문의와 처리 상태·답장·반려 사유 */
-export function MyInquiries() {
+/**
+ * 내 문의: 내가 보낸 문의와 처리 상태·답장·반려 사유.
+ * compact는 홈에서 최근 3건의 업무·상태만 보여 줘요. 보낸 문의를 담당 찾기 아래에서만 찾을 수 있던 문제(11/1 QA M10).
+ */
+export function MyInquiries({ compact = false }: { compact?: boolean }) {
   const { data, error } = useInquiries('/api/navi/inquiries/mine');
   if (error) return <p className='lock-line'>{error}</p>;
   if (!data || data.items.length === 0) return null;
+  if (compact) {
+    return (
+      <section className='card inquiry-box' aria-label='내 문의'>
+        <h2>내 문의</h2>
+        <ul className='plain inquiry-list'>
+          {data.items.slice(0, 3).map((i) => (
+            <li key={i.id}>
+              <div className='inquiry-head'>
+                <strong>
+                  {i.kind === 'leave' && <span className='inquiry-kind'>휴가</span>}
+                  {i.team} · {i.task}
+                </strong>
+                <StateBadge item={i} />
+              </div>
+              {i.replies.length > 0 && <p className='hint'>답장 {i.replies.length}개</p>}
+            </li>
+          ))}
+        </ul>
+        <p className='hint'>답장과 자세한 내용은 담당 찾기 아래 "내 문의"에서 봐요.</p>
+      </section>
+    );
+  }
   return (
     <section className='card inquiry-box' aria-label='내 문의'>
       <h2>내 문의</h2>

@@ -17,7 +17,7 @@ export function Home({
   switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; autoActions: boolean };
   onOpen: (page: AppDestination, text?: string) => void;
 }) {
-  const { MyReservations, MyRequests } = webModules;
+  const { MyReservations, MyRequests, MyInquiries } = webModules;
   const { modules } = switches;
   const features = FEATURES.filter((f) => modules[f.module] !== 'off').map((f) => featureFor(f, switches));
 
@@ -57,6 +57,7 @@ export function Home({
 
       {modules.rooms !== 'off' && <MyReservations compact />}
       {modules.pantry !== 'off' && <MyRequests compact />}
+      {modules.navi === 'on' && <MyInquiries compact />}
     </div>
   );
 }

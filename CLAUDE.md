@@ -25,7 +25,7 @@
 ## 명령
 
 - `npm run dev`: 서버(3190) + 웹(5190), 앱 안 모의 직원으로 로그인
-- `npm run idp:up` → `npm run dev:idp`: 임시 IdP(Keycloak, http://localhost:8180)로 로그인·직원 명단(가상 직원 15명, 비밀번호 `desk-demo`, `idp/realm-one-line-desk.json`)
+- `npm run idp:up` → `npm run dev:idp`: 임시 IdP(Keycloak, http://localhost:8180)로 로그인·직원 명단(가상 직원 16명, 비밀번호 `desk-demo`, `idp/realm-one-line-desk.json`)
 - `npm test`, `npm run typecheck`
 - `npm run db:test:up` → `npm run test:pg`: 같은 서버 시험을 실제 PostgreSQL(시험 전용 DB, Docker 5434)에서 돌려요. 기본 `npm test`는 PGlite예요
 - `npm run check`: 서식 검사 + 타입 검사 + 시험

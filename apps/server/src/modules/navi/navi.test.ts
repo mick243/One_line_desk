@@ -570,7 +570,7 @@ describe('[F1-9·R9] S5 분장표 수정 제안함', () => {
   it('가상 자료는 비어 있을 때 한 번만 들어가요', async () => {
     const t = await setup();
     for (const m of t.modules) if (m.kind === 'navi' || m.kind === 'notices') await m.seed?.();
-    expect((await t.db.query('select count(*)::int as n from navi_rows')).rows[0]).toEqual({ n: 25 });
+    expect((await t.db.query('select count(*)::int as n from navi_rows')).rows[0]).toEqual({ n: 26 });
   });
 });
 

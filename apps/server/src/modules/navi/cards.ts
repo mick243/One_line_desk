@@ -88,3 +88,12 @@ export function askHereCard(): Card {
     tail: ASK_TAIL,
   });
 }
+
+/** 카드 아래에 다른 화면으로 가는 버튼을 더해요(첫 2주 할 일·IT 오류, 11/1 QA M9). 읽기만 하는 이동이에요. */
+export function withGuides(card: Card, guides: CardAction[]): Card {
+  if (guides.length === 0) return card;
+  return { ...card, actions: { ...card.actions, secondary: [...card.actions.secondary, ...guides] } };
+}
+
+export const ONBOARDING_GUIDE: CardAction = { type: 'navigate', text: '첫 2주에 할 일 보기', to: 'onboarding' };
+export const IT_HELP_GUIDE: CardAction = { type: 'navigate', text: '오류 창 글로 해결 방법 찾기', to: 'it-help' };

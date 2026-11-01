@@ -27,8 +27,8 @@ import type { Queryable } from '../../core/db';
 import { DeskError } from '../../core/errors';
 import type { AskInput, AskOutcome } from '../../core/module';
 import type { DeskUser } from '../../core/user';
-import { type ChartRow, parseChart, toCsv } from './chart-csv';
-import { askHereCard, chooseRowCard, naviCard } from './cards';
+import { type ChartRow, parseChart, parseChartFile, toCsv } from './chart-csv';
+import { askHereCard, chooseRowCard, IT_HELP_GUIDE, naviCard, ONBOARDING_GUIDE, withGuides } from './cards';
 import { demoChartCsv } from './fixtures';
 import { findLeaveRequestRow, myLeaveCard } from './leave';
 import * as repo from './repo';
@@ -189,14 +189,16 @@ interface ChartDiff {
  * 다른 부서 행이 바뀌었거나, 다른 부서로 옮기거나, 다른 부서 행을 더하면 거부해요(R9).
  * 파일에 없는 우리 부서 행은 지우지 않고 그대로 둬요.
  */
-async function diffChart(q: Queryable, department: string, fileRows: ChartRow[]): Promise<ChartDiff> {
+async function diffChart(q: Queryable, department: string, fileRows: ChartRow[], hasOnboarding = true): Promise<ChartDiff> {
   const current = new Map((await repo.allRows(q)).map((r) => [r.id, r]));
   const changes: ChartChange[] = [];
   const rows: ChartRow[] = [];
   const seenOwn = new Set<string>();
   let unchanged = 0;
-  for (const f of fileRows) {
-    const existing = current.get(f.id);
+  for (const read of fileRows) {
+    const existing = current.get(read.id);
+    // "온보딩 주차" 칸이 없는 옛 양식이면 지금 값을 그대로 둬요. 조용히 지워지던 문제(11/1 QA M7).
+    const f = hasOnboarding ? read : { ...read, onboardingWeek: existing?.onboardingWeek ?? null };
     if (existing && existing.ownerDepartment !== department) {
       if (f.ownerDepartment !== existing.ownerDepartment || changedFields(existing, f).length > 0) throw OTHER_DEPARTMENT();
       continue;
@@ -215,17 +217,34 @@ async function diffChart(q: Queryable, department: string, fileRows: ChartRow[])
   return { changes, rows, unchanged, untouched };
 }
 
+// 첫날·입사 같은 말이면 첫 2주 할 일로, IT 오류 같은 말이면 IT 오류 화면으로 가는 버튼을 붙여요(11/1 QA M9).
+const ONBOARDING_WORDS = /(첫\s?날|첫\s?주|처음\s?(왔|와|출근|입사)|입사|신입|온보딩|새로\s?왔)/;
+const IT_ERROR_WORDS = /(오류|에러|error|0x[0-9a-f]{4}|실패|안\s?(돼|됨|되|열려|켜져)|접속이?\s?안)/i;
+
 export function createNaviService(ctx: AppContext) {
+  /** 담당 카드에 붙일 이동 버튼. 첫 2주 목록이 있을 때만, IT 오류 버튼은 IT FAQ가 가리키는 행이거나 못 찾았을 때 오류 말이 있으면 붙여요. */
+  const guidesFor = async (text: string) => {
+    const onboarding = ONBOARDING_WORDS.test(text) && (await repo.onboardingRows(ctx.db)).length > 0 ? [ONBOARDING_GUIDE] : [];
+    const itRows = new Set((await repo.allItFaqs(ctx.db)).map((f) => f.rowId).filter((x): x is string => x !== null));
+    const errorWords = IT_ERROR_WORDS.test(text);
+    return { onboarding, itRows, it: (row?: StoredRow) => (row ? [IT_HELP_GUIDE] : errorWords && itRows.size > 0 ? [IT_HELP_GUIDE] : []) };
+  };
+
   // 분장표 주인이 반영한 행이 있는지(실제 분장표). adapters()가 동기라 기억해 두고, 서버가 뜰 때·seed 뒤·반영 뒤에 다시 읽어요.
   // 처음 값은 참이에요: 읽기 전에는 실제 자료로 봐서 MCP 시연 클라이언트가 열리지 않는 쪽으로 둬요.
   let realChart = true;
+  // 실제 분장표인데 가상 행도 남아 있는지(일부 부서만 올림). 띠에 "일부 가상"으로 보여요(11/1 QA M6).
+  let partialChart = false;
   const refreshSource = async () => {
-    realChart = await repo.hasUploadedRows(ctx.db);
+    const src = await repo.chartSources(ctx.db);
+    realChart = src.upload;
+    partialChart = src.upload && src.demo;
   };
 
   return {
     /** 실제 분장표인지(띠·MCP 모의 자료 판정). 회사마다 서버 한 대(ADR-23)라 메모리 값으로 충분해요. */
     hasRealChart: () => realChart,
+    hasPartialChart: () => partialChart,
     refreshSource,
 
     async ownerDepartments(): Promise<Set<string>> {
@@ -236,15 +255,16 @@ export function createNaviService(ctx: AppContext) {
 
     /**
      * 비어 있을 때만 가상 분장표를 넣어요. 여러 번 불러도 한 번만 들어가요.
-     * 이미 있으면 가상 분장표와 내용이 같은 행만 출처를 demo로 되돌려요(130 마이그레이션 전 시연 DB).
+     * 이미 있으면 가상 분장표와 내용이 같은 행만 출처를 demo로 되돌리고, 없는 가상 행은 더해요(130 마이그레이션 전 시연 DB).
      */
     async seed(): Promise<void> {
       const rows = parseChart(demoChartCsv());
       const empty = (await repo.countRows(ctx.db)) === 0;
       await ctx.db.tx(async (q) => {
         for (const row of rows) {
-          if (empty) await repo.insertRowIfAbsent(q, { ...row, revisedOn: row.revisedOn ?? kstDate(ctx.now()) });
-          else await repo.markDemoRow(q, row);
+          // 시연 DB에 나중에 더한 가상 행(IT-06 등)도 넣어요. 분장표 반영은 행을 지우지 않아서, 없는 행은 아직 안 넣은 가상 행이에요.
+          if (!empty) await repo.markDemoRow(q, row);
+          await repo.insertRowIfAbsent(q, { ...row, revisedOn: row.revisedOn ?? kstDate(ctx.now()) });
         }
       });
       await refreshSource();
@@ -294,7 +314,11 @@ export function createNaviService(ctx: AppContext) {
       // 분장표에 휴가 신청 행이 있으면 카드에 [휴가 신청하기]가 붙어 그 행의 주인 부서로 휴가 요청을 보내요(ADR-24).
       const rows = await repo.allRows(ctx.db);
       const leave = await myLeaveCard(ctx, input.user, input.text, findLeaveRequestRow(rows));
-      const withLeave = (card: Card): Card[] => (leave ? [card, leave] : [card]);
+      const guides = await guidesFor(input.text);
+      const withLeave = (card: Card, row?: StoredRow): Card[] => {
+        const guided = withGuides(card, [...guides.onboarding, ...(!row || guides.itRows.has(row.id) ? guides.it(row) : [])]);
+        return leave ? [guided, leave] : [guided];
+      };
       const candidates = rankRows(input.text, rows);
       if (candidates.length === 0) return { cards: withLeave(askHereCard()), found: false };
       const pick = await pickRow(ctx.gateway, input.text, candidates);
@@ -304,7 +328,7 @@ export function createNaviService(ctx: AppContext) {
         return { cards: withLeave(tied.length > 1 ? chooseRowCard(tied.map((c) => c.row)) : askHereCard()), found: false };
       }
       const others = candidates.filter((c) => c !== chosen).map((c) => c.row);
-      return { cards: withLeave(naviCard(chosen.row, { aiSummarized: pick.ai, others })), found: true };
+      return { cards: withLeave(naviCard(chosen.row, { aiSummarized: pick.ai, others }), chosen.row), found: true };
     },
 
     /** "다른 담당이에요"에서 고른 행 카드. 사람이 고른 것이라 "AI 정리"가 없고, 읽기만 해요. */
@@ -379,8 +403,8 @@ export function createNaviService(ctx: AppContext) {
 
     /** S5 미리보기: 바뀌는 행·칸만 보여 줘요. DB는 바꾸지 않아요. */
     async previewChart(user: DeskUser, csv: string): Promise<ChartPreviewResponse> {
-      const fileRows = parseChart(csv);
-      const diff = await diffChart(ctx.db, user.department, fileRows);
+      const file = parseChartFile(csv);
+      const diff = await diffChart(ctx.db, user.department, file.rows, file.hasOnboarding);
       const baseVersion = versionOf(await repo.rowsOfDepartment(ctx.db, user.department));
       return { department: user.department, baseVersion, changes: diff.changes, unchanged: diff.unchanged, untouched: diff.untouched };
     },
@@ -390,9 +414,9 @@ export function createNaviService(ctx: AppContext) {
      * 실행 순간 다시 검사해요: 미리보기 뒤 우리 부서 행이 바뀌었으면 반영하지 않아요. 바뀐 행은 개정일이 오늘로 올라가요.
      */
     async applyChart(user: DeskUser, csv: string, baseVersion: string): Promise<ChartApplyResponse> {
-      const fileRows = parseChart(csv);
+      const file = parseChartFile(csv);
       const key = createHash('sha256').update(`${user.department}\n${baseVersion}\n${csv}`).digest('hex').slice(0, 32);
-      return ctx.fixed.run(user, {
+      const result = await ctx.fixed.run(user, {
         module: 'navi',
         action: 'chart-apply',
         idempotencyKey: key,
@@ -401,7 +425,7 @@ export function createNaviService(ctx: AppContext) {
           if (versionOf(await repo.rowsOfDepartment(q, user.department)) !== baseVersion) {
             throw new DeskError('chart-changed', 409, '그사이 분장표가 바뀌었어요. 다시 미리 봐 주세요');
           }
-          const diff = await diffChart(q, user.department, fileRows);
+          const diff = await diffChart(q, user.department, file.rows, file.hasOnboarding);
           const revisedOn = kstDate(now);
           for (const row of diff.rows) await repo.upsertRow(q, { ...row, revisedOn });
           if (diff.rows.length > 0) realChart = true;
@@ -412,6 +436,9 @@ export function createNaviService(ctx: AppContext) {
           };
         },
       });
+      // 반영이 끝난 뒤 출처(실제·일부 가상)를 다시 읽어요.
+      await refreshSource();
+      return result;
     },
   };
 }

@@ -180,7 +180,10 @@ function UploadPanel({ department, onApplied }: { department: string; onApplied:
       <h2>분장표 파일 다시 올리기</h2>
       <p className='hint chart-phone-only'>폰에서는 목록만 봐요. 파일 올리기는 PC에서 해요.</p>
       <div className='chart-pc-only'>
-        <p className='hint'>지금 분장표를 받아 우리 부서 행의 창구·지금 할 일·처리 기간·다른 말을 고친 뒤 올려 주세요.</p>
+        <p className='hint'>
+          지금 분장표를 받아 우리 부서 행의 창구·지금 할 일·처리 기간·다른 말·온보딩 주차를 고친 뒤 올려 주세요. 온보딩 주차는 새로 온 분이 첫 2주에 챙길 일이면
+          1이나 2를 적고, 아니면 비워 두세요.
+        </p>
         <div className='chart-row-buttons'>
           <button type='button' className='secondary small' onClick={() => void download()}>
             분장표 파일 받기

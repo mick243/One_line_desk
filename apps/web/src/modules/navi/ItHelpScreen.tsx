@@ -92,6 +92,7 @@ export function ItHelpScreen({ onBack }: { onBack: () => void }) {
         <div className='it-help-foot'>
           <small className='hint'>
             {text.length} / {IT_HELP_TEXT_MAX}
+            {text.length >= IT_HELP_TEXT_MAX ? ' · 넘친 뒷부분은 들어가지 않았어요' : ''}
           </small>
           <button type='submit' disabled={locked || !text.trim() || loading}>
             비슷한 오류 찾기
@@ -168,7 +169,14 @@ export function ItHelpScreen({ onBack }: { onBack: () => void }) {
         )}
       </section>
 
-      {inquiry && <InquirySheet action={inquiry.action} initialQuestion={inquiry.question} onClose={() => setInquiry(null)} />}
+      {inquiry && (
+        <InquirySheet
+          action={inquiry.action}
+          initialQuestion={inquiry.question}
+          reasonPlaceholder='언제부터, 무엇을 못 하고 있는지 적어 주세요(예: 오늘 아침부터 메일을 못 보내요)'
+          onClose={() => setInquiry(null)}
+        />
+      )}
     </div>
   );
 }

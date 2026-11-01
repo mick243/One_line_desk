@@ -3,7 +3,8 @@
 // 2: 외국인등록번호·띄어 쓴 주민번호·카드(Luhn)·계좌·여권·면허·콜론 없는 비밀번호 문장·PEM 키, 0폭·글 방향 문자 지우기, 제어 문자 잠금(QA-2·3·10·19)
 // 3: 사용자 폴더 경로(C:\Users\<이름>, /home/<이름>, /Users/<이름>)의 이름 부분 가림. IT 오류 문장에 자주 들어 있어요(10/31 넓힐 후보 ②)
 // 4: 하이픈으로 끊은 GUID(8-4-4-4-12)는 잠그지 않고 [ID]로 가림. 로그인 오류 창의 Trace ID·Correlation ID가 "긴 무작위 문자열"로 잠기던 문제(10/31 QA H2)
-export const RULES_VERSION = 4;
+// 5: 놓치던 이름 가림(11/1 QA M1): 띄어 쓴 사용자 폴더 이름, /mnt/c/Users/…, \\서버\home$\…(공유 홈 폴더), 도메인\계정, 윈도 기본 PC 이름(DESKTOP-…)
+export const RULES_VERSION = 5;
 
 /** 하이픈으로 끊은 GUID. 키·토큰이 아니라 오류 추적 번호라서 잠그지 않고 가려요. */
 const GUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
@@ -98,20 +99,27 @@ export const LOCK_MESSAGE: Record<LockKind, string> = {
   control: '보이지 않는 특수 글자가 있어요. 지우고 다시 보내 주세요',
 };
 
-export type MaskKind = 'path' | 'email' | 'ip' | 'id';
+export type MaskKind = 'path' | 'account' | 'host' | 'email' | 'ip' | 'id';
 
 // 바꾼 뒤에만 보내요. 풀기는 없어요.
 export const MASK_RULES: { kind: MaskKind; label: string; pattern: RegExp }[] = [
   // 사용자 폴더 이름(대개 사번·이름)을 바꿔요. 그 뒤 경로(\AppData\…)는 남겨서 어떤 오류인지 알아볼 수 있게 해요.
+  // 이름에 띄어쓰기가 있으면(doyun kim) 다음 경로 구분자까지 두 낱말 더 묶어요. 구분자가 없으면 첫 낱말만 바꿔요.
+  // WSL(/mnt/c/Users/…)과 공유 홈 폴더(\\fs01\home$\…)도 같은 사용자 폴더로 봐요.
   {
     kind: 'path',
     label: '[사용자 폴더]',
-    pattern: /(?:\b[A-Za-z]:[\\/]+(?:Users|Documents and Settings)[\\/]+|(?<![\w.-])\/(?:home|Users)\/)[^\\/\s"'<>:|?*]+/gi,
+    pattern:
+      /(?:\b[A-Za-z]:[\\/]+(?:Users|Documents and Settings)[\\/]+|(?<![\w.-])\/mnt\/[a-z]\/(?:Users|home)\/|(?<![\w.-])\/(?:home|Users)\/|\\\\[^\\\s]+\\(?:home|users|profiles?)\$?\\)(?:[^\\/\s"'<>:|?*]+(?: [^\\/\s"'<>:|?*]+){1,2}(?=[\\/])|[^\\/\s"'<>:|?*]+)/gi,
   },
+  // 도메인\계정(CORP\kim.doyun). 도메인은 대문자, 계정은 소문자로 시작할 때만 봐요(HKLM\SOFTWARE 같은 경로는 그대로 둬요).
+  { kind: 'account', label: '[계정]', pattern: /\b[A-Z][A-Z0-9-]{1,14}\\[a-z][a-z0-9._-]{1,30}/g },
+  // 윈도 기본 PC 이름(DESKTOP-KIMDOYUN·LAPTOP-…). 이름이나 사번이 들어가는 일이 많아요.
+  { kind: 'host', label: '[PC 이름]', pattern: /\b(?:DESKTOP|LAPTOP)-[A-Z0-9]{5,15}\b/g },
   { kind: 'email', label: '[이메일]', pattern: /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g },
   { kind: 'ip', label: '[IP]', pattern: /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/g },
   // 오류 추적 번호(Trace ID·Correlation ID). 세션·요청을 다시 잇는 값이라 보내지 않고 가려요.
   { kind: 'id', label: '[ID]', pattern: GUID },
 ];
 
-export const MASK_NAME: Record<MaskKind, string> = { path: '사용자 폴더', email: '이메일', ip: 'IP', id: 'ID' };
+export const MASK_NAME: Record<MaskKind, string> = { path: '사용자 폴더', account: '계정', host: 'PC 이름', email: '이메일', ip: 'IP', id: 'ID' };

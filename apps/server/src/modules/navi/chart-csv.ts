@@ -21,7 +21,11 @@ export interface ChartRow {
 }
 
 export const CHART_FORMAT_MESSAGE = '분장표 양식으로 올려 주세요';
-export const chartFormatError = () => new DeskError('chart-format', 422, CHART_FORMAT_MESSAGE);
+/**
+ * 행·칸을 알면 어디를 고칠지 덧붙여요(11/1 QA M8). 칸 값은 싣지 않아요(이름이 든 칸일 수 있어요).
+ */
+export const chartFormatError = (where?: string) => new DeskError('chart-format', 422, where ? `${CHART_FORMAT_MESSAGE}. ${where}` : CHART_FORMAT_MESSAGE);
+const cellError = (rowLabel: string, col: ChartColumn, rule: string) => chartFormatError(`${rowLabel} "${CHART_COLUMNS[col]}" 칸은 ${rule}`);
 
 const REQUIRED: ChartColumn[] = ['id', 'task', 'team', 'desk', 'nextStep', 'ownerDepartment'];
 const MAX_ROWS = 500;
@@ -114,6 +118,14 @@ function clean(value: string | undefined): string {
  * 정해진 칸 말고는 모두 버려요(사람 이름 칸 포함).
  */
 export function parseChart(text: string): ChartRow[] {
+  return parseChartFile(text).rows;
+}
+
+/**
+ * parseChart와 같고, 파일에 "온보딩 주차" 칸이 있었는지도 알려 줘요.
+ * 칸이 없는 옛 양식이면 반영할 때 지금 값을 그대로 둬요(11/1 QA M7).
+ */
+export function parseChartFile(text: string): { rows: ChartRow[]; hasOnboarding: boolean } {
   const table = parseCsv(text);
   if (!table || table.length < 2) throw chartFormatError();
   const header = table[0]!.map((h) => HEADER_TO_COLUMN.get(squash(h)));
@@ -124,7 +136,8 @@ export function parseChart(text: string): ChartRow[] {
   const index = (col: ChartColumn) => header.indexOf(col);
   const seen = new Set<string>();
   const rows: ChartRow[] = [];
-  for (const cells of table.slice(1)) {
+  for (const [i, cells] of table.slice(1).entries()) {
+    const line = `${i + 2}번째 줄`;
     const get = (col: ChartColumn) => {
       const at = index(col);
       // 내보낼 때 수식 막기로 붙인 '를 다시 떼요(toCsv).
@@ -148,37 +161,42 @@ export function parseChart(text: string): ChartRow[] {
       ],
       revisedOn: get('revisedOn') || null,
       ownerDepartment: get('ownerDepartment'),
-      onboardingWeek: onboardingWeek(get('onboardingWeek')),
+      onboardingWeek: null,
     };
-    validateRow(row);
-    if (seen.has(row.id)) throw chartFormatError();
+    const label = ROW_ID.test(row.id) ? `${row.id} 행` : line;
+    row.onboardingWeek = onboardingWeek(get('onboardingWeek'), label);
+    validateRow(row, label);
+    if (seen.has(row.id)) throw chartFormatError(`${row.id} 행이 두 번 있어요`);
     seen.add(row.id);
     rows.push(row);
   }
-  return rows;
+  return { rows, hasOnboarding: header.includes('onboardingWeek') };
 }
 
-/** "온보딩 주차" 칸: 비우면 null, 1·2(또는 "1주차"·"2주차")만 받아요. */
-function onboardingWeek(value: string): 1 | 2 | null {
+/** "온보딩 주차" 칸: 비우면 null, 1·2(또는 "1주차"·"2주차", 전각 숫자)만 받아요. */
+function onboardingWeek(value: string, label: string): 1 | 2 | null {
   if (value === '') return null;
-  const m = /^([12])(?:\s*주차)?$/.exec(value);
-  if (!m) throw chartFormatError();
+  const m = /^([12])(?:\s*주차)?$/.exec(value.normalize('NFKC'));
+  if (!m) throw cellError(label, 'onboardingWeek', '1·2만 써요(아니면 비워 두세요)');
   return m[1] === '1' ? 1 : 2;
 }
 
-function validateRow(row: ChartRow): void {
-  if (!ROW_ID.test(row.id)) throw chartFormatError();
+function validateRow(row: ChartRow, label: string): void {
+  if (!ROW_ID.test(row.id)) throw cellError(label, 'id', 'FIN-01처럼 써요');
   for (const col of REQUIRED) {
     const value = row[col as Exclude<ChartColumn, 'aliases' | 'onboardingWeek'>];
-    if (typeof value !== 'string' || value.length === 0) throw chartFormatError();
+    if (typeof value !== 'string' || value.length === 0) throw cellError(label, col, '비울 수 없어요');
   }
   for (const [col, max] of Object.entries(MAX_LEN) as [keyof typeof MAX_LEN, number][]) {
     const value = row[col];
-    if (value !== null && (value.length > max || CONTROL.test(value))) throw chartFormatError();
+    if (value !== null && value.length > max) throw cellError(label, col, `${max}자까지 써요`);
+    if (value !== null && CONTROL.test(value)) throw cellError(label, col, '보이지 않는 특수 글자를 지워 주세요');
   }
-  if (row.deskUrl !== null && !URL_SCHEME.test(row.deskUrl)) throw chartFormatError();
-  if (row.revisedOn !== null && (!DATE.test(row.revisedOn) || Number.isNaN(Date.parse(row.revisedOn)))) throw chartFormatError();
-  if (row.aliases.length > MAX_ALIASES || row.aliases.some((a) => a.length > MAX_ALIAS_LEN || CONTROL.test(a))) throw chartFormatError();
+  if (row.deskUrl !== null && !URL_SCHEME.test(row.deskUrl)) throw cellError(label, 'deskUrl', 'https:// 또는 mailto:로 시작해요');
+  if (row.revisedOn !== null && (!DATE.test(row.revisedOn) || Number.isNaN(Date.parse(row.revisedOn))))
+    throw cellError(label, 'revisedOn', '2026-10-31처럼 써요');
+  if (row.aliases.length > MAX_ALIASES) throw cellError(label, 'aliases', `${MAX_ALIASES}개까지 써요`);
+  if (row.aliases.some((a) => a.length > MAX_ALIAS_LEN || CONTROL.test(a))) throw cellError(label, 'aliases', `낱말마다 ${MAX_ALIAS_LEN}자까지 써요`);
 }
 
 /** 우리 부서 행을 다시 CSV로 내보내요(S5 파일 받기). 사람 이름 칸은 없어요. */

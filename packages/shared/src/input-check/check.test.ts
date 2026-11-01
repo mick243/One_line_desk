@@ -15,7 +15,7 @@ describe('공통 입력 검사', () => {
     const r = checkInput('kim@example.com 에서 10.0.0.12 접속이 안 돼요, lee@corp.co.kr 도요');
     expect(r.locks).toEqual([]);
     expect(r.text).toBe('[이메일] 에서 [IP] 접속이 안 돼요, [이메일] 도요');
-    expect(r.masked).toEqual({ path: 0, email: 2, ip: 1, id: 0 });
+    expect(r.masked).toEqual({ path: 0, account: 0, host: 0, email: 2, ip: 1, id: 0 });
     expect(maskLine(r)).toBe('이메일 2곳, IP 1곳을 [이메일] · [IP]로 바꿔 보내요');
   });
 
@@ -47,7 +47,7 @@ describe('공통 입력 검사', () => {
 describe('입력 검사 규칙 2(QA-2·3·10·19)', () => {
   it.each(QA_LOCKED)('%s → 잠가요', (_name, text, kind) => {
     const r = checkInput(text);
-    expect(r.rulesVersion).toBe(4);
+    expect(r.rulesVersion).toBe(5);
     expect(r.locks.map((l) => l.kind)).toContain(kind);
   });
 
@@ -166,4 +166,30 @@ describe('입력 검사 규칙 4: GUID는 잠그지 않고 가림(10/31 QA H2)',
       ).toContain('key-token');
     }
   });
+});
+
+describe('입력 검사 규칙 5: 놓치던 이름 가림(11/1 QA M1)', () => {
+  it.each([
+    [String.raw`C:\Users\doyun kim\AppData\Local\Temp\a.log`, String.raw`[사용자 폴더]\AppData\Local\Temp\a.log`, 'path'],
+    ['/mnt/c/Users/doyun/projects/app', '[사용자 폴더]/projects/app', 'path'],
+    [String.raw`\\fs01\home$\kim.doyun\문서\보고서.xlsx`, String.raw`[사용자 폴더]\문서\보고서.xlsx`, 'path'],
+    [String.raw`로그인 계정 CORP\kim.doyun 이 잠겼어요`, '로그인 계정 [계정] 이 잠겼어요', 'account'],
+    ['컴퓨터 이름 DESKTOP-KIMDOYUN 에서 오류', '컴퓨터 이름 [PC 이름] 에서 오류', 'host'],
+  ])('%s', (raw, masked, kind) => {
+    const r = checkInput(raw);
+    expect(r.locks).toEqual([]);
+    expect(r.text).toBe(masked);
+    expect(r.masked[kind as keyof typeof r.masked]).toBe(1);
+  });
+
+  it('띄어 쓴 이름 뒤에 경로 구분자가 없으면 첫 낱말만 바꿔요', () => {
+    expect(checkInput(String.raw`C:\Users\doyun 폴더가 없어요`).text).toBe('[사용자 폴더] 폴더가 없어요');
+  });
+
+  it.each([String.raw`HKLM\SOFTWARE\Microsoft 키가 없어요`, 'DESKTOP 앱이 안 열려요', String.raw`C:\Windows\System32 오류`, 'LAPTOP-1 대여 문의'])(
+    '이름이 아닌 글은 그대로 둬요: %s',
+    (raw) => {
+      expect(checkInput(raw).text).toBe(raw);
+    },
+  );
 });
