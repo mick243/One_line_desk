@@ -4,7 +4,7 @@ import { DeskError } from '../../core/errors';
 import { demoItFaqs } from './fixtures';
 import * as repo from './repo';
 import type { ItFaqRow } from './repo';
-import { bigramSet, coverage, keywords, normalize } from './text';
+import { bigramSet, coverage, keywords, normalize, words } from './text';
 
 // IT 오류 문장 → IT FAQ 원문 단계(10/31 넓힐 후보 ②).
 // - 붙여 넣은 글은 화면이 공통 입력 검사로 가린 뒤 POST 본문으로만 와요. 서버도 같은 규칙으로 다시 검사하고, 어디에도 저장하지 않아요(ADR-10).
@@ -21,16 +21,51 @@ const IT_TASK_FALLBACK = 'IT 오류';
 
 // 0x8007…·AADSTS…·숫자 코드(809). 숫자 코드는 "오류 809"처럼 코드라는 말 근처이거나 FAQ에 적힌 값과 같을 때만 봐요.
 const HEX_CODE = /0x[0-9a-f]{6,8}/gi;
-const NAMED_CODE = /\b[A-Z]{3,8}\d{4,6}\b/g;
+// 소문자로 붙여 넣어도(aadsts50126) 같은 코드로 봐요(QA L1).
+const NAMED_CODE = /\b[A-Z]{3,8}\d{4,6}\b/gi;
+// "0x8007 0005"·"0x 80070005"처럼 띄어 쓴 16진수 코드를 붙여요(QA H1).
+const SPACED_HEX = /0x\s*([0-9a-f]{4})[\s-]?([0-9a-f]{4})(?![0-9a-f])/gi;
 // 오류 글 어디에나 나오는 말. 이 말만으로는 FAQ를 고르지 않아요("오류"만 맞은 프린터 FAQ가 업데이트 오류 후보로 뜨던 문제).
-const IT_GENERIC = new Set(['오류', '에러', '실패', '문제', '안됨', '안돼', 'error', 'failed', 'failure', 'windows', '윈도', '연결']);
+// 영어 오류 글의 흔한 말(cannot·unable 등)도 같이 빼요. "Cannot read properties"가 Outlook "cannot open"으로 가던 문제(QA H1).
+const IT_GENERIC = new Set([
+  '오류',
+  '에러',
+  '실패',
+  '문제',
+  '안됨',
+  '안돼',
+  'error',
+  'failed',
+  'failure',
+  'windows',
+  '윈도',
+  '연결',
+  'cannot',
+  'can',
+  'not',
+  'unable',
+  'could',
+  'the',
+  'at',
+  'of',
+  'to',
+  'is',
+  'exception',
+  'typeerror',
+]);
 // 경로를 붙여 쓴 긴 낱말(appdatalocaltemp…)은 두 글자 조각이 아무 데나 겹쳐서 빼요.
 const MAX_KEYWORD = 16;
 const MASK_WORDS = new Set(['사용자', '폴더', '이메일', 'ip']);
 const NUMBER_NEAR_WORD = /(?:오류|에러|error|코드|code)\D{0,6}(\d{3,5})/gi;
 
+/** 띄어 쓴 16진수 코드를 한 덩어리로 붙여요. */
+export function compactCodes(text: string): string {
+  return text.replace(SPACED_HEX, '0x$1$2');
+}
+
 /** 붙여 넣은 글에서 오류 코드 모양을 뽑아요(소문자). */
-export function errorCodesIn(text: string): Set<string> {
+export function errorCodesIn(raw: string): Set<string> {
+  const text = compactCodes(raw);
   const out = new Set<string>();
   for (const m of text.matchAll(HEX_CODE)) out.add(m[0].toLowerCase());
   for (const m of text.matchAll(NAMED_CODE)) out.add(m[0].toLowerCase());
@@ -44,17 +79,26 @@ export interface ScoredFaq {
 }
 
 /** FAQ 후보를 점수 순으로 줘요. 오류 코드가 맞으면 다른 무엇보다 앞서요. */
-export function rankFaqs(text: string, faqs: ItFaqRow[]): ScoredFaq[] {
+export function rankFaqs(raw: string, faqs: ItFaqRow[]): ScoredFaq[] {
+  const text = compactCodes(raw);
   const codes = errorCodesIn(text);
-  // 코드는 위에서 따로 맞춰요. 16진수 조각(0x…)이 다른 코드와 두 글자씩 겹쳐 엉뚱한 후보가 되지 않게 빼요. 가림 자리표 낱말도 빼요.
-  const keys = keywords(text).filter((k) => !IT_GENERIC.has(k) && !/^0x/.test(k) && !MASK_WORDS.has(k) && k.length <= MAX_KEYWORD);
+  // 코드는 위에서 따로 맞춰요. 숫자가 든 낱말(줄 번호 691, 0x… 조각)은 FAQ 제목 속 코드와 두 글자씩 겹쳐
+  // 엉뚱한 FAQ를 확정으로 띄워서(QA H1) 조각 점수에서 빼요. 가림 자리표 낱말도 빼요.
+  const keys = keywords(text).filter((k) => !IT_GENERIC.has(k) && !/\d/.test(k) && !MASK_WORDS.has(k) && k.length <= MAX_KEYWORD);
   const lowered = normalize(text);
   return faqs
     .map((faq) => {
       const codeHit = faq.errorCodes.some((c) => codes.has(c.toLowerCase()) || (/^0x/i.test(c) && lowered.includes(c.toLowerCase())));
       const set = bigramSet(faq.title, ...faq.aliases);
+      const latinWords = words([faq.title, ...faq.aliases].join(' ')).filter((w) => /^[a-z]+$/.test(w));
       let score = 0;
       for (const k of keys) {
+        // 영어 낱말은 조각이 아니라 낱말로 맞춰요. "run"이 "account"의 "un"에 반쯤 걸리던 문제(QA H1).
+        // 한국어는 조사·어미가 붙어서 지금처럼 조각 점수로 봐요.
+        if (/^[a-z]+$/.test(k)) {
+          if (latinWords.some((w) => w === k || (k.length >= 4 && w.startsWith(k)))) score += 1;
+          continue;
+        }
         const c = coverage(k, set);
         if (c >= 0.5) score += c;
       }

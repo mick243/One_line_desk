@@ -2,7 +2,7 @@ import type { InquiryStatsResponse, ItHelpResponse, OnboardingResponse } from '@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestApp, MOCK } from '../../testing';
 import { parseChart, toCsv } from './chart-csv';
-import { demoChartCsv } from './fixtures';
+import { demoChartCsv, demoItFaqs } from './fixtures';
 import { errorCodesIn, rankFaqs } from './it-help';
 
 // 10/31 넓힐 후보 회의에서 이번에 만든 것:
@@ -140,6 +140,31 @@ describe('② IT 오류 문장 → IT FAQ', () => {
     expect(faq.body).toMatchObject({ faq: { id: 'ITF-05', title: '계정이 잠겼거나 로그인이 안 돼요' }, inquiryRowId: 'IT-02' });
     expect((await dev.call('POST', '/api/navi/it-help/faq', { id: 'ITF-99' })).status).toBe(404);
     expect((await dev.call('POST', '/api/navi/it-help/faq', { id: "ITF-01' or 1=1" })).status).toBe(400);
+  });
+
+  it('줄 번호·코드 조각처럼 숫자만 겹친 FAQ는 고르지 않고, 띄어 쓰거나 소문자로 쓴 코드는 같은 코드로 봐요(QA H1·L1)', () => {
+    const faqs = demoItFaqs();
+    const pick = (text: string) => {
+      const ranked = rankFaqs(text, faqs);
+      return ranked[0] && ranked[0].score >= 0.8 ? ranked[0].faq.id : null;
+    };
+    expect(pick("TypeError: Cannot read properties of undefined (reading 'map') at render (app.js:691:13)")).toBeNull();
+    expect(pick('java.lang.NullPointerException\n\tat com.corp.App.run(App.java:809)\n\tat com.corp.Main.main(Main.java:11)')).toBeNull();
+    expect(pick('업데이트 오류 0x8007 0005')).toBe('ITF-01');
+    expect(pick('0x 80070005 설치 안 됨')).toBe('ITF-01');
+    expect(pick('aadsts50126 로그인 안 됨')).toBe('ITF-05');
+    expect(pick('VPN 오류 809')).toBe('ITF-03');
+  });
+
+  it('GUID가 든 실제 로그인 오류 글도 찾고, GUID는 응답·DB에 남지 않아요(QA H2)', async () => {
+    const t = await setup();
+    const dev = await t.loginAs(MOCK.dev);
+    const text =
+      'AADSTS50126: Error validating credentials.\nTrace ID: 0b3e7c2a-5f1d-4e8b-9a6c-2d4f8e1b3c70\nCorrelation ID: 7f9a1c3e-2b4d-4f6a-8c0e-1a3b5d7f9e2c';
+    const res = await dev.call('POST', '/api/navi/it-help', { text });
+    expect(res.status).toBe(200);
+    expect((res.body as ItHelpResponse).faq?.id).toBe('ITF-05');
+    expect(JSON.stringify(res.body)).not.toContain('0b3e7c2a');
   });
 
   it('동점이면 하나를 고르지 않고 제목 후보로 보여 줘요', () => {

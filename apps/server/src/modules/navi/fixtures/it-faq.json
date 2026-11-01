@@ -42,7 +42,7 @@
   {
     "id": "ITF-04",
     "title": "사내 와이파이 '인증에 실패했습니다'",
-    "aliases": ["와이파이", "wifi", "무선랜", "인증 실패", "인터넷 안 됨", "authentication failed", "연결할 수 없음"],
+    "aliases": ["와이파이", "wifi", "무선랜", "인증 실패", "인터넷 안 됨", "authentication failed", "연결할 수 없음", "network"],
     "errorCodes": [],
     "steps": [
       "와이파이 목록에서 사내 망을 길게 눌러 [이 네트워크 저장 안 함]을 고른 뒤 다시 연결해 주세요.",
