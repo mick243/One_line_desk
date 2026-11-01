@@ -6,8 +6,10 @@ import {
   type InquiryListResponse,
   LEAVE_REJECT_REASON_MAX,
   type LeaveDay,
+  LEAVE_TYPE_LABEL,
   type LeaveRequestBalance,
   maskLine,
+  OFFICIAL_LEAVE_REASON_LABEL,
 } from '@one-line-desk/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
@@ -25,6 +27,11 @@ const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const dayLabel = (date: string) => `${Number(date.slice(5, 7))}월 ${Number(date.slice(8, 10))}일(${WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]})`;
 const fmt = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}일`;
 const daysText = (days: readonly LeaveDay[]) => days.map((d) => `${dayLabel(d.date)} ${d.kind === 'full' ? '하루' : '반차'}`).join(' · ');
+/** 목록 머리표: 휴가(연차)·공가 */
+const kindTag = (item: InquiryItem) => (item.kind !== 'leave' ? null : item.leave?.type === 'official' ? '공가' : '휴가');
+const isOfficial = (item: InquiryItem) => item.leave?.type === 'official';
+/** "11월 3일(화) 하루 · 공가 1일" */
+const leaveText = (item: InquiryItem) => `${daysText(item.leave!.days)} · ${LEAVE_TYPE_LABEL[item.leave!.type]} ${fmt(item.leave!.total)}`;
 
 function useInquiries(path: string) {
   const { version } = useActions();
@@ -134,8 +141,14 @@ function LeaveBlock({ item }: { item: InquiryItem }) {
   return (
     <div className='leave-block'>
       <p>
-        <strong>쓸 날</strong> {daysText(leave.days)} · 연차 {fmt(leave.total)}
+        <strong>쓸 날</strong> {leaveText(item)}
       </p>
+      {leave.officialReason && (
+        <p>
+          <strong>공가 사유</strong> {OFFICIAL_LEAVE_REASON_LABEL[leave.officialReason]}
+        </p>
+      )}
+      {leave.type === 'official' && <p className='hint'>공가라서 연차에서 빠지지 않아요. 증빙은 인사팀이 따로 받아요.</p>}
       {b &&
         balanceLines(b).map((line, i) => (
           <p key={i} className={line.short ? 'leave-after short' : 'leave-after'}>
@@ -173,10 +186,10 @@ function InboxItem({ item }: { item: InquiryItem }) {
       path: `/api/navi/inquiries/${item.id}/decision`,
       body: { decision: 'approved' },
       confirm: {
-        title: '휴가 요청을 승인할까요?',
+        title: `${isOfficial(item) ? '공가' : '휴가'} 요청을 승인할까요?`,
         lines: [
-          `${sender} · ${daysText(item.leave!.days)} · 연차 ${fmt(item.leave!.total)}`,
-          b ? approveLine(b) : '근태 기록에 들어가 남은 연차에서 빠져요.',
+          `${sender} · ${leaveText(item)}`,
+          isOfficial(item) ? '근태 기록에 공가로 들어가요. 남은 연차는 그대로예요.' : b ? approveLine(b) : '근태 기록에 들어가 남은 연차에서 빠져요.',
           '보낸 사람에게 승인 알림이 가요.',
         ],
         confirmLabel: '승인',
@@ -193,8 +206,8 @@ function InboxItem({ item }: { item: InquiryItem }) {
       path: `/api/navi/inquiries/${item.id}/decision`,
       body: { decision: 'rejected', reason: checked.text },
       confirm: {
-        title: '휴가 요청을 반려할까요?',
-        lines: [`${sender} · ${daysText(item.leave!.days)}`, `반려 사유: ${checked.text}`, '보낸 사람이 내 문의에서 사유를 봐요. 남은 연차는 그대로예요.'],
+        title: `${isOfficial(item) ? '공가' : '휴가'} 요청을 반려할까요?`,
+        lines: [`${sender} · ${leaveText(item)}`, `반려 사유: ${checked.text}`, '보낸 사람이 내 문의에서 사유를 봐요. 남은 연차는 그대로예요.'],
         confirmLabel: '반려',
       },
     });
@@ -215,7 +228,7 @@ function InboxItem({ item }: { item: InquiryItem }) {
     <li>
       <div className='inquiry-head'>
         <strong>
-          {item.kind === 'leave' && <span className='inquiry-kind'>휴가</span>}
+          {kindTag(item) && <span className='inquiry-kind'>{kindTag(item)}</span>}
           {item.task}
         </strong>
         <StateBadge item={item} />
@@ -227,7 +240,10 @@ function InboxItem({ item }: { item: InquiryItem }) {
       <p className='inquiry-reason'>사유: {item.reason}</p>
       {item.decisionReason && <p className='inquiry-reason'>반려 사유: {item.decisionReason}</p>}
       {item.state === 'approved' && item.recorded === false && (
-        <p className='lock-line'>근태 연결이 안 돼서 남은 연차에서 빼지 못했어요. 그룹웨어 근태에 직접 반영해 주세요.</p>
+        <p className='lock-line'>
+          {isOfficial(item) ? '근태 연결이 안 돼서 공가를 기록하지 못했어요.' : '근태 연결이 안 돼서 남은 연차에서 빼지 못했어요.'} 그룹웨어 근태에 직접 반영해
+          주세요.
+        </p>
       )}
       <Replies item={item} />
 
@@ -324,7 +340,7 @@ export function MyInquiries({ compact = false }: { compact?: boolean }) {
             <li key={i.id}>
               <div className='inquiry-head'>
                 <strong>
-                  {i.kind === 'leave' && <span className='inquiry-kind'>휴가</span>}
+                  {kindTag(i) && <span className='inquiry-kind'>{kindTag(i)}</span>}
                   {i.team} · {i.task}
                 </strong>
                 <StateBadge item={i} />
@@ -345,7 +361,7 @@ export function MyInquiries({ compact = false }: { compact?: boolean }) {
           <li key={i.id}>
             <div className='inquiry-head'>
               <strong>
-                {i.kind === 'leave' && <span className='inquiry-kind'>휴가</span>}
+                {kindTag(i) && <span className='inquiry-kind'>{kindTag(i)}</span>}
                 {i.team} · {i.task}
               </strong>
               <StateBadge item={i} />
@@ -357,7 +373,13 @@ export function MyInquiries({ compact = false }: { compact?: boolean }) {
             {i.kind === 'leave' ? <LeaveBlock item={i} /> : <p className='inquiry-text'>{i.question}</p>}
             {i.decisionReason && <p className='inquiry-reason'>반려 사유: {i.decisionReason}</p>}
             {i.state === 'approved' && (
-              <p className='hint'>{i.recorded ? '근태 기록에 들어가 남은 연차에서 빠졌어요.' : '인사팀이 그룹웨어 근태에 반영해요.'}</p>
+              <p className='hint'>
+                {i.recorded
+                  ? isOfficial(i)
+                    ? '근태 기록에 공가로 들어갔어요. 남은 연차는 그대로예요.'
+                    : '근태 기록에 들어가 남은 연차에서 빠졌어요.'
+                  : '인사팀이 그룹웨어 근태에 반영해요.'}
+              </p>
             )}
             <Replies item={i} />
           </li>

@@ -13,6 +13,8 @@ import {
   type InquiryRequest,
   LEAVE_REJECT_REASON_MAX,
   LEAVE_REQUEST_MAX_DAYS,
+  LEAVE_TYPES,
+  OFFICIAL_LEAVE_REASONS,
   KINDS,
   NAVI_ROW_ID_PATTERN,
   type NaviRowCardRequest,
@@ -239,6 +241,9 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
                     properties: { date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }, kind: { enum: ['full', 'half'] } },
                   },
                 },
+                // 11/1 공가: 종류가 없으면 연차예요. 공가 사유는 정해진 코드만 받아요.
+                type: { enum: [...LEAVE_TYPES] },
+                officialReason: { enum: [...OFFICIAL_LEAVE_REASONS] },
               },
             },
           },

@@ -6,8 +6,14 @@ import {
   INQUIRY_REASON_MAX,
   kstDate,
   LEAVE_REQUEST_MAX_DAYS,
+  LEAVE_TYPE_LABEL,
+  LEAVE_TYPES,
   type LeaveDay,
+  type LeaveType,
   maskLine,
+  OFFICIAL_LEAVE_REASON_LABEL,
+  OFFICIAL_LEAVE_REASONS,
+  type OfficialLeaveReason,
 } from '@one-line-desk/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { isDemoLogin } from '../../api';
@@ -19,6 +25,7 @@ import { newRequestId } from '../../net';
 // 질문에서 읽은 날(규칙, 양은 AI도)이 미리 채워져 있고, 사람이 날·하루/반차를 고치고 사유를 적어요.
 // [보내기] → 확인 시트(받는 곳·쓸 날·인사팀이 이 요청 안에서 내 남은 연차를 봐요·보관 기간) → 인사팀 받은 문의함으로 가요.
 // 남은 연차는 서버가 계산해 카드로 준 내 숫자예요. 이 화면 메모리에만 있어요.
+// 11/1 공가: 맨 위에서 연차·공가를 골라요. 공가는 정해진 사유를 하나 고르고, 연차에서 빠지지 않아 남은 연차 계산을 보여 주지 않아요.
 
 type LeaveRequest = Extract<CardAction, { type: 'leave-request' }>;
 
@@ -40,6 +47,9 @@ export function LeaveRequestSheet({ action, onClose }: { action: LeaveRequest; o
   const today = useMemo(() => kstDate(Date.now()), []);
   const [days, setDays] = useState<LeaveDay[]>(() => (action.days.length ? action.days.map((d) => ({ ...d })) : [{ date: nextWeekday(today), kind: 'full' }]));
   const [reason, setReason] = useState('');
+  const [type, setType] = useState<LeaveType>(action.leaveType ?? 'annual');
+  const [officialReason, setOfficialReason] = useState<OfficialLeaveReason | null>(null);
+  const official = type === 'official';
   // 같은 양식에서 두 번 눌러도 한 번만 보내요(서버 멱등 키).
   const requestId = useMemo(() => newRequestId(), []);
 
@@ -65,7 +75,7 @@ export function LeaveRequestSheet({ action, onClose }: { action: LeaveRequest; o
   const left = (n: number) => (n >= 0 ? `${fmt(n)} 남아요` : `${fmt(-n)} 모자라요`);
   const r = checkInput(reason.trim());
   const line = maskLine(r);
-  const blocked = problems.length > 0 || !sorted.length || !r.text || r.locks.length > 0;
+  const blocked = problems.length > 0 || !sorted.length || !r.text || r.locks.length > 0 || (official && !officialReason);
   const summary = sorted.map((d) => `${dayLabel(d.date)} ${d.kind === 'full' ? '하루' : '반차'}`).join(' · ');
 
   const update = (i: number, patch: Partial<LeaveDay>) => setDays((list) => list.map((d, j) => (j === i ? { ...d, ...patch } : d)));
@@ -77,15 +87,29 @@ export function LeaveRequestSheet({ action, onClose }: { action: LeaveRequest; o
       text: '보내기',
       method: 'POST',
       path: '/api/navi/inquiries',
-      body: { rowId: action.rowId, question: '휴가 신청', reason: r.text, requestId, leave: { days: sorted } },
+      body: {
+        rowId: action.rowId,
+        question: `${LEAVE_TYPE_LABEL[type]} 신청`,
+        reason: r.text,
+        requestId,
+        leave: official && officialReason ? { days: sorted, type, officialReason } : { days: sorted },
+      },
       confirm: {
-        title: `${action.team}에 휴가 요청을 보낼까요?`,
-        lines: [
-          `쓸 날: ${summary} · 연차 ${fmt(sum)}`,
-          `받는 곳: ${action.team}(${action.task})`,
-          `${action.team}이 이 요청을 처리하는 동안 내 남은 연차를 함께 봐요.`,
-          '내 이름과 부서가 같이 가요. 승인되면 근태 기록에 들어가 남은 연차에서 빠져요.',
-        ],
+        title: `${action.team}에 ${official ? '공가' : '휴가'} 요청을 보낼까요?`,
+        lines: official
+          ? [
+              `쓸 날: ${summary} · 공가 ${fmt(sum)}`,
+              `공가 사유: ${officialReason ? OFFICIAL_LEAVE_REASON_LABEL[officialReason] : ''}`,
+              `받는 곳: ${action.team}(${action.task})`,
+              '내 이름과 부서가 같이 가요. 승인되면 근태 기록에 공가로 들어가고, 연차에서는 빠지지 않아요.',
+              '훈련 통지서 같은 증빙은 인사팀에 따로 내 주세요.',
+            ]
+          : [
+              `쓸 날: ${summary} · 연차 ${fmt(sum)}`,
+              `받는 곳: ${action.team}(${action.task})`,
+              `${action.team}이 이 요청을 처리하는 동안 내 남은 연차를 함께 봐요.`,
+              '내 이름과 부서가 같이 가요. 승인되면 근태 기록에 들어가 남은 연차에서 빠져요.',
+            ],
         confirmLabel: '보내기',
         note: `보낸 요청과 사유는 ${action.team}이 읽고, ${INQUIRY_KEEP_DAYS}일 동안 보관돼요`,
       },
@@ -93,13 +117,36 @@ export function LeaveRequestSheet({ action, onClose }: { action: LeaveRequest; o
   }
 
   return (
-    <Sheet title='휴가 신청하기' onClose={onClose}>
+    <Sheet title={official ? '공가 신청하기' : '휴가 신청하기'} onClose={onClose}>
       <p className='inquiry-scope'>
         {action.team}에 보내져요 · {action.task}
       </p>
-      <p className='leave-remaining'>
-        지금 남은 연차 <strong>{fmt(action.remaining)}</strong> <small className='hint'>· 이번 연차 기간 {dayLabel(action.periodEnd)}까지</small>
-      </p>
+      <div className='segmented leave-type' role='group' aria-label='휴가 종류'>
+        {LEAVE_TYPES.map((t) => (
+          <button key={t} type='button' aria-pressed={type === t} onClick={() => setType(t)}>
+            {LEAVE_TYPE_LABEL[t]}
+          </button>
+        ))}
+      </div>
+      {official ? (
+        <>
+          <p className='leave-remaining'>공가는 연차에서 빠지지 않아요.</p>
+          <fieldset className='inquiry-field official-reasons'>
+            <legend className='inquiry-label'>공가 사유(꼭 골라요)</legend>
+            {OFFICIAL_LEAVE_REASONS.map((code) => (
+              <label key={code} className='radio-line'>
+                <input type='radio' name='official-reason' checked={officialReason === code} onChange={() => setOfficialReason(code)} />
+                {OFFICIAL_LEAVE_REASON_LABEL[code]}
+              </label>
+            ))}
+          </fieldset>
+          <p className='hint'>훈련 통지서·출석 요구서 같은 증빙은 앱이 받지 않아요. 인사팀에 따로 내 주세요.</p>
+        </>
+      ) : (
+        <p className='leave-remaining'>
+          지금 남은 연차 <strong>{fmt(action.remaining)}</strong> <small className='hint'>· 이번 연차 기간 {dayLabel(action.periodEnd)}까지</small>
+        </p>
+      )}
       {action.planned !== undefined && !action.days.length && <p className='hint'>말씀하신 {fmt(action.planned)}만큼 날을 골라 주세요.</p>}
       {action.days.length > 0 && <p className='hint'>질문에서 읽은 날을 채워 두었어요. 맞는지 보고 고쳐 주세요.</p>}
 
@@ -161,17 +208,20 @@ export function LeaveRequestSheet({ action, onClose }: { action: LeaveRequest; o
         </p>
       ))}
       <div role='status'>
-        {(thisSum > 0 || nextSum === 0) && (
+        {official && sum > 0 && <p className='leave-after'>공가 {fmt(sum)} · 남은 연차는 그대로예요</p>}
+        {!official && (thisSum > 0 || nextSum === 0) && (
           <p className={`leave-after${after < 0 ? ' short' : ''}`}>
             {nextSum > 0 ? `이번 연차 기간(${dayLabel(action.periodEnd)}까지) ` : ''}연차 {fmt(thisSum)}을 쓰면 {left(after)}
           </p>
         )}
-        {nextSum > 0 && (
+        {!official && nextSum > 0 && (
           <p className={`leave-after${nextAfter < 0 ? ' short' : ''}`}>
             다음 연차 기간({dayLabel(action.next.periodStart)}부터) 연차 {fmt(nextSum)}을 쓰면 {left(nextAfter)}
           </p>
         )}
-        {nextSum > 0 && thisSum === 0 && <p className='hint'>고른 날이 다음 연차 기간이라 지금 남은 연차({fmt(action.remaining)})에서는 빠지지 않아요.</p>}
+        {!official && nextSum > 0 && thisSum === 0 && (
+          <p className='hint'>고른 날이 다음 연차 기간이라 지금 남은 연차({fmt(action.remaining)})에서는 빠지지 않아요.</p>
+        )}
       </div>
 
       <label className='inquiry-field'>
@@ -185,7 +235,7 @@ export function LeaveRequestSheet({ action, onClose }: { action: LeaveRequest; o
           value={reason}
           maxLength={INQUIRY_REASON_MAX}
           rows={2}
-          placeholder='예) 가족 행사 · 개인 사정'
+          placeholder={official ? '예) 예비군 2년 차 훈련' : '예) 가족 행사 · 개인 사정'}
           autoComplete='off'
           onChange={(e) => setReason(e.target.value)}
         />

@@ -80,7 +80,7 @@ describe('휴가 요청(ADR-24)', () => {
     // 휴가 요청은 [처리했어요] 대신 승인·반려예요.
     expect(item!.actions.map((a) => a.text)).toEqual(['확인했어요']);
     // 보낸 사람 화면에는 남은 연차 칸이 따로 오지 않아요(본인 연차는 연차 카드로 봐요). 다른 부서는 받은 문의함에 아무것도 없어요.
-    expect((await mine(haneul))[0]!.leave).toEqual({ days: expect.any(Array), total: 1.5 });
+    expect((await mine(haneul))[0]!.leave).toEqual({ type: 'annual', days: expect.any(Array), total: 1.5 });
     expect(await inbox(doyun)).toEqual([]);
     // 인사팀 알림에는 날짜·사유가 없어요.
     const note = ((await jihu.call('GET', '/api/notifications')).body as NotificationsResponse).items[0]!;
@@ -171,6 +171,82 @@ describe('휴가 요청(ADR-24)', () => {
       leave: { days: [{ date: '2026-11-03', kind: 'full' }] },
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('공가 요청(11/1)', () => {
+  const sendOfficial = (me: Session, body: Record<string, unknown>) =>
+    me.call('POST', '/api/navi/inquiries', { rowId: 'HR-02', question: '공가 신청', reason: REASON, requestId: requestId(), ...body });
+
+  it('예비군을 물으면 공가 카드에 [공가 신청하기]가 붙고 연차 숫자는 카드에 없어요', async () => {
+    const { haneul } = await setup();
+    const cards = (await haneul.call('POST', '/api/ask', { text: '다음 주 화요일 예비군 훈련 가요', kind: 'navi' })).body.cards as Card[];
+    const card = cards.find((c) => c.id === 'navi-official-leave')!;
+    expect(card).toMatchObject({ label: '안내', headline: '공가는 연차에서 빠지지 않아요' });
+    expect(cards.find((c) => c.id === 'navi-my-leave')).toBeUndefined();
+    expect(JSON.stringify(card.fields)).not.toMatch(/남은|\d+(?:\.\d)?일 /);
+    expect(card.actions.secondary.find((a) => a.type === 'leave-request')).toMatchObject({
+      text: '공가 신청하기',
+      leaveType: 'official',
+      rowId: 'HR-02',
+      days: [{ date: '2026-11-03', kind: 'full' }],
+    });
+  });
+
+  it('공가는 사유 코드가 꼭 있어야 하고, 연차 요청에는 사유 코드를 받지 않아요. 정해진 코드 밖은 400이에요', async () => {
+    const { haneul } = await setup();
+    const days = [{ date: '2026-11-03', kind: 'full' }];
+    expect((await sendOfficial(haneul, { leave: { days, type: 'official' } })).status).toBe(400);
+    expect((await sendOfficial(haneul, { leave: { days, officialReason: 'reserve' } })).status).toBe(400);
+    expect((await sendOfficial(haneul, { leave: { days, type: 'official', officialReason: 'flu' } })).status).toBe(400);
+    expect((await sendOfficial(haneul, { leave: { days, type: 'sick' } })).status).toBe(400);
+  });
+
+  it('DB도 휴가 종류 모양을 지켜요: 빈 종류·공가인데 사유 코드 없음·연차에 사유 코드·일반 문의에 종류는 들어가지 않아요', async () => {
+    const { t } = await setup();
+    const insert = (kind: string, leaveType: string | null, code: string | null) =>
+      t.db.query(
+        `insert into navi_inquiries (row_id, task, team, department, sender_pseudonym, sender_name, sender_department, question, reason,
+           kind, leave_days, sender_subject, leave_type, leave_reason_code)
+         values ('HR-02', '휴가 신청', '인사팀', '인사팀', 'p-test', '가상', '재무팀', '휴가 신청', '사유', $1, $2::jsonb, $3, $4, $5)`,
+        [kind, kind === 'leave' ? '[{"date":"2026-11-03","kind":"full"}]' : null, kind === 'leave' ? 'sub-test' : null, leaveType, code],
+      );
+    await expect(insert('leave', null, null)).rejects.toThrow();
+    await expect(insert('leave', 'official', null)).rejects.toThrow();
+    await expect(insert('leave', 'annual', 'reserve')).rejects.toThrow();
+    await expect(insert('leave', 'sick', null)).rejects.toThrow();
+    await expect(insert('leave', 'official', 'flu')).rejects.toThrow();
+    await expect(insert('general', 'annual', null)).rejects.toThrow();
+    await expect(insert('leave', 'annual', null)).resolves.toBeDefined();
+    await expect(insert('leave', 'official', 'vote')).resolves.toBeDefined();
+    await expect(insert('general', null, null)).resolves.toBeDefined();
+  });
+
+  it('보내면 인사팀이 공가로 받고 남은 연차는 오지 않아요. 승인해도 남은 연차가 그대로예요', async () => {
+    const { t, haneul, jihu } = await setup();
+    const before = await remainingOf(haneul);
+    const sent = await sendOfficial(haneul, { leave: { days: [{ date: '2026-11-03', kind: 'full' }], type: 'official', officialReason: 'reserve' } });
+    expect(sent.status).toBe(200);
+    expect(sent.body.card).toMatchObject({ headline: '인사팀에 공가 요청을 보냈어요' });
+    expect(sent.body.card.fields).toContainEqual({ name: '공가 사유', value: '예비군·민방위 훈련' });
+    expect(sent.body.card.fields).toContainEqual({ name: '쓸 날', value: '11월 3일(화) 하루 · 공가 1일' });
+
+    const [item] = await inbox(jihu);
+    expect(item).toMatchObject({ question: '공가 신청 · 예비군·민방위 훈련 · 11월 3일(화) 하루', canDecide: true });
+    expect(item!.leave).toEqual({ type: 'official', officialReason: 'reserve', days: [{ date: '2026-11-03', kind: 'full' }], total: 1 });
+    const note = ((await jihu.call('GET', '/api/notifications')).body as NotificationsResponse).items[0]!;
+    expect(note.title).toBe('인사팀에 공가 요청이 왔어요 · 휴가 신청');
+
+    const ok = await jihu.call('POST', `/api/navi/inquiries/${item!.id}/decision`, { decision: 'approved' });
+    expect(ok.body).toMatchObject({ state: 'approved', recorded: true });
+    expect(await remainingOf(haneul)).toBe(before);
+    const back = ((await haneul.call('GET', '/api/notifications')).body as NotificationsResponse).items[0]!;
+    expect(back.title).toBe('인사팀이 공가 요청을 승인했어요 · 휴가 신청');
+    // 공가로 근태 기록에 들어간 날도 겹치면 다시 신청하지 못해요.
+    expect((await sendLeave(haneul, [{ date: '2026-11-03', kind: 'full' }])).status).toBe(409);
+    // 감사 로그에는 사유 코드·날짜가 없어요.
+    const audit = await t.db.query<{ row: string }>('select row_to_json(a)::text as row from audit_log a');
+    expect(audit.rows.map((r) => r.row).join('\n')).not.toMatch(/reserve|2026-11-03|LEAVECANARY5/);
   });
 });
 

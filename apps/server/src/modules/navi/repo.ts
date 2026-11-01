@@ -1,4 +1,4 @@
-import type { Kind, LeaveDay, WrongReason } from '@one-line-desk/shared';
+import type { Kind, LeaveDay, LeaveType, OfficialLeaveReason, WrongReason } from '@one-line-desk/shared';
 import type { Queryable } from '../../core/db';
 import type { ChartRow } from './chart-csv';
 
@@ -177,6 +177,9 @@ export interface InquiryRow {
   state: 'new' | 'seen' | 'done' | 'approved' | 'rejected';
   kind: 'general' | 'leave';
   leaveDays: LeaveDay[] | null;
+  /** 휴가 요청 종류(연차·공가)와 공가 사유 코드. 일반 문의는 null이에요. */
+  leaveType: LeaveType | null;
+  leaveReasonCode: OfficialLeaveReason | null;
   /** 보낸 사람 IdP 주체(휴가 요청만). 화면·LLM에 내보내지 않아요. */
   senderSubject: string | null;
   decisionReason: string | null;
@@ -187,7 +190,8 @@ export interface InquiryRow {
 
 const INQUIRY_COLUMNS = `id::text as id, row_id as "rowId", task, team, department,
   sender_pseudonym as "senderPseudonym", sender_name as "senderName", sender_department as "senderDepartment",
-  question, reason, state, kind, leave_days as "leaveDays", sender_subject as "senderSubject",
+  question, reason, state, kind, leave_days as "leaveDays",
+  leave_type as "leaveType", leave_reason_code as "leaveReasonCode", sender_subject as "senderSubject",
   decision_reason as "decisionReason", leave_recorded as "leaveRecorded",
   (extract(epoch from created_at) * 1000)::float8 as created,
   (extract(epoch from updated_at) * 1000)::float8 as updated`;
@@ -199,8 +203,8 @@ export async function insertInquiry(
   const at = new Date(i.at).toISOString();
   const { rows } = await q.query<InquiryRow>(
     `insert into navi_inquiries (row_id, task, team, department, sender_pseudonym, sender_name, sender_department, question, reason,
-       kind, leave_days, sender_subject, created_at, updated_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $13)
+       kind, leave_days, sender_subject, leave_type, leave_reason_code, created_at, updated_at)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $14, $15, $13, $13)
      returning ${INQUIRY_COLUMNS}`,
     [
       i.rowId,
@@ -216,6 +220,8 @@ export async function insertInquiry(
       i.leaveDays ? JSON.stringify(i.leaveDays) : null,
       i.senderSubject,
       at,
+      i.leaveType,
+      i.leaveReasonCode,
     ],
   );
   return rows[0]!;

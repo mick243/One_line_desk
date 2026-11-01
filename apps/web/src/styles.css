@@ -1656,6 +1656,24 @@ select {
   margin: 0;
   font-size: 0.9375rem;
 }
+/* 연차·공가 고르기(11/1). 양식은 세로 flex라 overflow: hidden인 묶음이 눌려 한 줄로 사라지지 않게 해요. */
+.leave-type {
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+/* 공가 사유(11/1): 정해진 것 하나만 골라요. 누르는 영역은 줄 전체예요. */
+.official-reasons {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.radio-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  cursor: pointer;
+}
 .leave-days {
   display: flex;
   flex-direction: column;
