@@ -15,7 +15,7 @@ describe('공통 입력 검사', () => {
     const r = checkInput('kim@example.com 에서 10.0.0.12 접속이 안 돼요, lee@corp.co.kr 도요');
     expect(r.locks).toEqual([]);
     expect(r.text).toBe('[이메일] 에서 [IP] 접속이 안 돼요, [이메일] 도요');
-    expect(r.masked).toEqual({ path: 0, email: 2, ip: 1 });
+    expect(r.masked).toEqual({ path: 0, email: 2, ip: 1, id: 0 });
     expect(maskLine(r)).toBe('이메일 2곳, IP 1곳을 [이메일] · [IP]로 바꿔 보내요');
   });
 
@@ -47,7 +47,7 @@ describe('공통 입력 검사', () => {
 describe('입력 검사 규칙 2(QA-2·3·10·19)', () => {
   it.each(QA_LOCKED)('%s → 잠가요', (_name, text, kind) => {
     const r = checkInput(text);
-    expect(r.rulesVersion).toBe(3);
+    expect(r.rulesVersion).toBe(4);
     expect(r.locks.map((l) => l.kind)).toContain(kind);
   });
 
@@ -137,4 +137,33 @@ describe('입력 검사 규칙 3: 사용자 폴더 경로 가림(넓힐 후보 �
       expect(r.text).toBe(raw);
     },
   );
+});
+
+describe('입력 검사 규칙 4: GUID는 잠그지 않고 가림(10/31 QA H2)', () => {
+  it('로그인 오류 창의 Trace ID·Correlation ID는 [ID]로 가리고 보내요', () => {
+    const raw = [
+      'AADSTS50126: Error validating credentials due to invalid username or password.',
+      'Trace ID: 0b3e7c2a-5f1d-4e8b-9a6c-2d4f8e1b3c70',
+      'Correlation ID: 7f9a1c3e-2b4d-4f6a-8c0e-1a3b5d7f9e2c',
+    ].join('\n');
+    const r = checkInput(raw);
+    expect(r.locks).toEqual([]);
+    expect(r.masked.id).toBe(2);
+    expect(r.text).toContain('Trace ID: [ID]');
+    expect(r.text).not.toContain('0b3e7c2a');
+    expect(maskLine(r)).toBe('ID 2곳을 [ID]로 바꿔 보내요');
+  });
+
+  it('GUID 모양이 아닌 긴 무작위 문자열은 그대로 잠가요', () => {
+    for (const text of [
+      '키 3f2b9c1d8e7a6b5c4d3e2f1a0b9c8d7e6f',
+      'tok9f8e7d6c5b4a39281706f5e4d3c2b1a0ffee',
+      '0b3e7c2a-5f1d-4e8b-9a6c-2d4f8e1b3c70abcdefabcdef1234567890ab',
+    ]) {
+      expect(
+        checkInput(text).locks.map((l) => l.kind),
+        text,
+      ).toContain('key-token');
+    }
+  });
 });

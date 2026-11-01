@@ -2,7 +2,12 @@
 // 규칙을 바꾸면 RULES_VERSION을 올려요. 서버는 같은 버전 규칙으로 다시 검사해요.
 // 2: 외국인등록번호·띄어 쓴 주민번호·카드(Luhn)·계좌·여권·면허·콜론 없는 비밀번호 문장·PEM 키, 0폭·글 방향 문자 지우기, 제어 문자 잠금(QA-2·3·10·19)
 // 3: 사용자 폴더 경로(C:\Users\<이름>, /home/<이름>, /Users/<이름>)의 이름 부분 가림. IT 오류 문장에 자주 들어 있어요(10/31 넓힐 후보 ②)
-export const RULES_VERSION = 3;
+// 4: 하이픈으로 끊은 GUID(8-4-4-4-12)는 잠그지 않고 [ID]로 가림. 로그인 오류 창의 Trace ID·Correlation ID가 "긴 무작위 문자열"로 잠기던 문제(10/31 QA H2)
+export const RULES_VERSION = 4;
+
+/** 하이픈으로 끊은 GUID. 키·토큰이 아니라 오류 추적 번호라서 잠그지 않고 가려요. */
+const GUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const ONLY_GUIDS = new RegExp(`^(?:${GUID.source})(?:[-_]?(?:${GUID.source}))*$`, 'i');
 
 export type LockKind = 'key-token' | 'grade3' | 'health' | 'control';
 
@@ -49,7 +54,13 @@ export const LOCK_RULES: LockRule[] = [
   { kind: 'key-token', name: 'API 키', pattern: /\bsk-[A-Za-z0-9_-]{20,}\b/ },
   { kind: 'key-token', name: 'PEM 개인 키', pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
   // 영문과 숫자가 섞인 32자 이상 무작위 문자열
-  { kind: 'key-token', name: '긴 무작위 문자열', pattern: /(?=[A-Za-z0-9+/_-]*\d)(?=[A-Za-z0-9+/_-]*[A-Za-z])[A-Za-z0-9+/_-]{32,}/ },
+  // GUID 모양만 있는 덩어리는 빼요(아래 가림 규칙이 [ID]로 바꿔요).
+  {
+    kind: 'key-token',
+    name: '긴 무작위 문자열',
+    pattern: /(?=[A-Za-z0-9+/_-]*\d)(?=[A-Za-z0-9+/_-]*[A-Za-z])[A-Za-z0-9+/_-]{32,}/,
+    confirm: (match) => !ONLY_GUIDS.test(match),
+  },
   // 생년월일 6자리 + (붙임·-·공백) + 1~8 + 6자리. 외국인등록번호(뒷자리 5~8)도 같은 모양이에요.
   { kind: 'grade3', name: '주민·외국인등록번호', pattern: /(?<!\d)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])[-\s]?[1-8]\d{6}(?!\d)/ },
   // 13~19자리(-·공백으로 끊어도 돼요) + Luhn
@@ -87,7 +98,7 @@ export const LOCK_MESSAGE: Record<LockKind, string> = {
   control: '보이지 않는 특수 글자가 있어요. 지우고 다시 보내 주세요',
 };
 
-export type MaskKind = 'path' | 'email' | 'ip';
+export type MaskKind = 'path' | 'email' | 'ip' | 'id';
 
 // 바꾼 뒤에만 보내요. 풀기는 없어요.
 export const MASK_RULES: { kind: MaskKind; label: string; pattern: RegExp }[] = [
@@ -99,6 +110,8 @@ export const MASK_RULES: { kind: MaskKind; label: string; pattern: RegExp }[] = 
   },
   { kind: 'email', label: '[이메일]', pattern: /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g },
   { kind: 'ip', label: '[IP]', pattern: /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/g },
+  // 오류 추적 번호(Trace ID·Correlation ID). 세션·요청을 다시 잇는 값이라 보내지 않고 가려요.
+  { kind: 'id', label: '[ID]', pattern: GUID },
 ];
 
-export const MASK_NAME: Record<MaskKind, string> = { path: '사용자 폴더', email: '이메일', ip: 'IP' };
+export const MASK_NAME: Record<MaskKind, string> = { path: '사용자 폴더', email: '이메일', ip: 'IP', id: 'ID' };

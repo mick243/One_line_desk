@@ -1,5 +1,5 @@
-import type { AppDestination, Kind, RoomShowQuery } from '@one-line-desk/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { APP_DESTINATIONS, type AppDestination, type Kind, type RoomShowQuery } from '@one-line-desk/shared';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   api,
   IDLE_ENDED_MESSAGE,
@@ -95,9 +95,31 @@ export function App() {
     void load();
   }, [load]);
 
+  // 휴대폰·브라우저 뒤로 가기(10/31 QA H3): 페이지를 옮길 때 방문 기록에 페이지 이름만 남겨서, 뒤로 가기가 앱 밖으로 나가지 않고
+  // 앞 페이지로 돌아가요. 주소는 늘 '/'이고 기록에는 페이지 이름(home·navi·it-help…)만 넣어요. 쓰던 글·옮기던 문장은 넣지 않아요(R13).
+  const viewRef = useRef<View>('home');
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+  useEffect(() => {
+    if (window.location.pathname === '/') window.history.replaceState({ deskView: 'home' }, '', '/');
+    const onPop = (e: PopStateEvent) => {
+      const to = (e.state as { deskView?: unknown } | null)?.deskView;
+      if (typeof to !== 'string' || !(APP_DESTINATIONS as readonly string[]).includes(to)) return;
+      setEntry(null);
+      setHandoff(null);
+      setView(to as View);
+      window.scrollTo(0, 0);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
   const go = useCallback((to: View, text?: string, auto = false) => {
     setEntry(null);
-    window.history.replaceState(null, '', '/');
+    // 바깥에서 들어온 주소(/r/…·/oauth/consent)는 기록에서 바꿔 치우고, 앱 안 이동은 기록을 하나 더해요.
+    if (window.location.pathname !== '/' || to === viewRef.current) window.history.replaceState({ deskView: to }, '', '/');
+    else window.history.pushState({ deskView: to }, '', '/');
     setHandoff(text ? { to, text, at: Date.now(), auto } : null);
     setView(to);
     // 다른 페이지로 가면 맨 위부터 보여요.
