@@ -15,6 +15,7 @@ interface Overrides {
   modules?: Partial<Record<ModuleKind, ModuleSwitch>>;
   roomsWrite?: boolean;
   mcp?: boolean;
+  mcpToolsOff?: string[];
   autoActions?: boolean;
   links?: Partial<Record<ModuleKind, string>>;
   values?: Partial<OpsValues>;
@@ -39,6 +40,7 @@ function merge(base: OpsSettings, o: Overrides): OpsSettings {
     modules: { ...base.modules, ...o.modules },
     roomsWrite: o.roomsWrite ?? base.roomsWrite,
     mcp: o.mcp ?? base.mcp,
+    mcpToolsOff: o.mcpToolsOff ?? base.mcpToolsOff,
     autoActions: o.autoActions ?? base.autoActions,
     links: { ...base.links, ...o.links },
     values: { ...base.values, ...o.values },
@@ -83,6 +85,20 @@ export class OpsSettingsStore {
 
   async setFlag(operatorId: string, flag: OpsFlag, value: boolean): Promise<OpsSettings> {
     return this.save({ ...this.overrides, [flag]: value }, { pseudonymId: operatorId, channel: 'ops', action: `${flag}.set`, result: String(value) });
+  }
+
+  /**
+   * MCP 도구 하나를 켜고 꺼요(11/2). 이름이 맞는지는 부르는 쪽(routes/config.ts)이 레지스트리로 확인해요.
+   * 감사 로그에는 도구 이름과 켬·끔만 남아요.
+   */
+  async setMcpTool(operatorId: string, tool: string, on: boolean): Promise<OpsSettings> {
+    const off = new Set(this.settings.mcpToolsOff);
+    if (on) off.delete(tool);
+    else off.add(tool);
+    return this.save(
+      { ...this.overrides, mcpToolsOff: [...off].sort() },
+      { pseudonymId: operatorId, channel: 'ops', action: 'mcpTool.set', tool, result: String(on) },
+    );
   }
 
   /** 운영 값(임시값, CD-14)을 바꿔요. 범위를 벗어나면 하나도 바꾸지 않아요. */

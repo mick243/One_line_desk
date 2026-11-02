@@ -1,4 +1,4 @@
-import { MCP_SCOPES, type McpScope, type ModuleKind, type OpsSettings } from '@one-line-desk/shared';
+import { MCP_SCOPES, type McpScope, type OpsSettings } from '@one-line-desk/shared';
 import type { AdapterCapabilities } from '../../adapters/types';
 import { listMcpTools, type ToolDef } from '../../core/tool-registry';
 
@@ -65,11 +65,9 @@ export function availableTools(settings: OpsSettings, runnable: boolean): ToolDe
   return runnable ? listMcpTools(settings) : [];
 }
 
-const SCOPE_BY_MODULE: Partial<Record<ModuleKind, McpScope>> = { rooms: 'rooms.read', notices: 'notices.read' };
-
-/** 도구마다 필요한 범위. rooms_find_free → rooms.read, notices_search → notices.read. 범위가 없는 도구는 MCP로 부를 수 없어요. */
-export function scopeOf(tool: Pick<ToolDef, 'module'>): McpScope | undefined {
-  return SCOPE_BY_MODULE[tool.module];
+/** 도구마다 필요한 범위(레지스트리의 mcp.scope). 범위가 없는 도구는 MCP로 부를 수 없어요. */
+export function scopeOf(tool: Pick<ToolDef, 'mcp'>): McpScope | undefined {
+  return tool.mcp?.scope;
 }
 
 /** 지금 쓸 수 있는 도구의 범위 목록 */

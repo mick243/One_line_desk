@@ -9,6 +9,8 @@ export interface OpsSettings {
   roomsWrite: boolean;
   /** MCP 전체 스위치(M5). 해당 모듈이 켬일 때만 그 도구가 나와요. */
   mcp: boolean;
+  /** 운영자가 따로 끈 MCP 도구 이름(11/2). 비어 있으면 모듈·MCP 스위치만 봐요. */
+  mcpToolsOff: string[];
   /** 채팅 자동 실행(ADR-19). 끄면 채팅도 카드와 확인 시트로만 예약·대여해요. */
   autoActions: boolean;
   /** 이번 2주는 고정이에요(M6). */
@@ -35,6 +37,7 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
   modules: { navi: 'on', notices: 'on', rooms: 'on', pantry: 'on' },
   roomsWrite: true,
   mcp: false,
+  mcpToolsOff: [],
   autoActions: true,
   noticeSummary: false,
   s5Mode: 'list-only',

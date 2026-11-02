@@ -1,6 +1,7 @@
 import type { ConnectionsResponse, ConsentDecisionRequest, ConsentDecisionResponse, ConsentInfo, McpScope } from '@one-line-desk/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../../context';
+import { accessFrom } from '../../core/access-record';
 import { DeskError } from '../../core/errors';
 import type { ConsentRequest, McpAuth } from './auth-service';
 import { withParams } from './oauth-routes';
@@ -72,6 +73,7 @@ export function registerMcpApiRoutes(app: FastifyInstance, ctx: AppContext, mcp:
       if (scopes.length === 0) throw new DeskError('no-tools', 409, '지금 연결할 수 있는 도구가 없어요');
       const code = mcp.issueCode(request, user, scopes);
       await ctx.audit.record({ pseudonymId: user.pseudonymId, channel: 'mcp', action: 'consent', clientId: client.clientId, result: 'allowed' });
+      await ctx.access.record({ pseudonymId: user.pseudonymId, action: 'mcp.connect', ...accessFrom(req) });
       return { result: 'allowed', redirectTo: back({ code }) };
     },
   );
@@ -112,6 +114,7 @@ export function registerMcpApiRoutes(app: FastifyInstance, ctx: AppContext, mcp:
         resultCode: (n: number) => (n > 0 ? 'done' : 'none'),
         run: (q) => repo.deleteGrant(q, user.pseudonymId, req.params.clientId),
       });
+      if (removed > 0) await ctx.access.record({ pseudonymId: user.pseudonymId, action: 'mcp.disconnect', ...accessFrom(req) });
       return { ok: true, removed };
     },
   );

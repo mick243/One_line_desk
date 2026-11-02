@@ -6,8 +6,11 @@ import type { Queryable } from './db';
 // 칸: 시각·가명 ID·동작(정해진 코드)·처리한 정보주체 표시(가명 ID·문의 번호)·접속지(IP)·요청 번호. 글·검색어·이름은 받지 않아요.
 // 접속지는 TRUST_PROXY가 관문 주소일 때의 req.ip예요. 관문이 X-Forwarded-For를 덮어써야 위조를 못 해요(망 회의 N-12).
 
-/** 다른 사람의 개인정보를 보거나 바꾸는 동작과 로그인·로그아웃. 새 동작은 여기에 먼저 적어요. */
-export const ACCESS_ACTIONS = ['login', 'logout', 'inquiry.inbox', 'inquiry.update', 'people.search'] as const;
+/**
+ * 다른 사람의 개인정보를 보거나 바꾸는 동작과 로그인·로그아웃. 새 동작은 여기에 먼저 적어요.
+ * mcp.*: 바깥 AI 앱이 사내 자료에 닿는 길(11/2, MCP 통합 회의 0단계). 연결 허락·도구 호출·끊기를 1년 남겨요.
+ */
+export const ACCESS_ACTIONS = ['login', 'logout', 'inquiry.inbox', 'inquiry.update', 'people.search', 'mcp.connect', 'mcp.call', 'mcp.disconnect'] as const;
 export type AccessAction = (typeof ACCESS_ACTIONS)[number];
 
 /** 1년 보관(제8조①). 정보주체 수가 많아 2년이 되면 CD-31 답에 따라 바꿔요. 006 마이그레이션의 트리거와 같은 값이에요. */
