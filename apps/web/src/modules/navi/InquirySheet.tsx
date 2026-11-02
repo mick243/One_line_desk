@@ -1,4 +1,13 @@
-import { type CardAction, checkInput, INQUIRY_KEEP_DAYS, INQUIRY_QUESTION_MAX, INQUIRY_REASON_MAX, maskLine } from '@one-line-desk/shared';
+import {
+  type CardAction,
+  checkInput,
+  INQUIRY_KEEP_DAYS,
+  INQUIRY_QUESTION_MAX,
+  INQUIRY_REASON_MAX,
+  type InquiryRouteBy,
+  type InquiryTarget,
+  maskLine,
+} from '@one-line-desk/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { isDemoLogin } from '../../api';
 import { useActions } from '../../components/ActionHost';
@@ -7,6 +16,7 @@ import { newRequestId } from '../../net';
 
 // 담당 팀에 문의 보내기 양식(ADR-16). 받는 곳은 분장표 행의 담당 팀이에요(담당자 이름은 없어요).
 // [보내기] → 확인 시트(받는 곳·내 이름과 부서가 같이 간다는 것·보관 기간) → 보내요. 글은 보내기 전까지 이 화면 메모리에만 있어요.
+// 11/2 문의하기(ADR-26): 서버가 받는 팀을 골랐으면(routed) 누가 골랐는지 보여 주고, 다른 후보로 바꿀 수 있어요. 보내기는 늘 사람이 눌러요.
 
 type Inquire = Extract<CardAction, { type: 'inquire' }>;
 
@@ -51,6 +61,12 @@ function Field({
   );
 }
 
+const ROUTE_LINE: Record<InquiryRouteBy, string> = {
+  ai: 'AI가 문의 내용을 보고 업무 분장표에서 고른 곳이에요',
+  rule: '업무 분장표에서 문의 내용과 맞는 업무로 고른 곳이에요',
+  none: '분장표에서 맞는 팀을 못 찾아 대표 창구로 보내요',
+};
+
 /** 사유 예시는 문의 맥락에 맞춰 바꿔요. "은행 제출용"이 IT 오류·온보딩 문의에 맞지 않던 문제(11/1 QA M4). */
 const DEFAULT_REASON_PLACEHOLDER = '왜 필요한지, 언제까지 필요한지 적어 주세요(예: 다음 주 출장 전에 필요해요)';
 
@@ -68,6 +84,15 @@ export function InquirySheet({
   const actions = useActions();
   const [question, setQuestion] = useState(initialQuestion);
   const [reason, setReason] = useState('');
+  // 받는 곳. 서버가 고른 곳에서 시작하고, 사람이 다른 후보로 바꿀 수 있어요.
+  const [target, setTarget] = useState<InquiryTarget>({ rowId: action.rowId, team: action.team, task: action.task });
+  const [changing, setChanging] = useState(false);
+  const choices = action.routed
+    ? [{ rowId: action.rowId, team: action.team, task: action.task }, ...action.routed.alternatives].filter(
+        (t, i, list) => list.findIndex((x) => x.rowId === t.rowId) === i,
+      )
+    : [];
+  const picked = target.rowId === action.rowId;
   // 같은 양식에서 두 번 눌러도 한 번만 보내요(서버 멱등 키).
   const requestId = useMemo(() => newRequestId(), []);
 
@@ -88,21 +113,58 @@ export function InquirySheet({
       text: '보내기',
       method: 'POST',
       path: '/api/navi/inquiries',
-      body: { rowId: action.rowId, question: q.text, reason: r.text, requestId },
+      body: { rowId: target.rowId, question: q.text, reason: r.text, requestId, ...(action.routed ? { suggestedRowId: action.rowId } : {}) },
       confirm: {
-        title: `${action.team}에 보낼까요?`,
-        lines: [`업무: ${action.task}`, `받는 곳: ${action.team}(팀 창구)`, '내 이름과 부서가 같이 가요. 답을 받으려면 필요해요.'],
+        title: `${target.team}에 보낼까요?`,
+        lines: [
+          `업무: ${target.task}`,
+          `받는 곳: ${target.team}(팀 창구)${action.routed ? (picked ? ` · ${action.routed.by === 'ai' ? 'AI가 고름' : action.routed.by === 'rule' ? '분장표로 고름' : '대표 창구'}` : ' · 내가 바꿈') : ''}`,
+          '내 이름과 부서가 같이 가요. 답을 받으려면 필요해요.',
+        ],
         confirmLabel: '보내기',
-        note: `보낸 글은 ${action.team}이 읽고, ${INQUIRY_KEEP_DAYS}일 동안 보관돼요`,
+        note: `보낸 글은 ${target.team}이 읽고, ${INQUIRY_KEEP_DAYS}일 동안 보관돼요${
+          action.routed && !picked ? '. 받는 곳을 바꾼 사실만 분장표 주인에게 남아요(글·이름은 안 남아요)' : ''
+        }`,
       },
     });
   }
 
   return (
-    <Sheet title={`${action.team}에 문의하기`} onClose={onClose}>
+    <Sheet title={`${target.team}에 문의하기`} onClose={onClose}>
       <p className='inquiry-scope'>
-        {action.team}에게 보내져요 · {action.task}
+        {target.team}에게 보내져요 · {target.task}
       </p>
+      {action.routed && (
+        <div className='route-box'>
+          <p className='hint'>
+            {picked ? ROUTE_LINE[action.routed.by] : '내가 고른 곳이에요'}
+            {picked && action.routed.by === 'ai' && <span className='ai-badge'>AI 정리</span>}
+          </p>
+          {choices.length > 1 && !changing && (
+            <button type='button' className='link' onClick={() => setChanging(true)}>
+              받는 곳 바꾸기
+            </button>
+          )}
+          {changing && (
+            <div className='route-choices' role='group' aria-label='받는 곳 고르기'>
+              {choices.map((t) => (
+                <button
+                  key={t.rowId ?? 'general'}
+                  type='button'
+                  className='chip'
+                  aria-pressed={t.rowId === target.rowId}
+                  onClick={() => {
+                    setTarget(t);
+                    setChanging(false);
+                  }}
+                >
+                  {t.team} · {t.task}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <Field
         label='문의 내용'
         value={question}

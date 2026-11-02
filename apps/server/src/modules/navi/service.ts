@@ -11,6 +11,8 @@ import {
   type ChartRowSummary,
   GRADE,
   INQUIRY_WEEK_MIN,
+  type InquiryRouteBy,
+  type InquiryTarget,
   type InquiryStatsResponse,
   type InquiryWeekStat,
   kstDate,
@@ -28,8 +30,8 @@ import { DeskError } from '../../core/errors';
 import type { AskInput, AskOutcome } from '../../core/module';
 import type { DeskUser } from '../../core/user';
 import { type ChartRow, parseChart, parseChartFile, toCsv } from './chart-csv';
-import { askHereCard, chooseRowCard, IT_HELP_GUIDE, naviCard, ONBOARDING_GUIDE, withGuides } from './cards';
-import { demoChartCsv } from './fixtures';
+import { askHereCard, chooseRowCard, GENERAL_TASK, IT_HELP_GUIDE, naviCard, ONBOARDING_GUIDE, withGuides } from './cards';
+import { demoChartCsv, GENERAL_DESK } from './fixtures';
 import { findLeaveRequestRow, myLeaveCard } from './leave';
 import * as repo from './repo';
 import type { StoredRow } from './repo';
@@ -134,6 +136,24 @@ export async function pickRow(gateway: AppContext['gateway'], text: string, cand
     // 등급 거절(계약 전)·모델 실패: 결정적으로 골라요. AI가 고른 게 아니라서 "AI 정리"를 붙이지 않아요.
     return { index: deterministicPick(candidates), ai: false };
   }
+}
+
+// ── 문의하기(11/2, ADR-26): 받는 팀 고르기 ─────────────────────────────────
+// 담당 찾기와 같은 고르기(규칙 후보 → 모델이 후보 번호 하나, 계약 전엔 규칙)를 써요. 모델은 분장표 후보 밖의 팀을 만들지 못해요.
+// 고른 결과는 [문의하기] 양식에 받는 곳으로 미리 들어가고, 사람이 확인 시트에서 [보내기]를 눌러야 보내져요(ADR-03).
+
+const GENERAL_TARGET: InquiryTarget = { rowId: null, team: GENERAL_DESK.team, task: GENERAL_TASK };
+const targetOf = (r: StoredRow): InquiryTarget => ({ rowId: r.id, team: r.team, task: r.task });
+/** 사람이 바꿀 수 있는 다른 받는 곳: 다른 후보 3개 + 대표 창구. 고른 곳과 같은 건 빼요. */
+function alternativesOf(rows: StoredRow[], chosen: InquiryTarget | null): InquiryTarget[] {
+  const list = [...rows.slice(0, 3).map(targetOf), GENERAL_TARGET];
+  return list.filter((t) => !chosen || t.rowId !== chosen.rowId);
+}
+
+/** 카드의 [문의하기]에 고른 결과를 붙여요. */
+export function withRoute(card: Card, by: InquiryRouteBy, alternatives: InquiryTarget[]): Card {
+  const secondary = card.actions.secondary.map((a) => (a.type === 'inquire' ? { ...a, routed: { by, alternatives } } : a));
+  return { ...card, actions: { ...card.actions, secondary } };
 }
 
 const FEEDBACK_BAD = () => new DeskError('bad-request', 400, '요청 형식이 맞지 않아요');
@@ -320,15 +340,23 @@ export function createNaviService(ctx: AppContext) {
         return leave ? [guided, leave] : [guided];
       };
       const candidates = rankRows(input.text, rows);
-      if (candidates.length === 0) return { cards: withLeave(askHereCard()), found: false };
+      // 분장표 말로는 못 찾았어도 연차·공가 카드가 붙으면 받을 곳(휴가 신청 행)은 정해진 거예요.
+      // "못 찾았어요" 카드를 같이 내면 서로 어긋나서, 그때는 연차·공가 카드만 보여 줘요(11/2).
+      const leaveOnly = leave ? { cards: [leave], found: true } : null;
+      if (candidates.length === 0 && leaveOnly) return leaveOnly;
+      if (candidates.length === 0) return { cards: withLeave(withRoute(askHereCard(), 'none', [])), found: false };
       const pick = await pickRow(ctx.gateway, input.text, candidates);
       const chosen = pick.index === null ? undefined : candidates[pick.index];
       if (!chosen) {
+        if (leaveOnly) return leaveOnly;
         const tied = topTied(candidates);
-        return { cards: withLeave(tied.length > 1 ? chooseRowCard(tied.map((c) => c.row)) : askHereCard()), found: false };
+        const card = tied.length > 1 ? chooseRowCard(tied.map((c) => c.row)) : askHereCard();
+        const near = (tied.length > 1 ? tied : candidates).map((c) => c.row);
+        return { cards: withLeave(withRoute(card, 'none', alternativesOf(near, GENERAL_TARGET))), found: false };
       }
       const others = candidates.filter((c) => c !== chosen).map((c) => c.row);
-      return { cards: withLeave(naviCard(chosen.row, { aiSummarized: pick.ai, others }), chosen.row), found: true };
+      const card = withRoute(naviCard(chosen.row, { aiSummarized: pick.ai, others }), pick.ai ? 'ai' : 'rule', alternativesOf(others, targetOf(chosen.row)));
+      return { cards: withLeave(card, chosen.row), found: true };
     },
 
     /** "다른 담당이에요"에서 고른 행 카드. 사람이 고른 것이라 "AI 정리"가 없고, 읽기만 해요. */

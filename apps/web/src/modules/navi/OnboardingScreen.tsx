@@ -28,10 +28,10 @@ export function OnboardingScreen({ onBack }: { onBack: () => void }) {
   return (
     <div className='feature-page onboarding'>
       <button type='button' className='link back' onClick={onBack}>
-        ← 담당 찾기
+        ← 문의하기
       </button>
       <header className='page-head'>
-        <p className='eyebrow'>담당 찾기</p>
+        <p className='eyebrow'>문의하기</p>
         <h1>처음 2주에 할 일이에요</h1>
         <p className='lead'>업무 분장표에서 새로 온 분이 먼저 챙기면 좋은 일을 모았어요. 무엇을 했는지는 저장하지 않아요.</p>
       </header>
@@ -42,7 +42,7 @@ export function OnboardingScreen({ onBack }: { onBack: () => void }) {
         </p>
       )}
       {!data && !error && <div className='skeleton' aria-label='불러오는 중' />}
-      {data && data.weeks.length === 0 && <p className='empty'>아직 분장표에 첫 2주 할 일이 없어요. 담당 찾기에서 한 줄로 물어보세요.</p>}
+      {data && data.weeks.length === 0 && <p className='empty'>아직 분장표에 첫 2주 할 일이 없어요. 문의하기에서 한 줄로 물어보세요.</p>}
       {data?.weeks.map((w) => (
         <section key={w.week} className='card onboarding-week'>
           <h2>{w.week}주차</h2>

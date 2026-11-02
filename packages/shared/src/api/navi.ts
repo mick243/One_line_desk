@@ -7,8 +7,8 @@ export const WRONG_REASONS = ['other-owner', 'not-listed', 'content-changed', 'w
 export type WrongReason = (typeof WRONG_REASONS)[number];
 
 export const WRONG_REASON_LABEL: Record<WrongReason, string> = {
-  'other-owner': '다른 담당이에요',
-  'not-listed': '목록에 없어요',
+  'other-owner': '다른 팀으로 바꿔 보냄',
+  'not-listed': '대표 창구로 바꿔 보냄',
   'content-changed': '안내 내용이 바뀌었어요',
   'wrong-kind': '종류가 달라요',
 };
@@ -154,6 +154,11 @@ export interface LeaveDay {
 /** POST /api/navi/inquiries. requestId는 같은 문의를 두 번 보내지 않게 하는 값이에요(화면이 만들어요). */
 export interface InquiryRequest {
   rowId: string | null;
+  /**
+   * 문의하기가 처음 골랐던 행(11/2, ADR-26). 사람이 받는 곳을 바꿔 보내면 서버가 그 행에 "바꿔 보냄" 기록을 남겨요
+   * (이유·고른 행·날짜만, 글·보낸 사람 없음). 분장표 주인이 수정 제안함에서 봐요. 고른 곳 그대로면 아무것도 남지 않아요.
+   */
+  suggestedRowId?: string | null;
   question: string;
   reason: string;
   requestId: string;

@@ -34,8 +34,19 @@ export type CardAction =
   | { type: 'link'; text: string; href: string }
   | { type: 'reask'; text: string; kind: Kind }
   | { type: 'navigate'; text: string; to: AppDestination }
-  /** 담당 팀에 문의 보내기 양식을 열어요(ADR-16). 양식은 페이지가 띄우고, 보내기는 확인 시트를 거쳐요. */
-  | { type: 'inquire'; text: string; rowId: string | null; team: string; task: string }
+  /**
+   * 담당 팀에 문의 보내기 양식을 열어요(ADR-16). 양식은 페이지가 띄우고, 보내기는 확인 시트를 거쳐요.
+   * routed는 문의하기(11/2, ADR-26)에서 서버가 받는 팀을 골랐을 때만 와요. by는 누가 골랐는지(ai는 모델이 실제로 고른 때만),
+   * alternatives는 사람이 받는 곳을 바꿀 수 있는 다른 후보예요. 보내기 전에 사람이 확인 시트에서 봐요(AI가 보내지 않아요).
+   */
+  | {
+      type: 'inquire';
+      text: string;
+      rowId: string | null;
+      team: string;
+      task: string;
+      routed?: { by: InquiryRouteBy; alternatives: InquiryTarget[] };
+    }
   /**
    * 휴가 신청 양식을 열어요(ADR-24). days는 질문에서 읽은 날(규칙·AI)로 미리 채우고, 사람이 고쳐요.
    * remaining은 본인 남은 연차(본인 화면에만 와요). 보내기는 확인 시트를 거쳐요.
@@ -59,6 +70,15 @@ export type CardAction =
     }
   /** 회의 참석자 고르기 양식을 열어요(ADR-17). 보내기는 확인 시트를 거쳐요. */
   | { type: 'invite'; text: string; reservationId: string; roomName: string; when: string };
+
+/** 문의를 받는 곳: 분장표 행(없으면 대표 창구) */
+export interface InquiryTarget {
+  rowId: string | null;
+  team: string;
+  task: string;
+}
+/** 받는 곳을 누가 골랐는지: 모델(ai)·분장표 규칙(rule)·못 찾아 대표 창구(none) */
+export type InquiryRouteBy = 'ai' | 'rule' | 'none';
 
 /** 앱 안 페이지. 기능마다 페이지가 따로 있어요(10/26 화면 구조 변경, ADR-02 개정). */
 export const APP_DESTINATIONS = ['home', 'navi', 'rooms', 'notices', 'board', 'mine', 'ops', 'chart', 'it-help', 'onboarding'] as const;

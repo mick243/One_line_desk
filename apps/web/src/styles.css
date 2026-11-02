@@ -1652,6 +1652,29 @@ select {
   color: var(--accent-text);
   font-size: 0.75rem;
 }
+/* 문의하기 받는 곳(11/2): 누가 골랐는지와 바꾸기 */
+.route-box {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 6px;
+}
+.route-box .hint {
+  margin: 0;
+}
+.route-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.route-choices .chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.page-mode {
+  margin-top: 12px;
+  align-self: flex-start;
+}
 .leave-remaining {
   margin: 0;
   font-size: 0.9375rem;

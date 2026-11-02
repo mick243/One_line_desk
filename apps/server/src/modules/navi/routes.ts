@@ -221,6 +221,7 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
           additionalProperties: false,
           properties: {
             rowId: { anyOf: [{ type: 'string', pattern: NAVI_ROW_ID_PATTERN }, { type: 'null' }] },
+            suggestedRowId: { anyOf: [{ type: 'string', pattern: NAVI_ROW_ID_PATTERN }, { type: 'null' }] },
             question: { type: 'string', minLength: 1, maxLength: INQUIRY_QUESTION_MAX },
             reason: { type: 'string', minLength: 1, maxLength: INQUIRY_REASON_MAX },
             requestId: { type: 'string', pattern: '^[A-Za-z0-9-]{8,64}$' },

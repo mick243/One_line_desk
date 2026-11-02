@@ -38,10 +38,14 @@ export function FeaturePage({
   // 보내지 못한 문장. [다시 보내기]가 같은 문장을 한 번 더 보내요(10/29 개선 회의 A3). 입력 칸 글은 그대로예요.
   const [retry, setRetry] = useState<string | null>(null);
   const slow = useSlow(loading);
-  const [wrongCard, setWrongCard] = useState<Card | null>(null);
   const [inquiry, setInquiry] = useState<Extract<CardAction, { type: 'inquire' }> | null>(null);
   const [leaveRequest, setLeaveRequest] = useState<Extract<CardAction, { type: 'leave-request' }> | null>(null);
-  const { WrongSheet, InquirySheet, LeaveRequestSheet } = webModules;
+  const { InquirySheet, LeaveRequestSheet } = webModules;
+  // 문의하기 페이지(11/2, ADR-26): 기본은 "문의하기"(받을 팀을 고르면 양식을 바로 열어요), 보조로 "담당만 찾기"(카드만 보여요).
+  // 다른 기능에서 "담당 찾기에서 찾기"로 옮겨 온 문장은 담당만 찾기로 열어요(찾으러 온 거라 양식을 띄우지 않아요).
+  const [mode, setMode] = useState<'inquire' | 'find'>(autoRun ? 'find' : 'inquire');
+  const find = feature.findMode && mode === 'find' ? feature.findMode : null;
+  const view = { ...feature, ...(find ?? {}) };
 
   async function ask(masked: string) {
     setSent(masked);
@@ -51,8 +55,10 @@ export function FeaturePage({
     setLoading(true);
     try {
       const result = await api.ask(masked, feature.module);
-      if (result.status === 'ok') setCards(result.response.cards);
-      else if (result.status === 'locked') setLines(result.locks.map((l) => l.message));
+      if (result.status === 'ok') {
+        setCards(result.response.cards);
+        if (feature.findMode && mode === 'inquire') openRouted(result.response.cards);
+      } else if (result.status === 'locked') setLines(result.locks.map((l) => l.message));
       else {
         setLines([result.message]);
         setRetry(masked);
@@ -63,6 +69,17 @@ export function FeaturePage({
     } finally {
       setLoading(false);
     }
+  }
+
+  /**
+   * 문의하기 모드: 서버가 고른 받는 곳이 든 [문의하기]를 바로 열어요. 휴가·공가 질문이면 신청 양식이 따로 있어서 열지 않고 카드만 보여요.
+   * 양식에서 사람이 받는 곳을 보고(바꿀 수 있어요) [보내기]를 눌러야 보내져요.
+   */
+  function openRouted(list: Card[]) {
+    const all = list.flatMap((c) => [...(c.actions.primary ? [c.actions.primary] : []), ...c.actions.secondary]);
+    if (all.some((a) => a.type === 'leave-request')) return;
+    const routed = all.find((a): a is Extract<CardAction, { type: 'inquire' }> => a.type === 'inquire' && Boolean(a.routed));
+    if (routed) setInquiry(routed);
   }
 
   // 옮겨 온 문장은 이미 공통 검사를 지난 글이지만, 한 번 더 보고 걸리면 보내지 않아요(ADR-11).
@@ -78,9 +95,27 @@ export function FeaturePage({
 
   const pageHead = (
     <header className='page-head'>
-      <p className='eyebrow'>{feature.title}</p>
-      <h1>{feature.question}</h1>
-      <p className='lead'>{feature.summary}</p>
+      <p className='eyebrow'>{view.title}</p>
+      <h1>{view.question}</h1>
+      <p className='lead'>{view.summary}</p>
+      {feature.findMode && (
+        <div className='segmented page-mode' role='group' aria-label='문의하기 또는 담당만 찾기'>
+          {(['inquire', 'find'] as const).map((m) => (
+            <button
+              key={m}
+              type='button'
+              aria-pressed={mode === m}
+              onClick={() => {
+                setMode(m);
+                setCards(null);
+                setLines(null);
+              }}
+            >
+              {m === 'inquire' ? feature.title : feature.findMode!.title}
+            </button>
+          ))}
+        </div>
+      )}
     </header>
   );
 
@@ -100,9 +135,9 @@ export function FeaturePage({
 
       <CheckedInput
         scope='나만 보여요'
-        label={feature.question}
-        placeholder={feature.placeholder}
-        submitLabel={feature.submit}
+        label={view.question}
+        placeholder={view.placeholder}
+        submitLabel={view.submit}
         value={text}
         onValueChange={setText}
         onSubmit={(masked) => ask(masked)}
@@ -137,7 +172,6 @@ export function FeaturePage({
           <CardView
             key={card.id}
             card={card}
-            onWrong={setWrongCard}
             onResults={setCards}
             onAction={(action) => {
               if (action.type === 'reask') return onMove(action.kind, sent ?? text);
@@ -154,21 +188,6 @@ export function FeaturePage({
 
       {inquiry && <InquirySheet action={inquiry} initialQuestion={sent ?? text} onClose={() => setInquiry(null)} />}
       {leaveRequest && <LeaveRequestSheet action={leaveRequest} onClose={() => setLeaveRequest(null)} />}
-
-      {wrongCard && (
-        <WrongSheet
-          card={wrongCard}
-          onReask={(kind) => {
-            setWrongCard(null);
-            onMove(kind, sent ?? text);
-          }}
-          onReplace={(next) => {
-            setCards((list) => list?.map((c) => (c.id === wrongCard.id ? next : c)) ?? [next]);
-            setWrongCard(null);
-          }}
-          onClose={() => setWrongCard(null)}
-        />
-      )}
     </div>
   );
 }

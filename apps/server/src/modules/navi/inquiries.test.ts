@@ -1,4 +1,4 @@
-import type { InquiryListResponse, NotificationsResponse } from '@one-line-desk/shared';
+import type { Card, CardAction, InquiryListResponse, NotificationsResponse } from '@one-line-desk/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestApp, MOCK } from '../../testing';
 
@@ -24,18 +24,79 @@ async function setup() {
 let n = 0;
 const requestId = () => `req-${Date.now().toString(36)}-${(n += 1)}`;
 
+describe('문의하기: 받는 팀 고르기(11/2, ADR-26)', () => {
+  const inquireOf = (cards: Card[]) =>
+    cards.flatMap((c) => c.actions.secondary).find((a): a is Extract<CardAction, { type: 'inquire' }> => a.type === 'inquire')!;
+
+  it('고른 팀과 바꿀 수 있는 다른 후보(대표 창구 포함)가 [문의하기]에 같이 와요. 계약 전이라 규칙으로 골라요', async () => {
+    const t = await setup();
+    const doyun = await t.loginAs(MOCK.dev);
+    const action = inquireOf((await doyun.call('POST', '/api/ask', { text: '법인카드를 잃어버렸어요', kind: 'navi' })).body.cards);
+    expect(action.routed!.by).toBe('rule');
+    expect(action.routed!.alternatives).toContainEqual({ rowId: null, team: '총무팀', task: '분장표에 없는 문의' });
+    expect(action.routed!.alternatives.map((a) => a.rowId)).not.toContain(action.rowId);
+    expect(action.routed!.alternatives.length).toBeLessThanOrEqual(4);
+  });
+
+  it('분장표에서 못 찾으면 대표 창구로 고르고(none), 사람이 바꾼 후보로 보내면 그 팀 받은 문의함으로 가요', async () => {
+    const t = await setup();
+    const doyun = await t.loginAs(MOCK.dev);
+    const none = inquireOf((await doyun.call('POST', '/api/ask', { text: '화성 탐사선 발사 일정 알려줘', kind: 'navi' })).body.cards);
+    expect(none).toMatchObject({ rowId: null, team: '총무팀', routed: { by: 'none' } });
+
+    const picked = inquireOf((await doyun.call('POST', '/api/ask', { text: '재직증명서 어디서 떼요?', kind: 'navi' })).body.cards);
+    const other = picked.routed!.alternatives.find((a) => a.rowId !== null && a.team !== picked.team);
+    if (other) {
+      const sent = await doyun.call('POST', '/api/navi/inquiries', { rowId: other.rowId, question: QUESTION, reason: REASON, requestId: requestId() });
+      expect(sent.body.card.headline).toBe(`${other.team}에 보냈어요`);
+    }
+    // 고르기만 하고 보내지는 않아요: 묻기만으로는 문의가 하나도 생기지 않아요.
+    const jihu = await t.loginAs(MOCK.hr);
+    expect(((await jihu.call('GET', '/api/navi/inquiries/inbox')).body as InquiryListResponse).items).toEqual([]);
+  });
+});
+
+describe('받는 곳을 바꿔 보내면 고른 행에 기록이 남아요(11/2, "틀렸어요" 대신)', () => {
+  it('바꾼 곳으로 보내면 처음 고른 행 주인 부서 수정 제안함에 "다른 팀으로/대표 창구로 바꿔 보냄"이 하나씩 쌓이고, 그대로 보내면 안 쌓여요', async () => {
+    const t = await setup();
+    const doyun = await t.loginAs(MOCK.dev);
+    const send = (body: Record<string, unknown>) =>
+      doyun.call('POST', '/api/navi/inquiries', { question: QUESTION, reason: REASON, requestId: requestId(), ...body });
+    expect((await send({ rowId: 'HR-01', suggestedRowId: 'FIN-01' })).status).toBe(200);
+    expect((await send({ rowId: null, suggestedRowId: 'FIN-01' })).status).toBe(200);
+    expect((await send({ rowId: 'FIN-01', suggestedRowId: 'FIN-01' })).status).toBe(200);
+    expect((await send({ rowId: 'HR-01', suggestedRowId: 'NOPE-99' })).status).toBe(200);
+
+    const staff = await t.loginAs(MOCK.staff);
+    const rows = (await staff.call('GET', '/api/navi/chart')).body.rows as { id: string; feedback: Record<string, number> }[];
+    expect(rows.find((r) => r.id === 'FIN-01')!.feedback).toMatchObject({ 'other-owner': 1, 'not-listed': 1 });
+    // 기록에는 글·보낸 사람이 없어요.
+    const fb = await t.db.query<{ row: string }>('select row_to_json(f)::text as row from navi_feedback f');
+    expect(fb.rows.map((r) => r.row).join(' ')).not.toMatch(/INQCANARY7|도윤|pseudonym/);
+  });
+});
+
 describe('담당 팀에 문의 보내기(ADR-16)', () => {
   it('[ADR-16] 담당 카드에 [인사팀에 문의하기]가 있고, 보내면 인사팀 받은 문의함에만 보여요', async () => {
     const t = await setup();
     const doyun = await t.loginAs(MOCK.dev);
     const card = (await doyun.call('POST', '/api/ask', { text: '재직증명서 어디서 떼요?', kind: 'navi' })).body.cards[0];
-    expect(card.actions.secondary).toEqual([{ type: 'inquire', text: '인사팀에 문의하기', rowId: 'HR-01', team: '인사팀', task: '재직증명서 발급' }]);
+    expect(card.actions.secondary).toEqual([
+      {
+        type: 'inquire',
+        text: '인사팀에 문의하기',
+        rowId: 'HR-01',
+        team: '인사팀',
+        task: '재직증명서 발급',
+        routed: { by: 'rule', alternatives: expect.any(Array) },
+      },
+    ]);
 
     const sent = await doyun.call('POST', '/api/navi/inquiries', { rowId: 'HR-01', question: QUESTION, reason: REASON, requestId: requestId() });
     expect(sent.status).toBe(200);
     expect(sent.body).toMatchObject({ status: 'done', card: { label: '확정', headline: '인사팀에 보냈어요' } });
     // 받은 팀이 답장을 보낼 수 있어서(10/30, ADR-24) 상태 변경과 답장을 알린다고 적어요.
-    expect(sent.body.card.evidence.text).toBe('처리 상태가 바뀌거나 답장이 오면 알려 드려요. 담당 찾기 "내 문의"에서 볼 수 있어요');
+    expect(sent.body.card.evidence.text).toBe('처리 상태가 바뀌거나 답장이 오면 알려 드려요. 문의하기 "내 문의"에서 볼 수 있어요');
 
     const jihu = await t.loginAs(MOCK.hr);
     const inbox = (await jihu.call('GET', '/api/navi/inquiries/inbox')).body as InquiryListResponse;
