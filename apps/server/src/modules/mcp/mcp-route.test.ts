@@ -238,15 +238,21 @@ describe('MCP 경로의 경계', () => {
     expect((await t.db.query('select count(*)::int as n from ai_usage')).rows[0]).toEqual({ n: 0 });
   });
 
-  it('[MCP-6] MCP 경로는 감사 로그 말고 DB에 쓰지 않아요', async () => {
+  it('[MCP-6] MCP 경로는 감사 로그·접속기록 말고 DB에 쓰지 않아요', async () => {
     const { t, at } = await setup();
     const before = await dumpTablesExceptAudit(t.db);
+    const accessBefore = (await t.db.query<{ n: number }>('select count(*)::int as n from access_log')).rows[0]!.n;
     const auditBefore = (await t.db.query<{ n: number }>('select count(*)::int as n from audit_log')).rows[0]!.n;
     await mcpRequest(t, at, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: '시험', version: '1' } });
     await mcpRequest(t, at, 'tools/list');
     await callTool(t, at, 'rooms_find_free', ROOMS_ARGS);
     await callTool(t, at, 'notices_search', { query: '연말정산' });
     expect(await dumpTablesExceptAudit(t.db)).toBe(before);
+    // 접속기록에는 도구를 부른 요청마다 "mcp.call" 한 줄만 더해져요(초기화·도구 목록은 남지 않아요).
+    expect((await t.db.query('select action from access_log order by id offset $1', [accessBefore])).rows).toEqual([
+      { action: 'mcp.call' },
+      { action: 'mcp.call' },
+    ]);
     const added = (await t.db.query('select channel, tool, client_id, result from audit_log order by id offset $1', [auditBefore])).rows;
     expect(added).toEqual([
       { channel: 'mcp', tool: 'rooms_find_free', client_id: 'desk-demo-claude-org', result: 'found' },

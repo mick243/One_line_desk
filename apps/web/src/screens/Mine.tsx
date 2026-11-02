@@ -17,8 +17,8 @@ function retentionLines(s: { modules: Record<ModuleKind, ModuleSwitch>; roomsWri
       `예약·장비 대여 기록과 회의 초대(부른 사람·참석자·답). 끝나고 ${RECORD_KEEP_DAYS}일 뒤 지워져요. 예약을 취소하면 초대와 같이 빌린 장비도 함께 지워지고, 취소한 기록은 ${RECORD_KEEP_DAYS}일 뒤 지워져요.`,
     s.modules.pantry !== 'off' &&
       `내가 올린 품목 이름과 표. 올린 지 ${RECORD_KEEP_DAYS}일(주문에 들어갔으면 주문하고 ${RECORD_KEEP_DAYS}일) 뒤 지워져요. 누가 표를 줬는지는 화면 어디에도 안 보여요.`,
-    s.modules.navi === 'on' && `"틀렸어요"에서 고른 결과. 누가 골랐는지는 남지 않고, ${RECORD_KEEP_DAYS}일 뒤 지워져요.`,
-    s.mcp && '연결한 AI 앱(앱 이름·연결한 날). 끊으면 지워져요.',
+    s.modules.navi === 'on' && `문의할 때 받는 곳을 바꿔 보낸 사실(고른 업무·바꾼 업무·날짜). 글과 보낸 사람은 남지 않고, ${RECORD_KEEP_DAYS}일 뒤 지워져요.`,
+    s.mcp && '연결한 AI 앱(앱 이름·연결한 날·기기마다 하나). 끊으면 지워져요.',
     `감사 기록(가명 ID·시각·동작 종류·결과). 내용은 남지 않고, ${RECORD_KEEP_DAYS}일 뒤 지워져요.`,
     '접속기록(가명 ID·시각·접속한 곳의 IP·한 일·열어 본 문의 번호). 법에 따라 1년 두고 지워요. 글과 검색어는 남지 않아요.',
   ].filter((line): line is string => Boolean(line));

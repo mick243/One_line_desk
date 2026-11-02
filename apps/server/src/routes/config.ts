@@ -4,7 +4,7 @@ import type { AdapterCapabilities } from '../adapters/types';
 import type { AppContext, PreHandler } from '../context';
 import { DeskError } from '../core/errors';
 import { type OpsFlag, OPS_VALUE_RANGE, type OpsValues } from '../core/ops-settings';
-import { listMcpTools } from '../core/tool-registry';
+import { listMcpTools, MCP_TOOLS } from '../core/tool-registry';
 
 const READY_DB_TIMEOUT_MS = 1000;
 
@@ -115,6 +115,23 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
       return ctx.ops.setFlag(req.deskUser!.pseudonymId, req.body.flag, req.body.value);
     },
   );
+  // MCP 도구 하나 켜고 끄기(11/2, MCP 통합 회의 0단계). 이름은 레지스트리의 MCP 도구만 받아요.
+  app.put<{ Body: { tool: string; value: boolean } }>(
+    '/api/ops/mcp-tool',
+    {
+      preHandler: opsWrite,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['tool', 'value'],
+          additionalProperties: false,
+          properties: { tool: { enum: MCP_TOOLS.map((t) => t.name) }, value: { type: 'boolean' } },
+        },
+      },
+    },
+    async (req) => ctx.ops.setMcpTool(req.deskUser!.pseudonymId, req.body.tool, req.body.value),
+  );
+
   // 운영 값(재확인 간격·토큰 시간·분당 상한 등, CD-14). 범위를 벗어나면 하나도 바꾸지 않아요.
   const valueProps = Object.fromEntries(Object.entries(OPS_VALUE_RANGE).map(([k, [minimum, maximum]]) => [k, { type: 'integer', minimum, maximum }]));
   app.put<{ Body: Partial<OpsValues> }>(

@@ -137,15 +137,31 @@ describe('제안 토큰(M3)', () => {
     () => 60_000,
   );
 
-  it('주인·서명·만료를 검사해요', () => {
+  it('주인·봉인·만료를 검사해요', () => {
     const token = tokens.sign('p_me', 'rooms', 'reserve', { roomId: 'r1' });
     expect(tokens.verify(token, 'p_me')).toMatchObject({ ok: true, payload: { m: 'rooms', a: 'reserve', p: { roomId: 'r1' } } });
     expect(tokens.verify(token, 'p_other')).toMatchObject({ ok: false, reason: 'owner' });
     expect(tokens.verify(`${token}x`, 'p_me')).toMatchObject({ ok: false, reason: 'bad' });
-    const [body] = token.split('.');
-    const forged = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(body!, 'base64url').toString()), u: 'p_other' })).toString('base64url');
-    expect(tokens.verify(`${forged}.${token.split('.')[1]}`, 'p_other')).toMatchObject({ ok: false, reason: 'bad' });
+    // 한 글자만 바꿔도 열리지 않아요.
+    const flipped = token.slice(0, 20) + (token[20] === 'A' ? 'B' : 'A') + token.slice(21);
+    expect(tokens.verify(flipped, 'p_me')).toMatchObject({ ok: false, reason: 'bad' });
+    // 다른 서버 비밀로 봉인한 토큰도, 예전 서명 모양(base64.서명)도 받지 않아요.
+    const otherServer = new ProposalTokens(
+      'other-secret',
+      () => clock,
+      () => 60_000,
+    ).sign('p_me', 'rooms', 'reserve', { roomId: 'r1' });
+    expect(tokens.verify(otherServer, 'p_me')).toMatchObject({ ok: false, reason: 'bad' });
+    const oldStyle = `${Buffer.from(JSON.stringify({ jti: 'x', u: 'p_me', m: 'rooms', a: 'reserve', p: {}, exp: clock + 1000 })).toString('base64url')}.sig`;
+    expect(tokens.verify(oldStyle, 'p_me')).toMatchObject({ ok: false, reason: 'bad' });
     clock += 61_000;
     expect(tokens.verify(token, 'p_me')).toMatchObject({ ok: false, reason: 'expired', payload: { p: { roomId: 'r1' } } });
+  });
+
+  it('[B11] 링크에 실리는 토큰을 풀어도 가명 ID·방·조건이 보이지 않아요(REVIEW L3)', () => {
+    const token = tokens.sign('p_secret_person', 'rooms', 'reserve', { roomId: 'room-5A', date: '2026-11-03', start: '15:00' });
+    expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
+    const decoded = Buffer.from(token, 'base64url').toString('latin1');
+    for (const plain of ['p_secret_person', 'room-5A', '2026-11-03', 'reserve', 'rooms']) expect(decoded).not.toContain(plain);
   });
 });

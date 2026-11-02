@@ -8,8 +8,8 @@ export type LimitedAction =
   | 'draft'
   | 'post'
   | 'vote'
-  | 'mcp.rooms_find_free'
-  | 'mcp.notices_search'
+  /** MCP 도구마다 따로 세요. 이름은 도구 레지스트리 이름 그대로예요. */
+  | `mcp.${string}`
   | 'people.search'
   | 'invite';
 

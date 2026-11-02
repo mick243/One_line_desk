@@ -71,7 +71,7 @@ describe('메타데이터', () => {
       const res = await t.app.inject({ method: 'POST', url, payload: { redirect_uris: ['https://evil.example.com/cb'], client_name: '아무 앱' } });
       expect(res.statusCode, url).toBe(404);
     }
-    expect((await t.db.query('select count(*)::int as n from mcp_clients')).rows[0]).toEqual({ n: 1 });
+    expect((await t.db.query('select count(*)::int as n from mcp_clients')).rows[0]).toEqual({ n: 3 }); // 시연 seed 셋 그대로
   });
 });
 
@@ -109,6 +109,7 @@ describe('authorize와 동의 시트', () => {
     await repo.insertClient(t.db, {
       clientId: 'unapproved-client',
       secretHash: hashClientSecret('s'.repeat(40)),
+      publicClient: false,
       appName: '승인 안 된 앱',
       redirectUris: ['https://app.example.com/cb'],
       securityApproved: false,
@@ -311,6 +312,7 @@ describe('token', () => {
     await repo.insertClient(t.db, {
       clientId: 'other-approved-client',
       secretHash: hashClientSecret('o'.repeat(40)),
+      publicClient: false,
       appName: '다른 앱',
       redirectUris: ['https://other.example.com/cb'],
       securityApproved: true,

@@ -2100,3 +2100,40 @@ select {
   font-size: 0.75rem;
   font-weight: 700;
 }
+
+/* S6 터미널 AI 앱 연결하는 법(11/2, ADR-15 개정) */
+.cli-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.cli-guide summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.cli-app h3 {
+  margin: 8px 0 4px;
+  font-size: 0.95rem;
+}
+.cli-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.cli-line code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+}
+.cli-line button {
+  flex: 0 0 auto;
+  width: auto;
+}

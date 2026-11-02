@@ -10,7 +10,7 @@ export function pathOnly(url: string | undefined): string {
 }
 
 /**
- * 로그에 남길 경로. 앱 확인 링크(/r/<토큰>)는 토큰에 가명 ID·방·시각이 읽히는 글로 들어 있어서 자리 표시로 바꿔요.
+ * 로그에 남길 경로. 앱 확인 링크(/r/<토큰>)는 11/2부터 봉인돼 읽을 수 없지만(B11), 로그에 남길 까닭이 없어서 자리 표시로 바꿔요.
  * 서버가 화면도 주면서(10/29 배포 준비 회의 A3) 이 경로가 앱 로그에 들어오게 됐어요.
  */
 export function logPath(url: string | undefined): string {

@@ -1,29 +1,20 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, type CallToolResult, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { MCP_SCOPES, type McpScope, type RoomQuery } from '@one-line-desk/shared';
+import { MCP_SCOPES, type McpScope } from '@one-line-desk/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AppContext } from '../../context';
-import type { LimitedAction } from '../../core/rate-limit';
-import { listMcpTools, TOOLS, type ToolDef } from '../../core/tool-registry';
+import { accessFrom } from '../../core/access-record';
+import { listMcpTools, type McpToolDef, TOOLS } from '../../core/tool-registry';
 import type { McpAuth, McpPrincipal } from './auth-service';
 import { scopeOf } from './policy';
 import * as repo from './repo';
-import {
-  NOTICES_INPUT,
-  NOTICES_MAX_HITS,
-  NOTICES_OUTPUT,
-  type NoticesInput,
-  ROOMS_INPUT,
-  ROOMS_OUTPUT,
-  type RoomsInput,
-  shapeNotices,
-  shapeRooms,
-} from './tools';
+import { MCP_TOOL_IMPLS, type ToolEnv } from './tool-impls';
 
 // 자원 서버 /mcp(ADR-14·15). Streamable HTTP, 상태 없음(요청마다 서버를 새로 만들어요).
-// 요청마다 토큰(aud·만료·범위·폐기)을 검사하고, MCP 스위치·모듈 스위치로 도구 목록을 정해요. 쓰기 도구는 없어요.
-// 이 경로는 LLM(ctx.gateway)을 부르지 않고, DB에는 감사 로그 말고 쓰지 않아요.
+// 요청마다 토큰(aud·만료·범위·폐기)을 검사하고, MCP 스위치·모듈 스위치·도구별 스위치로 도구 목록을 정해요. 쓰기 도구는 없어요.
+// 도구는 이름으로 나누지 않고 레지스트리(core/tool-registry.ts)와 구현 표(tool-impls.ts)로 똑같이 다뤄요(11/2 정리).
+// 이 경로는 LLM(ctx.gateway)을 부르지 않고, DB에는 감사 로그·접속기록 말고 쓰지 않아요.
 
 /** 서버 안내문. 이 MCP가 못 하는 질문(담당 부서·내 예약)은 짐작하지 말고 앱으로 보내게 해요(10/26 MCP 베타 시험 U5). */
 function instructions(appUrl: string): string {
@@ -47,8 +38,6 @@ function offMessage(appUrl: string): string {
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
-const LIMIT_KEY: Record<string, LimitedAction> = { rooms_find_free: 'mcp.rooms_find_free', notices_search: 'mcp.notices_search' };
-const INPUT_SCHEMA: Record<string, typeof ROOMS_INPUT | typeof NOTICES_INPUT> = { rooms_find_free: ROOMS_INPUT, notices_search: NOTICES_INPUT };
 const KNOWN_TOOLS = new Set(TOOLS.map((t) => t.name));
 
 interface ToolCall {
@@ -84,6 +73,9 @@ export function registerMcpRoute(app: FastifyInstance, ctx: AppContext, mcp: Mcp
     if (!auth.ok) return challenge(reply, auth.error);
     const principal = auth.principal;
     const calls = toolCalls(req.body);
+    // 법정 접속기록(ADR-20): 도구를 부른 요청마다 한 줄. 가명 ID·접속지·요청 번호만 남고 도구 이름·입력은 남지 않아요(도구는 감사 로그 7일).
+    for (const call of calls)
+      if (KNOWN_TOOLS.has(call.name)) await ctx.access.record({ pseudonymId: principal.pseudonymId, action: 'mcp.call', ...accessFrom(req) });
 
     if (!(await mcp.runnable())) {
       // 꺼짐은 인증 오류(401·403)로 답하지 않아요. 클라이언트가 다시 로그인하라고 잘못 안내해요(U4).
@@ -109,13 +101,12 @@ export function registerMcpRoute(app: FastifyInstance, ctx: AppContext, mcp: Mcp
           .header('www-authenticate', `Bearer error="insufficient_scope", scope="${scope}", resource_metadata="${urls.resourceMetadata}"`)
           .send({ error: 'insufficient_scope', message: '이 도구를 쓰려면 한 줄 데스크에 다시 연결해서 허락해 주세요' });
       }
-      if (!INPUT_SCHEMA[tool.name]?.safeParse(call.args).success) {
+      if (!MCP_TOOL_IMPLS[tool.name]?.input.safeParse(call.args).success) {
         // 입력이 맞지 않으면 SDK가 오류로 답해요. 감사 로그에는 거부만 남고 입력 값은 남지 않아요.
         await auditTool(principal, tool.name, 'refused');
         continue;
       }
-      const limitKey = LIMIT_KEY[tool.name];
-      if (!limitKey || !ctx.rateLimiter.hit(principal.pseudonymId, limitKey)) {
+      if (!ctx.rateLimiter.hit(principal.pseudonymId, `mcp.${tool.name}`)) {
         await auditTool(principal, tool.name, 'refused');
         return reply.code(429).send({ error: 'rate-limited', message: '요청이 많아요. 잠시 뒤에 다시 해 주세요' });
       }
@@ -179,93 +170,39 @@ function toolCalls(body: unknown): ToolCall[] {
 
 type AuditTool = (principal: McpPrincipal, tool: string, result: 'found' | 'none' | 'refused' | 'error') => Promise<void>;
 
-function buildServer(ctx: AppContext, mcp: McpAuth, principal: McpPrincipal, tools: ToolDef[], auditTool: AuditTool, appUrl: string): McpServer {
+function buildServer(ctx: AppContext, mcp: McpAuth, principal: McpPrincipal, tools: McpToolDef[], auditTool: AuditTool, appUrl: string): McpServer {
   const server = new McpServer({ name: 'one-line-desk', version: '0.1.0' }, { instructions: instructions(appUrl) });
+  const env: ToolEnv = {
+    ctx,
+    principal,
+    issuer: mcp.urls.issuer,
+    // 실제(모의가 아닌) 데이터는 보안팀 승인 클라이언트에만 보내요(ADR-15 계약 전 잠금).
+    realDataAllowed: async () => (await repo.findClient(ctx.db, principal.clientId))?.securityApproved === true,
+  };
   for (const tool of tools) {
-    if (tool.name === 'rooms_find_free') {
-      server.registerTool(
-        tool.name,
-        { title: '빈 회의실 찾기', description: tool.description, inputSchema: ROOMS_INPUT, outputSchema: ROOMS_OUTPUT, annotations: READ_ONLY },
-        async (args) => findFreeRooms(ctx, mcp, principal, args, auditTool),
-      );
-    } else if (tool.name === 'notices_search') {
-      server.registerTool(
-        tool.name,
-        { title: '공지 찾기', description: tool.description, inputSchema: NOTICES_INPUT, outputSchema: NOTICES_OUTPUT, annotations: READ_ONLY },
-        async (args) => searchNotices(ctx, principal, args, auditTool),
-      );
-    }
+    const impl = MCP_TOOL_IMPLS[tool.name];
+    if (!impl) continue;
+    server.registerTool(
+      tool.name,
+      { title: tool.mcp.title, description: tool.description, inputSchema: impl.input, outputSchema: impl.output, annotations: READ_ONLY },
+      async (args: unknown): Promise<CallToolResult> => {
+        if (!principal.scopes.includes(tool.mcp.scope)) {
+          await auditTool(principal, tool.name, 'refused');
+          return toolError(`이 연결에는 ${tool.mcp.title} 허락이 없어요`);
+        }
+        try {
+          const outcome = await impl.run(env, args);
+          await auditTool(principal, tool.name, outcome.result);
+          return 'out' in outcome ? toolResult(outcome.out) : toolError(outcome.message);
+        } catch {
+          await auditTool(principal, tool.name, 'error');
+          return toolError(impl.errorMessage);
+        }
+      },
+    );
   }
   return server;
 }
 
 const toolError = (message: string): CallToolResult => ({ content: [{ type: 'text', text: message }], isError: true });
 const toolResult = (out: Record<string, unknown>): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(out) }], structuredContent: out });
-
-/** 실제(모의가 아닌) 데이터는 보안팀 승인 클라이언트에만 보내요(ADR-15 계약 전 잠금). */
-async function approvedForRealData(ctx: AppContext, clientId: string): Promise<boolean> {
-  return (await repo.findClient(ctx.db, clientId))?.securityApproved === true;
-}
-
-async function findFreeRooms(ctx: AppContext, mcp: McpAuth, principal: McpPrincipal, input: RoomsInput, auditTool: AuditTool): Promise<CallToolResult> {
-  const name = 'rooms_find_free';
-  if (!principal.scopes.includes('rooms.read')) {
-    await auditTool(principal, name, 'refused');
-    return toolError('이 연결에는 빈 회의실 찾기 허락이 없어요');
-  }
-  const rooms = ctx.services.rooms;
-  const settings = ctx.ops.get();
-  const query: RoomQuery = {
-    date: input.date,
-    start: input.start,
-    minutes: input.minutes ?? settings.values.defaultMeetingMinutes,
-    people: input.people,
-    equipment: input.equipment ?? [],
-    ...(input.floor ? { floor: input.floor } : {}),
-  };
-  try {
-    if (!rooms) throw new Error('rooms service missing');
-    const result = await rooms.findFree(query);
-    if (result.mock !== true && !(await approvedForRealData(ctx, principal.clientId))) {
-      await auditTool(principal, name, 'refused');
-      return toolError('회사가 허락하지 않은 앱이라 실제 회의실 현황은 보낼 수 없어요');
-    }
-    // 앱 확인 링크(M3): 서명한 짧은 수명의 제안 토큰만 넣어요. 회의실 쓰기가 꺼져 있으면 그룹웨어 링크예요.
-    const out = shapeRooms(result, ctx.now(), (c) =>
-      settings.roomsWrite
-        ? {
-            link: `${mcp.urls.issuer}/r/${rooms.proposeReservation({ pseudonymId: principal.pseudonymId }, { roomId: c.roomId, start: c.start, end: c.end, query })}`,
-            linkText: '한 줄 데스크에서 예약하기',
-          }
-        : { link: settings.links.rooms, linkText: '그룹웨어에서 예약하기' },
-    );
-    await auditTool(principal, name, out.candidates.length > 0 ? 'found' : 'none');
-    return toolResult(out);
-  } catch {
-    await auditTool(principal, name, 'error');
-    return toolError('지금 빈 회의실을 찾지 못했어요');
-  }
-}
-
-async function searchNotices(ctx: AppContext, principal: McpPrincipal, input: NoticesInput, auditTool: AuditTool): Promise<CallToolResult> {
-  const name = 'notices_search';
-  if (!principal.scopes.includes('notices.read')) {
-    await auditTool(principal, name, 'refused');
-    return toolError('이 연결에는 공지 찾기 허락이 없어요');
-  }
-  try {
-    const notices = ctx.services.notices;
-    if (!notices) throw new Error('notices service missing');
-    const result = await notices.search(input.query, NOTICES_MAX_HITS);
-    if (result.mock !== true && !(await approvedForRealData(ctx, principal.clientId))) {
-      await auditTool(principal, name, 'refused');
-      return toolError('회사가 허락하지 않은 앱이라 실제 공지는 보낼 수 없어요');
-    }
-    const out = shapeNotices(result, notices.boards());
-    await auditTool(principal, name, out.hits.length > 0 ? 'found' : 'none');
-    return toolResult(out);
-  } catch {
-    await auditTool(principal, name, 'error');
-    return toolError('지금 공지를 찾지 못했어요');
-  }
-}

@@ -9,6 +9,14 @@ export interface ConnectedApp {
   /** YYYY-MM-DD */
   connectedOn: string;
   scopes: McpScope[];
+  /** 이 앱을 연결해 둔 기기 수(11/2, 기기별 승인). [끊기]는 모든 기기를 끊어요. */
+  devices: number;
+}
+
+/** S6 "연결하는 법": 회사가 허락한 CLI 앱(공개 클라이언트). 클라이언트 ID는 비밀이 아니에요. */
+export interface CliApp {
+  clientId: string;
+  appName: string;
 }
 
 /** GET /api/mcp/connections */
@@ -18,6 +26,10 @@ export interface ConnectionsResponse {
   /** 지금 켜져 있는 도구의 범위. 빠진 범위는 S6 줄에서 "지금 꺼져 있어요"로 보여요. */
   tools: McpScope[];
   apps: ConnectedApp[];
+  /** CLI에 넣을 MCP 주소 */
+  mcpUrl: string;
+  /** 지금 연결할 수 있는 CLI 앱. MCP를 못 쓰면 비어 있어요. */
+  cliApps: CliApp[];
 }
 
 /**
