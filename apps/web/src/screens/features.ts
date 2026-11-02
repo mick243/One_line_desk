@@ -17,18 +17,27 @@ export interface Feature {
   submit: string;
   /** 없으면 "이렇게 써 보세요" 줄을 그리지 않아요. 담당 찾기는 중요한 일이라 예시 없이 자기 상황을 쓰게 해요(10/28). */
   examples?: string[];
+  /** 문의하기 페이지의 보조 모드 "담당만 찾기"(11/2, ADR-26). 있으면 페이지 위에 모드 전환이 생겨요. */
+  findMode?: Pick<Feature, 'title' | 'question' | 'summary' | 'placeholder' | 'submit'>;
 }
 
 export const FEATURES: Feature[] = [
   {
     module: 'navi',
     page: 'navi',
-    title: '담당 찾기',
-    question: '어떤 일인지 한 줄로 알려 주세요',
-    short: '어느 부서에 물어볼지 바로 알려 줘요',
-    summary: '업무 분장표에서 담당 부서와 지금 할 일을 찾아 줘요.',
-    placeholder: '예) 법인카드를 잃어버렸어요',
-    submit: '담당 찾기',
+    title: '문의하기',
+    question: '무엇을 문의할까요?',
+    short: '문의를 쓰면 받을 팀을 골라 보내 줘요',
+    summary: '업무 분장표에서 받을 팀을 골라 문의 양식을 열어 줘요. 받는 곳은 보내기 전에 보고 바꿀 수 있어요.',
+    placeholder: '예) 법인카드를 잃어버렸어요. 정지는 어떻게 해요?',
+    submit: '받을 팀 찾기',
+    findMode: {
+      title: '담당 찾기',
+      question: '어떤 일인지 한 줄로 알려 주세요',
+      summary: '업무 분장표에서 담당 부서와 지금 할 일을 찾아 줘요. 보내지는 않아요.',
+      placeholder: '예) 법인카드를 잃어버렸어요',
+      submit: '담당 찾기',
+    },
   },
   {
     module: 'rooms',

@@ -349,7 +349,7 @@ export function MyInquiries({ compact = false }: { compact?: boolean }) {
             </li>
           ))}
         </ul>
-        <p className='hint'>답장과 자세한 내용은 담당 찾기 아래 "내 문의"에서 봐요.</p>
+        <p className='hint'>답장과 자세한 내용은 문의하기 아래 "내 문의"에서 봐요.</p>
       </section>
     );
   }
