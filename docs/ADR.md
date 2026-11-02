@@ -349,6 +349,7 @@
   - **루프백 리디렉트**: 포트 없이 등록한 루프백 주소(`http://localhost/callback`·`http://127.0.0.1/callback`·`http://[::1]/…`)는 CLI가 고른 포트와 상관없이 호스트·경로·쿼리만 맞추면 받아요(RFC 8252 §7.3). 공개 클라이언트는 루프백으로만 돌아가요. 그 밖의 주소는 지금처럼 글자 그대로 같아야 해요.
   - **기기별 승인**: 승인은 (가명 ID, 클라이언트)마다 하나가 아니라 기기(갱신 토큰 계열)마다 하나예요. 같은 앱을 다른 기기에서 연결해도 앞 기기가 끊기지 않고, 한 사람 × 한 앱은 5대까지예요(넘치면 가장 먼저 연결한 기기를 지워요). 클라이언트 폐기(RFC 7009)는 그 기기만, S6 [끊기]·모든 기기 로그아웃·퇴사 확인은 모두 지워요. S6에는 앱마다 한 줄에 기기 수를 보여요. "마지막 사용"은 여전히 남기지 않아요.
   - **S6 연결하는 법**: 허용 목록 안인 CLI 앱과 MCP 주소, 복사할 명령 한 줄(`claude mcp add --transport http --client-id …`, `codex mcp login … --oauth-client-id …`)을 보여 줘요. 클라이언트 ID는 비밀이 아니에요.
+  - 시연(Vercel 웹 + Fly 서버)은 발급자가 Vercel 주소라, Vercel이 `/mcp`·`/.well-known/oauth-*`·`/oauth/authorize|token|revoke`도 시연 서버로 넘겨요(`vercel.json`, `scripts/smoke-vercel.mjs`가 확인). 동의 시트 `/oauth/consent`는 지금처럼 웹 화면이에요.
   - 허용 두 겹은 그대로예요: 등록된 클라이언트만 붙고, 실제 자료는 보안팀 승인(`security_approved`) 클라이언트에만 가요. 시연 CLI 클라이언트 둘(`desk-demo-claude-code`·`desk-demo-codex`)은 시연용(`demo_only`)이라 데이터가 모두 모의일 때만 허용돼요. 운영 등록은 아직 SQL이라, 등록·승인 화면(관리 평면)은 다음 묶음이에요.
 - 맥락: MCP 인가 사양은 보호된 MCP 서버를 OAuth 2.1 자원 서버로 보고, 보호 자원 메타데이터·resource 매개변수·토큰 대상 검사를 요구해요. 결과가 클라이언트 모델로 가니 어느 클라이언트를 받을지도 정해야 해요.
 - 결정

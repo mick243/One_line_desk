@@ -51,6 +51,18 @@ if (process.env.SMOKE_BUILD) check(`서버 판이 ${process.env.SMOKE_BUILD}이�
 if (config.ok) check('시연 비밀번호를 받아요', (await config.json()).login?.password === true);
 const me = await get('/api/me');
 check('/api/me 는 로그인 전 401이고 저장하지 않아요', me.status === 401 && me.headers.get('cache-control') === 'no-store');
+// MCP·인가 경로도 시연 서버로 넘겨요(11/2). 공식 주소(발급자)가 Vercel 주소라 이 길이 없으면 AI 앱이 연결하지 못해요.
+const meta = await get('/.well-known/oauth-authorization-server');
+const metaBody = meta.ok && isJson(meta) ? await meta.json() : {};
+check('인가 서버 메타데이터가 시연 서버에서 오고 발급자가 이 주소예요', metaBody.issuer === base && Boolean(meta.headers.get('x-desk-build')));
+check('CLI용 비밀 없는 방식(none)을 알려요', (metaBody.token_endpoint_auth_methods_supported ?? []).includes('none'));
+const resource = await get('/.well-known/oauth-protected-resource/mcp');
+check('보호 자원 메타데이터의 MCP 주소가 이 주소예요', resource.ok && (await resource.json()).resource === `${base}/mcp`);
+const mcp = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', redirect: 'manual' });
+check('/mcp 는 토큰 없이 401 + resource_metadata 안내예요', mcp.status === 401 && (mcp.headers.get('www-authenticate') ?? '').includes(`${base}/.well-known/oauth-protected-resource/mcp`));
+const token = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'grant_type=x', redirect: 'manual' });
+check('/oauth/token 은 시연 서버가 답하고 저장하지 않아요(no-store)', Boolean(token.headers.get('x-desk-build')) && token.headers.get('cache-control') === 'no-store');
+
 const ops = await get('/api/ops/settings');
 check('운영 설정(/api/ops)은 시연 서버로 넘기지 않아요', ops.status === 404 && !ops.headers.get('x-desk-build'));
 
