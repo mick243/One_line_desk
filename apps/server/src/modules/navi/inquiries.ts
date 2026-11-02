@@ -34,6 +34,7 @@ import { GENERAL_TASK } from './cards';
 import { GENERAL_DESK } from './fixtures';
 import { HALF_DAY, leaveRequestBalance } from './leave';
 import * as repo from './repo';
+import { feedbackDay } from './service';
 
 // 담당 팀에 문의 보내기(10/26, ADR-16).
 // - 받는 곳은 분장표 행의 주인 부서예요. 담당자 이름은 분장표에 없어요(D9).
@@ -270,6 +271,20 @@ export function createInquiryService(ctx: AppContext) {
             senderSubject: leaveDays ? user.idpSubject : null,
             at: now,
           });
+          // 문의하기가 고른 행과 다른 곳으로 보냈으면 그 행에 "바꿔 보냄" 기록을 남겨요(ADR-26). 글·보낸 사람은 넣지 않아요.
+          if (!leaveDays && req.suggestedRowId && req.suggestedRowId !== target.rowId) {
+            const [suggested] = await repo.findRows(q, [req.suggestedRowId]);
+            if (suggested) {
+              await repo.insertFeedback(q, {
+                predictedKind: 'navi',
+                correctedKind: null,
+                predictedRow: suggested.id,
+                chosenRow: target.rowId,
+                reason: target.rowId ? 'other-owner' : 'not-listed',
+                at: feedbackDay(now),
+              });
+            }
+          }
           const what = saved.kind === 'leave' ? `${requestWord(saved)}이` : '새 문의가';
           await ctx.notify.toDepartment(
             q,

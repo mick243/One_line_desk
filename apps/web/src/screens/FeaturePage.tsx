@@ -38,10 +38,9 @@ export function FeaturePage({
   // 보내지 못한 문장. [다시 보내기]가 같은 문장을 한 번 더 보내요(10/29 개선 회의 A3). 입력 칸 글은 그대로예요.
   const [retry, setRetry] = useState<string | null>(null);
   const slow = useSlow(loading);
-  const [wrongCard, setWrongCard] = useState<Card | null>(null);
   const [inquiry, setInquiry] = useState<Extract<CardAction, { type: 'inquire' }> | null>(null);
   const [leaveRequest, setLeaveRequest] = useState<Extract<CardAction, { type: 'leave-request' }> | null>(null);
-  const { WrongSheet, InquirySheet, LeaveRequestSheet } = webModules;
+  const { InquirySheet, LeaveRequestSheet } = webModules;
   // 문의하기 페이지(11/2, ADR-26): 기본은 "문의하기"(받을 팀을 고르면 양식을 바로 열어요), 보조로 "담당만 찾기"(카드만 보여요).
   // 다른 기능에서 "담당 찾기에서 찾기"로 옮겨 온 문장은 담당만 찾기로 열어요(찾으러 온 거라 양식을 띄우지 않아요).
   const [mode, setMode] = useState<'inquire' | 'find'>(autoRun ? 'find' : 'inquire');
@@ -173,7 +172,6 @@ export function FeaturePage({
           <CardView
             key={card.id}
             card={card}
-            onWrong={setWrongCard}
             onResults={setCards}
             onAction={(action) => {
               if (action.type === 'reask') return onMove(action.kind, sent ?? text);
@@ -190,21 +188,6 @@ export function FeaturePage({
 
       {inquiry && <InquirySheet action={inquiry} initialQuestion={sent ?? text} onClose={() => setInquiry(null)} />}
       {leaveRequest && <LeaveRequestSheet action={leaveRequest} onClose={() => setLeaveRequest(null)} />}
-
-      {wrongCard && (
-        <WrongSheet
-          card={wrongCard}
-          onReask={(kind) => {
-            setWrongCard(null);
-            onMove(kind, sent ?? text);
-          }}
-          onReplace={(next) => {
-            setCards((list) => list?.map((c) => (c.id === wrongCard.id ? next : c)) ?? [next]);
-            setWrongCard(null);
-          }}
-          onClose={() => setWrongCard(null)}
-        />
-      )}
     </div>
   );
 }

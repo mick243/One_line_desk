@@ -6,7 +6,6 @@ import { cardRenderers } from '../modules/registry';
 export interface CardViewProps {
   card: Card;
   onAction: (action: CardAction, card: Card) => Promise<void> | void;
-  onWrong?: (card: Card) => void;
   /** 카드 안에서 새 결과가 나오면(회의실 조건 칩 다시 찾기) 페이지 결과를 바꿔요. 없으면 시트로 보여요. */
   onResults?: (cards: Card[]) => void;
 }
@@ -18,7 +17,7 @@ export function CardView(props: CardViewProps) {
   return <DefaultCard {...props} />;
 }
 
-function DefaultCard({ card, onAction, onWrong }: CardViewProps) {
+function DefaultCard({ card, onAction }: CardViewProps) {
   const [busy, setBusy] = useState<string | null>(null);
 
   // 버튼은 누르면 바로 잠기고 "○○하는 중"으로 바뀌어요. 두 번 눌러도 한 번만 실행돼요.
@@ -73,11 +72,6 @@ function DefaultCard({ card, onAction, onWrong }: CardViewProps) {
             {a.text}
           </button>
         ))}
-        {card.wrong && onWrong && (
-          <button type='button' className='link' onClick={() => onWrong(card)}>
-            틀렸어요
-          </button>
-        )}
       </div>
       <p className='tail'>{card.tail}</p>
     </article>

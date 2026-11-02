@@ -48,7 +48,10 @@ export function ChartScreen({ me }: ScreenProps) {
       <header className='screen-head'>
         <h1>분장표 수정 제안함</h1>
       </header>
-      <p className='lead'>{me.department} 행에 쌓인 "틀렸어요" 기록 묶음이에요. 기록은 분장표를 바꾸지 않아요. 고친 분장표 파일을 다시 올려야 반영돼요.</p>
+      <p className='lead'>
+        {me.department} 행에 쌓인 기록 묶음이에요. 문의할 때 사람이 받는 곳을 바꿔 보낸 횟수예요(글·보낸 사람은 남지 않아요). 기록은 분장표를 바꾸지 않아요.
+        고친 분장표 파일을 다시 올려야 반영돼요.
+      </p>
 
       <section className='card'>
         <h2>기록 묶음</h2>
@@ -171,7 +174,7 @@ function UploadPanel({ department, onApplied }: { department: string; onApplied:
           '바뀐 행은 개정일이 오늘로 올라가요',
         ],
         confirmLabel: '반영하기',
-        note: '"틀렸어요" 기록은 그대로 남아요.',
+        note: '바꿔 보낸 기록은 그대로 남아요.',
       }
     : null;
 

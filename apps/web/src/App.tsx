@@ -230,7 +230,7 @@ export function App() {
                 {current === 'navi' && isChartOwner && (
                   <section className='card'>
                     <h2>분장표 주인이에요</h2>
-                    <p className='hint'>"틀렸어요" 기록 묶음을 보고, 우리 부서 분장표를 고쳐 올릴 수 있어요.</p>
+                    <p className='hint'>받는 곳을 바꿔 보낸 기록 묶음을 보고, 우리 부서 분장표를 고쳐 올릴 수 있어요.</p>
                     <button type='button' className='secondary' onClick={() => go('chart')}>
                       수정 제안함 열기
                     </button>

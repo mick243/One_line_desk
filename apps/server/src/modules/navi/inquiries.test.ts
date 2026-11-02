@@ -56,6 +56,26 @@ describe('문의하기: 받는 팀 고르기(11/2, ADR-26)', () => {
   });
 });
 
+describe('받는 곳을 바꿔 보내면 고른 행에 기록이 남아요(11/2, "틀렸어요" 대신)', () => {
+  it('바꾼 곳으로 보내면 처음 고른 행 주인 부서 수정 제안함에 "다른 팀으로/대표 창구로 바꿔 보냄"이 하나씩 쌓이고, 그대로 보내면 안 쌓여요', async () => {
+    const t = await setup();
+    const doyun = await t.loginAs(MOCK.dev);
+    const send = (body: Record<string, unknown>) =>
+      doyun.call('POST', '/api/navi/inquiries', { question: QUESTION, reason: REASON, requestId: requestId(), ...body });
+    expect((await send({ rowId: 'HR-01', suggestedRowId: 'FIN-01' })).status).toBe(200);
+    expect((await send({ rowId: null, suggestedRowId: 'FIN-01' })).status).toBe(200);
+    expect((await send({ rowId: 'FIN-01', suggestedRowId: 'FIN-01' })).status).toBe(200);
+    expect((await send({ rowId: 'HR-01', suggestedRowId: 'NOPE-99' })).status).toBe(200);
+
+    const staff = await t.loginAs(MOCK.staff);
+    const rows = (await staff.call('GET', '/api/navi/chart')).body.rows as { id: string; feedback: Record<string, number> }[];
+    expect(rows.find((r) => r.id === 'FIN-01')!.feedback).toMatchObject({ 'other-owner': 1, 'not-listed': 1 });
+    // 기록에는 글·보낸 사람이 없어요.
+    const fb = await t.db.query<{ row: string }>('select row_to_json(f)::text as row from navi_feedback f');
+    expect(fb.rows.map((r) => r.row).join(' ')).not.toMatch(/INQCANARY7|도윤|pseudonym/);
+  });
+});
+
 describe('담당 팀에 문의 보내기(ADR-16)', () => {
   it('[ADR-16] 담당 카드에 [인사팀에 문의하기]가 있고, 보내면 인사팀 받은 문의함에만 보여요', async () => {
     const t = await setup();

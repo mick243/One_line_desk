@@ -10,7 +10,7 @@ import type { CardViewProps } from '../../components/CardView';
 
 const MISSING_CLASS = 'missing';
 
-export function RoomConditionsCard({ card, onWrong, onResults }: CardViewProps) {
+export function RoomConditionsCard({ card, onResults }: CardViewProps) {
   const actions = useActions();
   const initial = parseRoomConditionFields(card.fields);
   const [date, setDate] = useState(initial.date ?? '');
@@ -114,11 +114,6 @@ export function RoomConditionsCard({ card, onWrong, onResults }: CardViewProps) 
         <button type='button' className='secondary' disabled={busy} onClick={() => void research()}>
           {busy ? '다시 찾는 중' : '이 조건으로 다시 찾기'}
         </button>
-        {card.wrong && onWrong && (
-          <button type='button' className='link' onClick={() => onWrong(card)}>
-            틀렸어요
-          </button>
-        )}
       </div>
       <p className='tail'>{card.tail}</p>
     </article>

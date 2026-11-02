@@ -1,19 +1,9 @@
-import type { Card, CardAction, Kind, RoomShowQuery } from '@one-line-desk/shared';
+import type { CardAction, Kind, RoomShowQuery } from '@one-line-desk/shared';
 import type { ComponentType } from 'react';
 import type { Me } from '../api';
 import type { CardViewProps } from '../components/CardView';
 
 // 모듈 화면 부품 약속. 홈·기능 페이지·마이 페이지는 이 부품을 끼워 그려요.
-
-/** "틀렸어요" 시트(R8). 담당 모듈이 만들어요. */
-export interface WrongSheetProps {
-  card: Card;
-  /** [종류가 달라요]를 고르면 같은 문장을 그 기능 페이지로 옮겨요. 문장은 페이지 메모리에 있어요. */
-  onReask: (kind: Kind) => void;
-  /** [다른 담당이에요]에서 고른 행 카드로 페이지의 카드를 바꿔요. */
-  onReplace?: (card: Card) => void;
-  onClose: () => void;
-}
 
 export interface ScreenProps {
   me: Me;
@@ -22,7 +12,6 @@ export interface ScreenProps {
 export interface WebModules {
   /** card.variant → 따로 그리는 카드(예: 'pantry-preview') */
   cardRenderers: Record<string, ComponentType<CardViewProps>>;
-  WrongSheet: ComponentType<WrongSheetProps>;
   /** S3 같이 채워요 판 */
   BoardScreen: ComponentType<
     ScreenProps & {

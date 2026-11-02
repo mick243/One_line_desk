@@ -113,7 +113,7 @@ export function InquirySheet({
       text: '보내기',
       method: 'POST',
       path: '/api/navi/inquiries',
-      body: { rowId: target.rowId, question: q.text, reason: r.text, requestId },
+      body: { rowId: target.rowId, question: q.text, reason: r.text, requestId, ...(action.routed ? { suggestedRowId: action.rowId } : {}) },
       confirm: {
         title: `${target.team}에 보낼까요?`,
         lines: [
@@ -122,7 +122,9 @@ export function InquirySheet({
           '내 이름과 부서가 같이 가요. 답을 받으려면 필요해요.',
         ],
         confirmLabel: '보내기',
-        note: `보낸 글은 ${target.team}이 읽고, ${INQUIRY_KEEP_DAYS}일 동안 보관돼요`,
+        note: `보낸 글은 ${target.team}이 읽고, ${INQUIRY_KEEP_DAYS}일 동안 보관돼요${
+          action.routed && !picked ? '. 받는 곳을 바꾼 사실만 분장표 주인에게 남아요(글·이름은 안 남아요)' : ''
+        }`,
       },
     });
   }
