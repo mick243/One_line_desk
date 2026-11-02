@@ -100,3 +100,18 @@ QA로 처음부터 다시 써 본 결과(Claude Code 질문 7개, 링크·동의
 - Claude Code MCP 문서(OAuth 콜백 `http://localhost:PORT/callback`, `--client-id`·`--client-secret`·`--callback-port`, DCR·CIMD, `headersHelper`, 401·403이면 인증 필요로 표시): https://code.claude.com/docs/en/mcp
 - Codex MCP 문서(Streamable HTTP, `codex mcp login`, `--oauth-client-id`, CIMD → DCR, `http://127.0.0.1/callback` 규칙, `oauth.callback_port`, `bearer_token_env_var`): https://learn.chatgpt.com/docs/extend/mcp?surface=cli (developers.openai.com/codex/mcp에서 넘어감)
 - 시험 기록(스크래치): `mcpux/` 폴더의 `s*.jsonl`·`noauth-debug.log`, 스크립트 `run.mjs`·`mint-token.mjs`
+
+## 11/2 고침 (연결, ADR-15 개정)
+
+사용자가 "연결부터 먼저", 방식은 "미리 등록한 공개 클라이언트"로 정했어요(`docs/MCP통합회의_2026-11-02.md`).
+
+| # | 무엇 | 고친 내용 | 상태 |
+|---|---|---|---|
+| U1 | 기본 방식으로 연결 안 됨 | CLI용 공개 클라이언트(비밀 없음, PKCE)를 받아요. 메타데이터에 `none`을 알려요. 직원은 S6에서 `--client-id`가 든 명령 한 줄을 복사해요. 동적 등록·CIMD는 여전히 없어서 `--client-id` 없이 붙이면 지금처럼 실패해요 | 고침(명령 한 줄 필요) |
+| U2 | 리디렉트 포트가 무작위 | 포트 없이 등록한 루프백 주소는 포트와 상관없이 받아요(RFC 8252 §7.3). `--callback-port`가 필요 없어요 | 고침 |
+| U3 | 비밀을 나눠 줘야 함 | 공개 클라이언트라 비밀이 없어요. 운영자 등록 화면은 아직 없어요(관리 평면 묶음) | 비밀은 고침, 등록 화면 남음 |
+| U6 | 두 번째 기기가 첫 연결을 끊음 | 기기별 승인(한 사람 × 한 앱 5대). S6에 기기 수, [끊기]는 모든 기기 | 고침 |
+
+확인: Claude Code가 쓰는 MCP SDK(1.32.2) OAuth 흐름으로 로컬 서버에 비밀 없이 붙었어요. `localhost:<무작위 포트>`(Claude Code 방식)와 `127.0.0.1:<무작위 포트>`(Codex 방식) 모두 동의 시트 → 토큰 → `tools/list`·`rooms_find_free`까지 됐고, 두 번째 기기를 붙인 뒤에도 첫 기기가 계속 불렀어요. 실제 `claude` CLI의 대화형 `/mcp` 인증과 Codex 실기는 아직 못 했어요(`claude mcp add --help`에 `--client-id`가 있는 것만 확인).
+
+남은 것: U7(긴 링크, B11 봉인과 같이), U10, 운영자 클라이언트 등록·승인 화면, ChatGPT(웹 커넥터, 리디렉트 주소·정적 클라이언트 지원 확인 필요).

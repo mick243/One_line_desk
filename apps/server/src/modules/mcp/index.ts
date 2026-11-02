@@ -21,6 +21,15 @@ export const DEMO_CLIENT = {
   redirectUris: ['https://claude.ai/api/mcp/auth_callback'],
 } as const;
 
+/**
+ * 시연용 공개 클라이언트(11/2, ADR-15 개정): Claude Code·Codex가 비밀 없이 붙어요. 직원은 S6에서 명령 한 줄을 복사해요.
+ * 리디렉트는 CLI가 쓰는 루프백 주소이고 포트는 상관없어요. 시연용이라 데이터가 모두 모의일 때만 허용 목록 안이에요.
+ */
+export const DEMO_CLI_CLIENTS = [
+  { clientId: 'desk-demo-claude-code', appName: 'Claude Code', redirectUris: ['http://localhost/callback', 'http://127.0.0.1/callback'] },
+  { clientId: 'desk-demo-codex', appName: 'Codex', redirectUris: ['http://127.0.0.1/callback', 'http://localhost/callback'] },
+] as const;
+
 export function createMcpModule(ctx: AppContext): DeskModule {
   const mcp = new McpAuth(ctx);
   // 모든 기기 로그아웃·퇴사 확인(core/guard.ts endEverything)이 그 사람의 MCP 승인을 모두 지워요.
@@ -39,11 +48,23 @@ export function createMcpModule(ctx: AppContext): DeskModule {
       await repo.insertClient(ctx.db, {
         clientId: DEMO_CLIENT.clientId,
         secretHash: hashClientSecret(DEMO_CLIENT.clientSecret),
+        publicClient: false,
         appName: DEMO_CLIENT.appName,
         redirectUris: [...DEMO_CLIENT.redirectUris],
         securityApproved: false,
         demoOnly: true,
       });
+      for (const c of DEMO_CLI_CLIENTS) {
+        await repo.insertClient(ctx.db, {
+          clientId: c.clientId,
+          secretHash: null,
+          publicClient: true,
+          appName: c.appName,
+          redirectUris: [...c.redirectUris],
+          securityApproved: false,
+          demoOnly: true,
+        });
+      }
     },
   };
 }

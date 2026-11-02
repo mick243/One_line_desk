@@ -4,7 +4,7 @@ import type { AppContext } from '../../context';
 import { DeskError } from '../../core/errors';
 import type { ConsentRequest, McpAuth } from './auth-service';
 import { withParams } from './oauth-routes';
-import { scopesOf } from './policy';
+import { redirectMatches, scopesOf } from './policy';
 import * as repo from './repo';
 
 // 앱 화면이 부르는 MCP 경로(M4): 동의 시트, S6 "연결된 AI 앱", [끊기].
@@ -21,7 +21,7 @@ export function registerMcpApiRoutes(app: FastifyInstance, ctx: AppContext, mcp:
 
   const allowedClient = async (request: ConsentRequest) => {
     const client = await repo.findClient(ctx.db, request.cid);
-    return client && mcp.isClientAllowed(client) && client.redirectUris.includes(request.ru) ? client : null;
+    return client && mcp.isClientAllowed(client) && redirectMatches(client, request.ru) ? client : null;
   };
 
   app.get<{ Querystring: { req: string } }>(
@@ -76,18 +76,21 @@ export function registerMcpApiRoutes(app: FastifyInstance, ctx: AppContext, mcp:
     },
   );
 
-  // S6 "연결된 AI 앱": 앱 이름·연결한 날·범위. "마지막 사용"은 없어요(M4).
+  // S6 "연결된 AI 앱": 앱 이름·연결한 날·범위·기기 수. "마지막 사용"은 없어요(M4).
+  // "연결하는 법": 회사가 허락한 CLI 앱과 MCP 주소(11/2, U1~U3).
   app.get('/api/mcp/connections', { preHandler: ctx.guards.user }, async (req): Promise<ConnectionsResponse> => {
     const tools = scopesOf(await mcp.tools());
-    const grants = await repo.listGrantsWithApp(ctx.db, req.deskUser!.pseudonymId);
+    const cliApps = tools.length > 0 ? (await repo.listPublicClients(ctx.db)).filter((c) => mcp.isClientAllowed(c)) : [];
     return {
       available: tools.length > 0,
       tools,
-      apps: grants.map((g) => ({ clientId: g.clientId, appName: g.appName, connectedOn: g.connectedOn, scopes: g.scopes })),
+      apps: await repo.listAppsFor(ctx.db, req.deskUser!.pseudonymId),
+      mcpUrl: mcp.urls.resource,
+      cliApps: cliApps.map((c) => ({ clientId: c.clientId, appName: c.appName })),
     };
   });
 
-  // [끊기]: 확인 시트를 거친 고정 버튼 쓰기예요. 그 앱의 승인(갱신 토큰)을 바로 지워요(ADR-03·15).
+  // [끊기]: 확인 시트를 거친 고정 버튼 쓰기예요. 그 앱의 모든 기기 승인(갱신 토큰)을 바로 지워요(ADR-03·15).
   app.delete<{ Params: { clientId: string } }>(
     '/api/mcp/connections/:clientId',
     {

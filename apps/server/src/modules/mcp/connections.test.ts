@@ -29,11 +29,10 @@ describe('연결된 AI 앱', () => {
     const { user, tokens } = await connect(t, MOCK.staff);
     await callTool(t, tokens.access_token, 'rooms_find_free', ROOMS_ARGS);
     const res = await user.call('GET', '/api/mcp/connections');
-    expect(res.body).toEqual({
-      available: true,
-      tools: ['rooms.read', 'notices.read'],
-      apps: [{ clientId: DEMO_CLIENT.clientId, appName: 'Claude', connectedOn: '2026-10-26', scopes: ['rooms.read', 'notices.read'] }],
-    });
+    expect(res.body.apps).toEqual([
+      { clientId: DEMO_CLIENT.clientId, appName: 'Claude', connectedOn: '2026-10-26', scopes: ['rooms.read', 'notices.read'], devices: 1 },
+    ]);
+    expect(res.body).toMatchObject({ available: true, tools: ['rooms.read', 'notices.read'] });
     expect(JSON.stringify(res.body)).not.toMatch(/last|used/i);
   });
 

@@ -190,11 +190,13 @@ export class McpAuth {
 
     const grantId = randomUUID();
     const refreshToken = this.newRefreshToken(pending.idpSubject, client.clientId);
-    await repo.upsertGrant(this.ctx.db, {
+    // 기기마다 승인이 따로예요(U6). 같은 앱을 다른 기기에서 다시 연결해도 앞 기기는 끊기지 않아요.
+    await repo.insertGrant(this.ctx.db, {
       pseudonymId: pending.pseudonymId,
       clientId: client.clientId,
       scopes: pending.scopes,
       connectedOn: kstDate(this.ctx.now()),
+      connectedAt: new Date(this.ctx.now()).toISOString(),
       refreshTokenHash: this.tokens.hash(refreshToken),
       grantId,
     });
@@ -231,19 +233,19 @@ export class McpAuth {
     if (!(await this.confirmEmployment(grant.pseudonymId, payload.data.sub))) return deny('account is not active');
 
     const refreshToken = this.newRefreshToken(payload.data.sub, client.clientId);
-    if (!(await repo.rotateRefreshToken(this.ctx.db, grant.pseudonymId, client.clientId, oldHash, this.tokens.hash(refreshToken)))) {
+    if (!(await repo.rotateRefreshToken(this.ctx.db, grant.grantId, oldHash, this.tokens.hash(refreshToken)))) {
       return deny('refresh token is revoked');
     }
     await this.ctx.audit.record({ pseudonymId: grant.pseudonymId, channel: 'mcp', action: 'token', clientId: client.clientId, result: 'refreshed' });
     return { ok: true, body: this.tokenResponse({ pseudonymId: grant.pseudonymId, clientId: client.clientId, scopes, grantId: grant.grantId }, refreshToken) };
   }
 
-  /** RFC 7009. 갱신 토큰이든 접근 토큰이든 그 승인을 지워요. 모르는 토큰도 성공으로 답해요. */
+  /** RFC 7009. 갱신 토큰이든 접근 토큰이든 그 기기의 승인만 지워요. 모르는 토큰도 성공으로 답해요. */
   async revoke(client: repo.ClientRecord, token: string): Promise<void> {
     if (token.startsWith(TOKEN_PREFIX.refresh)) {
       const grant = await repo.findGrantByRefreshHash(this.ctx.db, this.tokens.hash(token));
       if (grant && grant.clientId === client.clientId) {
-        await repo.deleteGrant(this.ctx.db, grant.pseudonymId, client.clientId);
+        await repo.deleteGrantById(this.ctx.db, client.clientId, grant.grantId);
         await this.ctx.audit.record({ pseudonymId: grant.pseudonymId, channel: 'mcp', action: 'revoke', clientId: client.clientId, result: 'done' });
       }
       return;

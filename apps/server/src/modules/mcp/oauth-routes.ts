@@ -2,11 +2,13 @@ import { MCP_SCOPES, type McpScope } from '@one-line-desk/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AppContext } from '../../context';
 import type { McpAuth } from './auth-service';
+import { redirectMatches } from './policy';
 import * as repo from './repo';
 import { CODE_CHALLENGE_RE, verifyClientSecret } from './tokens';
 
 // 인가 서버 경로(ADR-15): 메타데이터 둘, authorize, token, revoke.
 // 동적 등록 엔드포인트는 없어요(/oauth/register·/register는 404). CIMD도 광고하지 않아요.
+// 11/2 개정: 운영자가 미리 등록한 공개 클라이언트(CLI)는 비밀 없이(token_endpoint_auth_method none) PKCE로만 붙어요.
 // OAuth 경로는 RFC 6749대로 모르는 매개변수를 무시해요. 그래서 additionalProperties: false를 두지 않고 손으로 검사해요.
 
 type Form = Map<string, string[]>;
@@ -34,8 +36,8 @@ export function registerOauthRoutes(app: FastifyInstance, ctx: AppContext, mcp: 
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],
-    token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
-    revocation_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+    token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
+    revocation_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
     scopes_supported: [...MCP_SCOPES],
     authorization_response_iss_parameter_supported: true,
   }));
@@ -52,7 +54,7 @@ export function registerOauthRoutes(app: FastifyInstance, ctx: AppContext, mcp: 
     if (duplicated || !clientId || !redirectUri || clientId.length > 100 || redirectUri.length > 500) return stop('invalid-request');
     const client = await repo.findClient(ctx.db, clientId);
     if (!client) return stop('not-allowed');
-    if (!client.redirectUris.includes(redirectUri)) return stop('invalid-request');
+    if (!redirectMatches(client, redirectUri)) return stop('invalid-request');
     if (!mcp.isClientAllowed(client)) return stop('not-allowed');
 
     const state = one('state');
@@ -143,7 +145,10 @@ function formOf(req: FastifyRequest): Map<string, string> | null {
   return out;
 }
 
-/** client_secret_basic 또는 client_secret_post. 등록된 기밀 클라이언트만 받아요. */
+/**
+ * 기밀 클라이언트는 client_secret_basic 또는 client_secret_post, 공개 클라이언트는 비밀 없이 client_id만(none) 보내요.
+ * 기밀 클라이언트가 비밀을 빼거나, 공개 클라이언트가 비밀을 보내면 거절해요.
+ */
 async function authenticateClient(ctx: AppContext, req: FastifyRequest, form: Map<string, string>): Promise<repo.ClientRecord | null> {
   let id = form.get('client_id');
   let secret = form.get('client_secret');
@@ -158,9 +163,14 @@ async function authenticateClient(ctx: AppContext, req: FastifyRequest, form: Ma
     id = basicId;
     secret = formDecode(decoded.slice(colon + 1));
   }
-  if (!id || !secret || id.length > 100 || secret.length > 200) return null;
+  if (!id || id.length > 100) return null;
+  if (secret === undefined && !basic) {
+    const client = await repo.findClient(ctx.db, id);
+    return client?.publicClient ? client : null;
+  }
+  if (!secret || secret.length > 200) return null;
   const client = await repo.findClient(ctx.db, id);
-  return client && verifyClientSecret(secret, client.secretHash) ? client : null;
+  return client && !client.publicClient && client.secretHash && verifyClientSecret(secret, client.secretHash) ? client : null;
 }
 
 function formDecode(value: string): string {

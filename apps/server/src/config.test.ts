@@ -110,7 +110,7 @@ describe('mock 판정 한 곳(L-16)', () => {
         db,
         seed: true,
       });
-      expect((await db.query('select * from mcp_clients')).rows).toHaveLength(1);
+      expect((await db.query('select * from mcp_clients')).rows).toHaveLength(3); // Claude 커넥터 + CLI 둘(11/2)
       expect(await demo.ctx.services.mcp!.canEnable()).toBe(true);
       await demo.app.close();
       const again = await buildApp({ config: loadConfig(PROD), db, adapters: realLikeAdapters(), seed: false });
