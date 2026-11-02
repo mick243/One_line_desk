@@ -59,9 +59,20 @@ check('CLI용 비밀 없는 방식(none)을 알려요', (metaBody.token_endpoint
 const resource = await get('/.well-known/oauth-protected-resource/mcp');
 check('보호 자원 메타데이터의 MCP 주소가 이 주소예요', resource.ok && (await resource.json()).resource === `${base}/mcp`);
 const mcp = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', redirect: 'manual' });
-check('/mcp 는 토큰 없이 401 + resource_metadata 안내예요', mcp.status === 401 && (mcp.headers.get('www-authenticate') ?? '').includes(`${base}/.well-known/oauth-protected-resource/mcp`));
-const token = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'grant_type=x', redirect: 'manual' });
-check('/oauth/token 은 시연 서버가 답하고 저장하지 않아요(no-store)', Boolean(token.headers.get('x-desk-build')) && token.headers.get('cache-control') === 'no-store');
+check(
+  '/mcp 는 토큰 없이 401 + resource_metadata 안내예요',
+  mcp.status === 401 && (mcp.headers.get('www-authenticate') ?? '').includes(`${base}/.well-known/oauth-protected-resource/mcp`),
+);
+const token = await fetch(`${base}/oauth/token`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  body: 'grant_type=x',
+  redirect: 'manual',
+});
+check(
+  '/oauth/token 은 시연 서버가 답하고 저장하지 않아요(no-store)',
+  Boolean(token.headers.get('x-desk-build')) && token.headers.get('cache-control') === 'no-store',
+);
 
 const ops = await get('/api/ops/settings');
 check('운영 설정(/api/ops)은 시연 서버로 넘기지 않아요', ops.status === 404 && !ops.headers.get('x-desk-build'));
