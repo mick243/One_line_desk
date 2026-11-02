@@ -19,18 +19,21 @@ const vercel = JSON.parse(readFileSync(new URL('../../../../vercel.json', import
 };
 const headersFor = (source: string) => Object.fromEntries((vercel.headers.find((r) => r.source === source)?.headers ?? []).map((h) => [h.key, h.value]));
 const apiRewrite = vercel.rewrites.find((r) => r.source.startsWith('/api/'))!;
+// 화면 보안·캐시 머리를 붙이는 규칙. API·MCP·인가 경로는 빼요(서버 머리 그대로, 11/2).
+const HTML_RULE = '/((?!api/|mcp$|[.]well-known/|oauth/(?:authorize|token|revoke)$).*)';
+const htmlPattern = new RegExp(`^${HTML_RULE}$`);
 // path-to-regexp의 이름 붙은 묶음 "/api/:path(...)"를 정규식으로 바꿔 봐요.
 const apiPattern = new RegExp(`^${apiRewrite.source.replace(':path(', '(')}$`);
 
 describe('vercel.json(웹 화면만 Vercel에 올린 시연)', () => {
   it('화면 보안 머리가 서버가 주는 한 벌(HTML_SECURITY_HEADERS)과 같아요', () => {
-    const all = headersFor('/((?!api/).*)');
+    const all = headersFor(HTML_RULE);
     for (const [key, value] of Object.entries(HTML_SECURITY_HEADERS)) expect(all[key], key).toBe(value);
     expect(all['x-robots-tag']).toBe('noindex, nofollow');
   });
 
   it('캐시가 서버와 같아요: 화면 HTML은 저장하지 않고, /assets는 1년, 나머지는 하루예요', () => {
-    expect(headersFor('/((?!api/).*)')['cache-control']).toBe(PLAIN_CACHE);
+    expect(headersFor(HTML_RULE)['cache-control']).toBe(PLAIN_CACHE);
     expect(headersFor('/assets/(.*)')['cache-control']).toBe(ASSET_CACHE);
     for (const path of [...SCREEN_PATHS, '/index.html']) expect(headersFor(path)['cache-control'], path).toBe(HTML_CACHE);
   });
@@ -47,9 +50,28 @@ describe('vercel.json(웹 화면만 Vercel에 올린 시연)', () => {
     expect(apiPattern.test('/api/opsx')).toBe(true);
     expect(apiPattern.test('/api/ops')).toBe(false);
     expect(apiPattern.test('/api/ops/settings')).toBe(false);
-    // 헬스·MCP·인가 경로는 넘기지 않아요(시연은 MCP를 늘 꺼요).
-    expect(vercel.rewrites.some((r) => /^\/(health|mcp|\.well-known|oauth\/(authorize|token|revoke))/.test(r.source))).toBe(false);
+    // 헬스는 넘기지 않아요. 동의 시트(/oauth/consent)는 웹 화면이에요.
+    expect(vercel.rewrites.some((r) => /^\/health/.test(r.source))).toBe(false);
+    expect(vercel.rewrites.find((r) => r.source === '/oauth/consent')?.destination).toBe('/index.html');
     expect(vercel.outputDirectory).toBe('apps/web/dist');
+  });
+
+  it('MCP·인가 경로는 시연 서버로 넘기고, 화면 보안·캐시 머리를 붙이지 않아요(11/2, 발급자가 Vercel 주소라서)', () => {
+    // 10/30 회의는 "MCP 단계 전엔 닫아요"였어요. 11/2 MCP 연결 단계에서 시연도 열어요(MCP 스위치는 따로 운영자가 켜요).
+    const server = apiRewrite.destination!.replace(/\/api\/:path$/, '');
+    const proxied = Object.fromEntries(
+      vercel.rewrites.filter((r) => r.destination?.startsWith(server) && r !== apiRewrite).map((r) => [r.source, r.destination]),
+    );
+    expect(proxied['/mcp']).toBe(`${server}/mcp`);
+    expect(
+      Object.keys(proxied).some((s) => s.startsWith('/.well-known/') && s.includes('oauth-authorization-server') && s.includes('oauth-protected-resource')),
+    ).toBe(true);
+    expect(Object.keys(proxied).some((s) => s.startsWith('/oauth/') && /authorize\|token\|revoke/.test(s))).toBe(true);
+    expect(Object.keys(proxied).some((s) => s.includes('consent') || s.includes('register'))).toBe(false);
+    for (const path of ['/mcp', '/.well-known/oauth-authorization-server', '/oauth/authorize', '/oauth/token', '/oauth/revoke', '/api/me']) {
+      expect(htmlPattern.test(path), path).toBe(false);
+    }
+    for (const path of ['/', '/oauth/consent', '/r/abc', '/mcpx', '/oauth/tokens']) expect(htmlPattern.test(path), path).toBe(true);
   });
 
   it('GitHub에 올려도 저절로 배포하지 않아요. 같은 커밋으로 시연 서버(Fly)를 먼저, Vercel을 나중에 직접 올려요', () => {
