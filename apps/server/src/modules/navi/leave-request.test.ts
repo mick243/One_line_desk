@@ -193,6 +193,12 @@ describe('공가 요청(11/1)', () => {
     });
   });
 
+  it('분장표 말로 못 찾아도 공가 카드가 붙으면 "못 찾았어요" 카드를 같이 내지 않아요', async () => {
+    const { haneul } = await setup();
+    const cards = (await haneul.call('POST', '/api/ask', { text: '공가', kind: 'navi' })).body.cards as Card[];
+    expect(cards.map((c) => c.id)).toEqual(['navi-official-leave']);
+  });
+
   it('공가는 사유 코드가 꼭 있어야 하고, 연차 요청에는 사유 코드를 받지 않아요. 정해진 코드 밖은 400이에요', async () => {
     const { haneul } = await setup();
     const days = [{ date: '2026-11-03', kind: 'full' }];

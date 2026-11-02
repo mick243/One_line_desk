@@ -340,10 +340,15 @@ export function createNaviService(ctx: AppContext) {
         return leave ? [guided, leave] : [guided];
       };
       const candidates = rankRows(input.text, rows);
+      // 분장표 말로는 못 찾았어도 연차·공가 카드가 붙으면 받을 곳(휴가 신청 행)은 정해진 거예요.
+      // "못 찾았어요" 카드를 같이 내면 서로 어긋나서, 그때는 연차·공가 카드만 보여 줘요(11/2).
+      const leaveOnly = leave ? { cards: [leave], found: true } : null;
+      if (candidates.length === 0 && leaveOnly) return leaveOnly;
       if (candidates.length === 0) return { cards: withLeave(withRoute(askHereCard(), 'none', [])), found: false };
       const pick = await pickRow(ctx.gateway, input.text, candidates);
       const chosen = pick.index === null ? undefined : candidates[pick.index];
       if (!chosen) {
+        if (leaveOnly) return leaveOnly;
         const tied = topTied(candidates);
         const card = tied.length > 1 ? chooseRowCard(tied.map((c) => c.row)) : askHereCard();
         const near = (tied.length > 1 ? tied : candidates).map((c) => c.row);
