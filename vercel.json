@@ -7,12 +7,18 @@
   "git": { "deploymentEnabled": false },
   "rewrites": [
     { "source": "/api/:path((?!ops(?:/|$)).*)", "destination": "https://one-line-desk-demo.fly.dev/api/:path" },
+    { "source": "/mcp", "destination": "https://one-line-desk-demo.fly.dev/mcp" },
+    {
+      "source": "/.well-known/:path(oauth-protected-resource|oauth-protected-resource/mcp|oauth-authorization-server)",
+      "destination": "https://one-line-desk-demo.fly.dev/.well-known/:path"
+    },
+    { "source": "/oauth/:path(authorize|token|revoke)", "destination": "https://one-line-desk-demo.fly.dev/oauth/:path" },
     { "source": "/oauth/consent", "destination": "/index.html" },
     { "source": "/r/:token", "destination": "/index.html" }
   ],
   "headers": [
     {
-      "source": "/((?!api/).*)",
+      "source": "/((?!api/|mcp$|[.]well-known/|oauth/(?:authorize|token|revoke)$).*)",
       "headers": [
         {
           "key": "content-security-policy",
