@@ -222,15 +222,7 @@ export function App() {
                 )}
                 {current === 'navi' && (
                   <>
-                    <section className='card navi-more'>
-                      <h2>이런 것도 찾아 줘요</h2>
-                      <button type='button' className='link' onClick={() => go('it-help')}>
-                        IT 오류가 났나요? 오류 글을 붙여 넣어 보세요
-                      </button>
-                      <button type='button' className='link' onClick={() => go('onboarding')}>
-                        처음 왔어요 · 첫 2주에 할 일 보기
-                      </button>
-                    </section>
+                    {/* 11/2: "이런 것도 찾아 줘요" 묶음을 뺐어요. IT 오류·첫 2주 화면은 맞는 질문의 카드 버튼(withGuides)으로 들어가요. */}
                     <InquiryInbox />
                     <MyInquiries />
                   </>

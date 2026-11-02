@@ -92,13 +92,7 @@
   }
 }
 
-/* 담당 찾기 아래 화면(10/31 넓힐 후보 ①②). */
-.navi-more {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-}
+/* 문의하기 아래 화면(10/31 넓힐 후보 ①②). */
 .feature-page .back {
   align-self: flex-start;
   padding-left: 0;
