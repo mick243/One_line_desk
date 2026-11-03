@@ -25,6 +25,7 @@ const mine: HomeAskResponse = {
   ],
   links: [{ text: '남은 연차 보기', to: 'navi', handoff: '내 남은 연차 알려 줘', auto: true }],
   cards: [],
+  team: null,
 };
 
 afterEach(() => {
@@ -53,6 +54,45 @@ describe('홈 답 그리기(ADR-27)', () => {
     const html = renderToStaticMarkup(<HomeAnswer answer={move} onOpen={() => undefined} cards={<p>카드 자리</p>} />);
     expect(html).not.toContain('회의실에서 찾아볼게요');
     expect(html).toContain('카드 자리');
+  });
+
+  it('[팀 일정 시험] 같은 팀 일정은 이름·날과 휴가(하루/오전/오후)·회의(시간·회의실)·자리비움만 그리고, 버튼·휴가 종류·참석자는 없어요', () => {
+    const week: HomeAskResponse = {
+      ...mine,
+      intent: 'team-schedule',
+      kinds: [],
+      items: [],
+      links: [],
+      headline: '이번 주 개발팀 일정 3건이에요',
+      team: {
+        shown: true,
+        team: '개발팀',
+        person: null,
+        leaveConnected: true,
+        entries: [
+          { name: '가상 직원 서준', date: '2026-10-27', what: 'leave', part: 'full' },
+          { name: '가상 직원 하은', date: '2026-10-28', what: 'meeting', start: '10:00', end: '11:00', room: '가상 회의실 A' },
+          { name: '가상 직원 하은', date: '2026-10-28', what: 'away', start: '14:00', end: '18:00', allDay: false, away: 'outside' },
+        ],
+      },
+    };
+    const html = renderToStaticMarkup(<HomeAnswer answer={week} onOpen={() => undefined} />);
+    expect(html).toContain('이번 주 개발팀 일정 3건이에요');
+    expect(html).toContain('10월 27일(화) · 하루 부재');
+    expect(html).toContain('10월 28일(수) · 10:00–11:00 회의(가상 회의실 A)');
+    expect(html).toContain('10월 28일(수) · 14:00–18:00 외근');
+    expect(html).toContain('같은 팀에게만 보여요. 휴가 종류·사유, 회의 참석자는 보이지 않아요');
+    expect(html).not.toContain('<button');
+    expect(html).not.toMatch(/연차|병가|공가|참석자:/);
+
+    const refused: HomeAskResponse = {
+      ...week,
+      headline: '다른 팀의 일정은 볼 수 없어요. 그룹웨어 팀 일정에서 확인해 주세요',
+      team: { shown: false, team: '개발팀', person: null, leaveConnected: true, entries: [] },
+    };
+    const refusedHtml = renderToStaticMarkup(<HomeAnswer answer={refused} onOpen={() => undefined} />);
+    expect(refusedHtml).toContain('다른 팀의 일정은 볼 수 없어요');
+    expect(refusedHtml).not.toContain('같은 팀에게만 보여요');
   });
 
   it('대화는 최근 몇 개만, 새 것이 위예요(이 창 메모리)', () => {

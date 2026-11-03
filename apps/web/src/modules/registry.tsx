@@ -1,6 +1,6 @@
 import { lazyPart } from '../components/LazyPart';
 import { ConnectedApps } from './mcp';
-import { InquiryInbox, InquirySheet, MyInquiries } from './navi';
+import { InquiryInbox, InquirySheet, MyAway, MyInquiries } from './navi';
 import { BoardScreen, MyRequests, pantryCardRenderers } from './pantry';
 import { DemoInbox, InvitedMeetings, InviteSheet, MyLoans, MyReservations, RoomChat, RoomDirectory, roomsCardRenderers } from './rooms';
 import type { WebModules } from './types';
@@ -23,6 +23,7 @@ export const webModules: WebModules = {
   LeaveRequestSheet,
   InquiryInbox,
   MyInquiries,
+  MyAway,
   BoardScreen,
   OpsScreen,
   ChartScreen,
