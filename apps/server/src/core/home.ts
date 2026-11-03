@@ -181,7 +181,7 @@ const INVITE_ANSWER = { pending: '아직 답하지 않았어요', accepted: '참
 const OPEN_ROOMS: HomeOpen = { text: '회의실에서 보기', to: 'rooms' };
 const OPEN_NAVI: HomeOpen = { text: '문의하기에서 보기', to: 'navi' };
 const OPEN_BOARD: HomeOpen = { text: '같이 채워요에서 보기', to: 'board' };
-/** 남은 연차는 본인 화면(문의하기 → 담당만 찾기)의 기존 연차 카드가 열 때 계산해요. 홈은 숫자를 갖지 않아요(ADR-18). */
+/** 남은 연차는 본인 화면(문의하기 페이지)의 기존 연차 카드가 열 때 계산해요. 홈은 숫자를 갖지 않아요(ADR-18). */
 export const LEAVE_BALANCE_LINK: HomeOpen = { text: '남은 연차 보기', to: 'navi', handoff: '내 남은 연차 알려 줘', auto: true };
 
 const MAX_ITEMS = 20;
