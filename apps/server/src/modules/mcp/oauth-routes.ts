@@ -2,6 +2,7 @@ import { MCP_SCOPES, type McpScope } from '@one-line-desk/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AppContext } from '../../context';
 import type { McpAuth } from './auth-service';
+import * as counts from './counts';
 import { redirectMatches } from './policy';
 import * as repo from './repo';
 import { CODE_CHALLENGE_RE, verifyClientSecret } from './tokens';
@@ -54,8 +55,11 @@ export function registerOauthRoutes(app: FastifyInstance, ctx: AppContext, mcp: 
     if (duplicated || !clientId || !redirectUri || clientId.length > 100 || redirectUri.length > 500) return stop('invalid-request');
     const client = await repo.findClient(ctx.db, clientId);
     // 막힌 앱 셈(11/3 보고): 로그인 전이라 사람은 'anonymous'예요. 등록되지 않은 ID는 바깥에서 온 글자라 감사 로그에 넣지 않아요.
-    const blocked = (result: 'unknown-client' | 'not-allowed') =>
-      ctx.audit.record({ pseudonymId: 'anonymous', channel: 'mcp', action: 'authorize', ...(client ? { clientId: client.clientId } : {}), result });
+    // 월간 보고용 날마다 셈(authorize.blocked)도 같은 자리에서 더해요. 등록되지 않은 앱은 앱 이름을 몰라 '-'예요.
+    const blocked = async (result: 'unknown-client' | 'not-allowed') => {
+      await ctx.audit.record({ pseudonymId: 'anonymous', channel: 'mcp', action: 'authorize', ...(client ? { clientId: client.clientId } : {}), result });
+      await counts.count(ctx.db, ctx.now(), 'authorize.blocked', client?.clientId ?? null);
+    };
     if (!client) {
       await blocked('unknown-client');
       return stop('not-allowed');

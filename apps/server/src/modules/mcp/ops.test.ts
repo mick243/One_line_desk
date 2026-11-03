@@ -47,7 +47,7 @@ async function connectWith(t: TestApp, client: { id: string; secret: string; red
 }
 
 describe('운영자만 써요', () => {
-  it('[MCP 1단계] 운영자가 아니면 목록·등록·승인·끊기·회수·보고가 모두 403이에요', async () => {
+  it('[MCP 1단계] 운영자가 아니면 목록·등록·승인·끊기·회수·사람별 끊기·보고가 모두 403이에요', async () => {
     const t = await setup();
     const staff = await t.loginAs(MOCK.staff);
     const id = DEMO_CLIENT.clientId;
@@ -58,6 +58,8 @@ describe('운영자만 써요', () => {
       ['POST', `/api/ops/mcp/clients/${id}/disconnect`],
       ['DELETE', `/api/ops/mcp/clients/${id}`],
       ['GET', '/api/ops/mcp/report'],
+      ['GET', '/api/ops/mcp/report?month=2026-10'],
+      ['POST', '/api/ops/mcp/people/disconnect', { ref: 'pr_x' }],
     ] as const) {
       expect((await staff.call(method, url, body)).status, `${method} ${url}`).toBe(403);
     }
@@ -239,7 +241,7 @@ describe('끊기·회수', () => {
 });
 
 describe('보고', () => {
-  it('[MCP 1단계] 연결·호출(결과별)·막힌 앱·퇴사 끊김을 셈만으로 돌려줘요(최근 7일·이번 달)', async () => {
+  it('[MCP 1단계·530] 달 보고는 날마다 셈 표에서 종류별·앱별 합계를, 접속기록에서 호출한 사람 수를 셈만으로 돌려줘요', async () => {
     const t = await setup();
     const { tokens } = await connect(t, MOCK.staff);
     await callTool(t, tokens.access_token, 'rooms_find_free', ROOMS_ARGS);
@@ -251,19 +253,56 @@ describe('보고', () => {
     await authorize(t, { client_id: created.client.clientId, redirect_uri: CHATGPT_REDIRECT });
 
     const report = (await op.call('GET', '/api/ops/mcp/report')).body;
-    expect(report.month).toMatchObject({ from: '2026-09-30T15:00:00.000Z', connects: 1, calls: 2, callers: 1, disconnects: 0 });
-    expect(report.recent7Days).toMatchObject({
-      from: '2026-10-19T15:00:00.000Z',
-      toolCalls: { found: 1, none: 0, refused: 1, error: 0 },
-      consents: { allowed: 1, denied: 0 },
-      blockedApps: 2,
-      leaverEnded: 0,
+    expect(report).toMatchObject({ month: '2026-10', from: '2026-09-30T15:00:00.000Z', to: '2026-10-31T15:00:00.000Z' });
+    expect(report.totals).toEqual({
+      'call.found': 1,
+      'call.none': 0,
+      'call.refused': 1,
+      'call.error': 0,
+      connect: 1,
+      'connect.denied': 0,
+      disconnect: 0,
+      'disconnect.ops': 0,
+      'token.refused': 0,
+      'authorize.blocked': 2,
+      'employment.ended': 0,
     });
+    expect(report.byApp).toEqual([
+      { app: '-', counts: { 'authorize.blocked': 1 } },
+      { app: 'ChatGPT', counts: { 'authorize.blocked': 1 } },
+      { app: 'Claude', counts: { 'call.found': 1, 'call.refused': 1, connect: 1 } },
+    ]);
+    expect(report.accessLog).toEqual({ connects: 1, calls: 2, callers: 1, disconnects: 0 });
     expect(report.now).toEqual({ clients: 4, approvedClients: 0, people: 1, devices: 1 });
     const text = JSON.stringify(report);
     expect(text).not.toMatch(/p_[0-9a-f]{6}/);
     expect(text).not.toContain('not-registered-app');
+    expect(text).not.toContain(DEMO_CLIENT.clientId);
+    expect(text).not.toContain(created.client.clientId);
     // 등록되지 않은 클라이언트 ID(바깥 글자)는 감사 로그에도 없어요.
     expect(JSON.stringify((await t.db.query('select * from audit_log')).rows)).not.toContain('not-registered-app');
+
+    // 다른 달은 그 달 셈만이에요. 7일이 지나 감사 로그가 지워져도(감사 로그 시각은 DB 시계라 여기서는 직접 지워요) 달 셈은 남아요.
+    t.advance(10 * 24 * 60 * 60_000);
+    await t.db.query('delete from audit_log');
+    expect(await t.runRetention()).toEqual([]);
+    const later = await t.loginAs(MOCK.operator);
+    const october = (await later.call('GET', '/api/ops/mcp/report?month=2026-10')).body;
+    expect(october.totals).toEqual(report.totals);
+    expect(october.byApp).toEqual(report.byApp);
+    const november = (await later.call('GET', '/api/ops/mcp/report?month=2026-11')).body;
+    expect(november).toMatchObject({ month: '2026-11', accessLog: { connects: 0, calls: 0, callers: 0, disconnects: 0 }, byApp: [] });
+    expect(Object.values(november.totals).every((n) => n === 0)).toBe(true);
+  });
+
+  it('[MCP 1단계·530] 달은 YYYY-MM 모양만 받아요', async () => {
+    const t = await setup();
+    const op = await t.loginAs(MOCK.operator);
+    for (const month of ['2026-13', '2026-1', '202610', 'x']) {
+      expect((await op.call('GET', `/api/ops/mcp/report?month=${month}`)).status, month).toBe(400);
+    }
+    const deps = { db: t.db, now: t.now };
+    await expect(admin.report(deps, '2026-00')).rejects.toMatchObject({ status: 400 });
+    expect((await admin.report(deps, '2025-12')).month).toBe('2025-12');
   });
 });

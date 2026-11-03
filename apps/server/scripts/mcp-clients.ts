@@ -17,14 +17,16 @@ const HELP = `한 줄 데스크 MCP 허용 앱 관리
   npm run mcp:clients -- unapprove <클라이언트 ID>     보안팀 승인 끄기(연결은 남지만 다음 요청부터 막혀요)
   npm run mcp:clients -- disconnect <클라이언트 ID>    그 앱의 모든 연결 끊기(등록은 남아요)
   npm run mcp:clients -- revoke <클라이언트 ID>        회수: 등록을 지우고 모든 연결을 끊어요
-  npm run mcp:clients -- report                        최근 7일·이번 달 셈
+  npm run mcp:clients -- report [--month YYYY-MM]      그 달(빼면 이번 달) 종류별·앱별 셈과 호출한 사람 수
 
 - 기밀(--confidential): 서버가 비밀을 만들어 이 화면에 한 번만 보여 줘요. DB에는 해시만 남아서 다시 볼 수 없어요.
   잃어버리면 revoke 뒤 다시 add 해요.
 - 공개(--public): 비밀 없는 CLI 앱(Claude Code·Codex)용이에요. 리디렉트는 루프백 주소만 받아요(예: http://localhost/callback).
 - 새 앱은 보안팀 승인이 꺼진 채로 등록돼요. 보안팀이 보관 조건·네트워크 출발지를 확인한 뒤 approve 해요.
 - --demo는 시연용이에요. 데이터가 모두 모의일 때만 허용 목록 안이에요.
-- 사람 하나만 끊는 명령은 없어요(가명 ID를 알 수 없어요). 퇴사 처리(IdP 비활성)나 본인의 마이 페이지 [끊기]로 끊겨요.
+- 사람 하나만 끊는 명령은 없어요. 운영자 API(POST /api/ops/mcp/people/disconnect)에서 직원 검색으로 골라 끊어요.
+  명령 줄에 사람 식별값(메일·가명 ID)을 넣으면 셸 기록에 남아서 두지 않아요.
+- report의 종류별·앱별 셈은 날마다 셈 표(13개월 보관)에서, 호출한 사람 수는 접속기록(1년)에서 세요. 사람·클라이언트 ID는 나오지 않아요.
 - 개발용 PGlite를 쓸 때는 개발 서버(npm run dev)를 끄고 돌려요. PGlite는 한 프로세스만 열 수 있어요.
 
 예: ChatGPT(기밀 클라이언트) 등록
@@ -102,9 +104,12 @@ try {
       out(`✓ 회수했어요. 연결 ${removed}개가 같이 끊겼어요`);
       break;
     }
-    case 'report':
-      out(JSON.stringify(await admin.report(deps), null, 2));
+    case 'report': {
+      const month = values('month')[0];
+      if (flag('month') && !month) fail('--month YYYY-MM을 넣어 주세요');
+      out(JSON.stringify(await admin.report(deps, month), null, 2));
       break;
+    }
     default:
       fail(`모르는 명령이에요: ${command}\n${HELP}`);
   }
