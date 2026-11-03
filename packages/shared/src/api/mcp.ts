@@ -54,3 +54,62 @@ export interface ConsentDecisionResponse {
   /** AI 앱으로 돌아갈 주소(인가 코드 또는 access_denied) */
   redirectTo: string;
 }
+
+// ── 운영자 관리(11/3, MCP 통합 회의 1단계). 운영자 웹 화면은 없고(R7) API와 명령 도구(npm run mcp:clients)만 있어요. ──
+
+/** GET /api/ops/mcp/clients 한 줄. 연결한 사람의 이름·가명 ID 목록은 없고 셈만 있어요. */
+export interface McpClientSummary {
+  clientId: string;
+  appName: string;
+  /** 기밀(비밀 있음) 또는 공개(비밀 없음, 루프백 리디렉트만) */
+  kind: 'confidential' | 'public';
+  /** 시연용: 데이터가 모두 모의일 때만 허용 목록 안이에요. */
+  demoOnly: boolean;
+  /** 보안팀 승인. 실제 자료는 승인 클라이언트에만 가요. */
+  securityApproved: boolean;
+  redirectUris: string[];
+  /** 지금 연결해 둔 사람 수 */
+  people: number;
+  /** 지금 연결해 둔 기기 수(승인 수) */
+  devices: number;
+  /** YYYY-MM-DD */
+  createdOn: string;
+}
+
+/** POST /api/ops/mcp/clients. 등록만 하고 보안팀 승인은 따로 켜요. */
+export interface McpClientCreateRequest {
+  appName: string;
+  kind: 'confidential' | 'public';
+  redirectUris: string[];
+  demoOnly?: boolean;
+}
+
+/** 기밀 클라이언트의 비밀은 이 응답에서 한 번만 보여요. 서버에는 해시만 남아요. */
+export interface McpClientCreateResponse {
+  client: McpClientSummary;
+  clientSecret?: string;
+}
+
+/**
+ * GET /api/ops/mcp/report. 셈만 있고 사람·검색어·도구 입력은 없어요.
+ * 감사 로그는 7일만 남아서(ADR-21) 결과별 셈은 "최근 7일"이에요. 접속기록(1년)으로 셀 수 있는 연결·호출·끊기만 "이번 달"이에요.
+ */
+export interface McpReport {
+  /** 셈한 시각(ISO) */
+  generatedAt: string;
+  /** 이번 달(한국 시간 1일 0시부터), 접속기록에서 */
+  month: { from: string; connects: number; calls: number; callers: number; disconnects: number };
+  /** 최근 7일, 감사 로그에서 */
+  recent7Days: {
+    from: string;
+    toolCalls: { found: number; none: number; refused: number; error: number };
+    consents: { allowed: number; denied: number };
+    tokenRefused: number;
+    /** 등록되지 않았거나 허락되지 않은 앱이 연결하려다 막힌 수 */
+    blockedApps: number;
+    /** 재직 재확인에서 퇴사로 끊긴 수(웹 세션과 MCP 승인을 함께 끊어요) */
+    leaverEnded: number;
+  };
+  /** 지금 */
+  now: { clients: number; approvedClients: number; people: number; devices: number };
+}
