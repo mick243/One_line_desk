@@ -313,7 +313,7 @@
 | S4 구역 넷 | 층·주기 선택, ① 합치기 제안함 ② 합친 기록 ③ 주문안 ④ 설정 | 완료 | W/modules/pantry/index.tsx:15-25, W/modules/pantry/MergePanel.tsx, W/modules/pantry/order/index.tsx | board.test.ts:386, :405, :428, :464 · order.test.ts | |
 | S4 층 하나·빈·로딩·경고·충돌 | 층 하나면 최소 몫 숨김, 빈 문구 둘, 줄 먼저·설명 나중, 경고 셋, 충돌 문구 | 완료 | W/modules/pantry/MergePanel.tsx:111, :196, W/modules/pantry/order/index.tsx:47-62, :122, :158, :186-190, P/api/pantry-order.ts:13-21 | order.test.ts:149, :192 · board.test.ts:428 | |
 | S4 폰 | 폰에서는 층별 합계와 [확정]만, 줄 고치기는 PC | 부분 | W/modules/pantry/order/index.tsx:21-31, :130-174 | — | 주문안 칸은 지켜요. 합치기 제안함·설정 칸은 폰에서도 다 보여요 |
-| S5 목록 | 내 부서 행(기록 쌓인 행 먼저), 이유 넷별 건수, 누가 눌렀는지 없음 | 완료 | W/modules/navi/ChartScreen.tsx:26-101, S/modules/navi/service.ts:249-275 | navi.test.ts:376 | |
+| S5 목록 | 내 부서 행(기록 쌓인 행 먼저), 이유 둘별 건수(11/3), 누가 눌렀는지 없음 | 완료 | W/modules/navi/ChartScreen.tsx:26-101, S/modules/navi/service.ts:249-275 | navi.test.ts:376 | |
 | S5 파일 다시 올리기 | 파일 고르기 → 바뀌는 행·칸 미리보기 → 확인 시트 [반영하기] → "반영했어요. 개정일이 올라갔어요." | 완료 | W/modules/navi/ChartScreen.tsx:104-259, S/modules/navi/service.ts:295-318 | navi.test.ts:447, :495 | |
 | S5 빈·오류·폰 | "새로 쌓인 기록이 없어요.", "분장표 양식으로 올려 주세요", "다른 부서 행은 바뀌지 않아요", 폰은 목록만 | 완료 | W/modules/navi/ChartScreen.tsx:20, :61, :177-178, S/modules/navi/service.ts:118 | navi.test.ts:414, :439 | |
 | S6 배치 | 내 예약 → 내 요청·표(상태) → 내 역할 → 연결된 AI 앱 → 무엇을 남기나요 → [모든 기기 로그아웃] → [로그아웃] | 완료 | W/screens/Mine.tsx:22-88 | — | |
