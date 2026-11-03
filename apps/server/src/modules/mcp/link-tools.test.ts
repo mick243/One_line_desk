@@ -310,7 +310,7 @@ describe('pantry_find_similar 탕비실 요청 찾기', () => {
     expect((await user.call('POST', '/api/mcp/link', { proposalToken: fresh })).body).toEqual({ kind: 'pantry-new' });
 
     // 5층 품목 카드 ID로 만든 링크는 3층 사람에게 열리지 않아요(내 층 판만).
-    const fifth = (await t.db.query<{ id: number }>("select id from pantry_cards where floor = '5층' order by id limit 1")).rows[0]!.id;
+    const fifth = Number((await t.db.query<{ id: number | string }>("select id from pantry_cards where floor = '5층' order by id limit 1")).rows[0]!.id); // PostgreSQL은 bigint를 글자로 돌려줘요
     const other = t.ctx.services.pantry!.mcp!.proposeBoardLink({ pseudonymId: peekOwner(t) }, fifth);
     expect((await user.call('POST', '/api/mcp/link', { proposalToken: other })).body).toEqual({ kind: 'gone', about: 'pantry' });
 
