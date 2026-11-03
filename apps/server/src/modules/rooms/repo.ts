@@ -19,7 +19,7 @@ export interface RoomRow {
 }
 
 /** 하루 일정 한 칸. 내 예약인지(참·거짓)만 알고, 남의 예약은 누가 잡았는지 모르는 채로 와요. */
-export interface DayBlockRow {
+interface DayBlockRow {
   start: number;
   end: number;
   mine: boolean;

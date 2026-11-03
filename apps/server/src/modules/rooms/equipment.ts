@@ -44,7 +44,7 @@ type Owner = Pick<DeskUser, 'pseudonymId'>;
 const LATE_START = 10 * MINUTE;
 
 /** 'rooms:rent' plan 매개변수. 하루 안의 한 구간만이고, 회의에 붙이면 그 예약 ID가 들어가요. 자유 문장 칸은 없어요. */
-export const RentParamsSchema = z
+const RentParamsSchema = z
   .strictObject({
     kind: z.enum(LOAN_KINDS),
     start: z.string().regex(KST_ISO),

@@ -16,7 +16,7 @@ export interface ExplainLine {
   rank: number;
 }
 
-export interface Explanation {
+interface Explanation {
   sentence: string;
   source: 'ai' | 'template';
 }
@@ -55,7 +55,7 @@ export function hasKoreanNumeral(sentence: string): boolean {
 }
 
 /** 그 줄 값에서 나온 숫자들. 층·품목 이름 속 숫자(예: "3층", "355")도 들어가요. */
-export function allowedNumbers(line: ExplainLine): Set<number> {
+function allowedNumbers(line: ExplainLine): Set<number> {
   const set = new Set<number>([line.votes, line.amount, line.rank]);
   for (const text of [line.floor, line.itemName]) for (const m of text.normalize('NFKC').matchAll(/\d+/g)) set.add(Number(m[0]));
   return set;

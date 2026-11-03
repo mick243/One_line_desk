@@ -39,7 +39,7 @@ export interface FloorBasis {
   requested: number;
 }
 
-export interface OrderCheckInput {
+interface OrderCheckInput {
   budget: number;
   floors: readonly FloorBasis[];
 }
@@ -63,16 +63,16 @@ export interface PlannedLine {
 }
 
 /** 검사기가 보는 줄 칸 */
-export type CheckedLine = Pick<PlannedLine, 'floor' | 'amount' | 'included'>;
+type CheckedLine = Pick<PlannedLine, 'floor' | 'amount' | 'included'>;
 
-export interface OrderCheck {
+interface OrderCheck {
   total: number;
   floors: OrderFloorSummary[];
   warnings: OrderWarning[];
   locked: boolean;
 }
 
-export interface BuiltOrderPlan extends OrderCheck {
+interface BuiltOrderPlan extends OrderCheck {
   budget: number;
   basis: FloorBasis[];
   lines: PlannedLine[];

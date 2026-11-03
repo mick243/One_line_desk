@@ -1,4 +1,5 @@
 import {
+  dayLabel,
   LEAVE_REQUEST_MAX_DAYS,
   LEAVE_TYPE_LABEL,
   LEAVE_TYPES,
@@ -145,8 +146,6 @@ export const EQUIPMENT_OUTPUT = z
   .strict();
 
 const CONFIRM_LINE = '확정은 앱에서 한 번 · 링크는 본인만 · 짧은 시간만 유효해요';
-const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
-const dayText = (d: string) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일(${WEEKDAYS[new Date(`${d}T00:00:00Z`).getUTCDay()]})`;
 
 export function shapeLeave(
   type: LeaveType,
@@ -161,7 +160,7 @@ export function shapeLeave(
     // 검사를 지난 날이라 반차는 오전·오후가 있어요. 없으면(있을 수 없지만) 하루로 내보내지 않게 걸러요.
     days: result.days.flatMap((d) => {
       const kind = leaveDayChoice(d);
-      return kind ? [{ date: d.date, kind, label: `${dayText(d.date)} ${leaveDayWord(d)}` }] : [];
+      return kind ? [{ date: d.date, kind, label: `${dayLabel(d.date)} ${leaveDayWord(d)}` }] : [];
     }),
     link: result.link,
     linkText: `한 줄 데스크에서 ${typeLabel} 신청 열기`,

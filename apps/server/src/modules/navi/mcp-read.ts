@@ -1,6 +1,7 @@
 import {
   addDays,
   checkInput,
+  dayLabel,
   INQUIRY_STATE_LABEL,
   kstDate,
   LEAVE_REQUEST_MAX_DAYS,
@@ -20,7 +21,7 @@ import { weekdayOf } from '../../core/slots';
 import { GENERAL_TASK } from './cards';
 import { GENERAL_DESK } from './fixtures';
 import type { ItHelpService } from './it-help';
-import { dayLabel, findLeaveRequestRow, leaveLinkAction } from './leave';
+import { findLeaveRequestRow, leaveLinkAction } from './leave';
 import * as repo from './repo';
 import { type NaviService, rankRows, topTied } from './service';
 

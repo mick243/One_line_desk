@@ -1,7 +1,7 @@
 import type { Queryable } from './db';
 
 // 감사 로그(ADR-10, R11, M5). 내용 칸은 없어요. 아래 칸 말고는 받지 않아요.
-export type AuditChannel = 'ask' | 'write' | 'mcp' | 'auth' | 'ops';
+type AuditChannel = 'ask' | 'write' | 'mcp' | 'auth' | 'ops';
 
 export interface AuditEntry {
   pseudonymId: string;

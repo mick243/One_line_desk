@@ -5,7 +5,7 @@ import { makeCard } from '../../core/cards';
 // 카드 ID에 사람을 가리키는 값은 넣지 않아요.
 // "AI 정리"(aiSummarized)는 실제 모델이 뽑거나 판단했을 때만 참이에요. 이름 규칙·가짜 공급자·게이트웨이 거절이면 거짓이에요.
 
-export const VARIANT = {
+const VARIANT = {
   preview: 'pantry-preview',
   same: 'pantry-same',
   blocked: 'pantry-blocked',
@@ -34,7 +34,7 @@ export function previewCard(input: { name: string; proposalToken: string; limitF
   });
 }
 
-export interface SameTarget {
+interface SameTarget {
   bundleId: number;
   name: string;
   votes: number;
@@ -135,7 +135,7 @@ export function moveToNaviCard(naviOff: boolean, aiSummarized: boolean): Card {
     label: '안내',
     headline: naviOff ? PANTRY_TEXT.standaloneOnly : PANTRY_TEXT.moveToAsk,
     evidence: { text: '판에는 탕비실 품목만 올라가요', aiSummarized },
-    ...(naviOff ? {} : { primary: { type: 'navigate' as const, text: '담당 찾기로 옮기기', to: 'navi' as const } }),
+    ...(naviOff ? {} : { primary: { type: 'navigate' as const, text: '문의하기로 옮기기', to: 'navi' as const } }),
     tail: '저장되는 것이 없어요',
   });
 }

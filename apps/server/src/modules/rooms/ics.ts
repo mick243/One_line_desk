@@ -33,7 +33,7 @@ function fold(line: string): string {
   return out.join('\r\n ');
 }
 
-export interface IcsMeeting {
+interface IcsMeeting {
   uid: string;
   roomName: string;
   floor: string;

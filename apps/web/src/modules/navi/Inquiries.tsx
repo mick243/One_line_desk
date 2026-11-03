@@ -1,13 +1,14 @@
 import {
   checkInput,
+  dayLabel,
   INQUIRY_REPLY_MAX,
   INQUIRY_STATE_LABEL,
   type InquiryItem,
   type InquiryListResponse,
   LEAVE_REJECT_REASON_MAX,
+  LEAVE_TYPE_LABEL,
   type LeaveDay,
   leaveDayWord,
-  LEAVE_TYPE_LABEL,
   type LeaveRequestBalance,
   maskLine,
   OFFICIAL_LEAVE_REASON_LABEL,
@@ -28,8 +29,6 @@ import { newRequestId } from '../../net';
 function when(iso: string): string {
   return `${Number(iso.slice(5, 7))}월 ${Number(iso.slice(8, 10))}일 ${iso.slice(11, 16)}`;
 }
-const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
-const dayLabel = (date: string) => `${Number(date.slice(5, 7))}월 ${Number(date.slice(8, 10))}일(${WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]})`;
 const fmt = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}일`;
 /** "11월 5일(목) 오전 반차". 11/3 전에 보낸 구분 없는 반차는 "반차(구분 없음)"이에요. */
 const daysText = (days: readonly LeaveDay[]) => days.map((d) => `${dayLabel(d.date)} ${leaveDayWord(d)}`).join(' · ');

@@ -35,7 +35,7 @@ const CLOSED_MESSAGE = '이미 확정했거나 새 주문안으로 바뀌었어�
 
 type ConfirmSummary = Omit<OrderConfirmResponse, 'plan'>;
 
-export function lineIdOf(lineNo: number): string {
+function lineIdOf(lineNo: number): string {
   return `L${lineNo}`;
 }
 
@@ -49,7 +49,7 @@ function toExplainLine(l: LineRow): ExplainLine {
   return { lineId: lineIdOf(l.lineNo), itemName: l.itemName, floor: l.floor, votes: l.votes, amount: l.amount, reason: l.reason, rank: l.rank };
 }
 
-export function toView(plan: PlanRow, lines: readonly LineRow[]): OrderPlanView {
+function toView(plan: PlanRow, lines: readonly LineRow[]): OrderPlanView {
   const check = checkOrderPlan({ lines }, { budget: plan.budget, floors: plan.floorBasis });
   const viewLines: OrderLine[] = lines.map((l) => ({
     lineId: lineIdOf(l.lineNo),

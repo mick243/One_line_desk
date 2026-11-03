@@ -17,11 +17,11 @@ import { pkceMatches, randomToken, TOKEN_PREFIX, TokenKit } from './tokens';
 //   퇴사 뒤 늦어도 재확인 간격 안에 호출·갱신이 모두 막혀요(ADR-13).
 // - 갱신 토큰 안에는 IdP 식별자를 봉인해 둬요. DB에는 가명 ID와 해시만 남아요.
 
-export const AUTH_CODE_TTL_MS = 60_000;
-export const CONSENT_REQUEST_TTL_MS = 10 * 60_000;
+const AUTH_CODE_TTL_MS = 60_000;
+const CONSENT_REQUEST_TTL_MS = 10 * 60_000;
 const ACCESS_TOKEN_MAX_SECONDS = 300;
 
-export function mcpUrls(publicBaseUrl: string) {
+function mcpUrls(publicBaseUrl: string) {
   const base = publicBaseUrl.replace(/\/+$/, '');
   return {
     issuer: base,
@@ -33,7 +33,7 @@ export function mcpUrls(publicBaseUrl: string) {
     consent: `${base}/oauth/consent`,
   };
 }
-export type McpUrls = ReturnType<typeof mcpUrls>;
+type McpUrls = ReturnType<typeof mcpUrls>;
 
 const scopeSchema = z.enum(MCP_SCOPES);
 
@@ -61,7 +61,7 @@ const accessPayloadSchema = z.object({
   /** 연결한 사람의 층(11/3, 탕비실 요청 찾기). 발급·갱신 때 디렉터리에서 읽어 봉인해요. 못 읽으면 없어요. */
   fl: z.string().max(10).optional(),
 });
-export type AccessPayload = z.infer<typeof accessPayloadSchema>;
+type AccessPayload = z.infer<typeof accessPayloadSchema>;
 
 const refreshPayloadSchema = z.object({ sub: z.string(), cid: z.string(), n: z.string() });
 
@@ -94,7 +94,7 @@ export interface TokenResponse {
   scope: string;
 }
 
-export type OAuthResult = { ok: true; body: TokenResponse } | { ok: false; status: 400 | 401; error: string; description: string };
+type OAuthResult = { ok: true; body: TokenResponse } | { ok: false; status: 400 | 401; error: string; description: string };
 
 const fail = (error: string, description: string, status: 400 | 401 = 400): OAuthResult => ({ ok: false, status, error, description });
 

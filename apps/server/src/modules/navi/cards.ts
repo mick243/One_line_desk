@@ -6,17 +6,17 @@ import { GENERAL_DESK } from './fixtures';
 // 담당 카드(ADR-09). 카드의 사실은 모두 분장표 행 원문이에요. 사람 이름은 행에도 카드에도 없어요.
 
 export const ASK_TAIL = '질문 원문은 저장하지 않아요';
-export const NO_PERIOD = '분장표에 없음';
+const NO_PERIOD = '분장표에 없음';
 /** 분장표에서 못 찾았을 때 총무 창구로 보내는 문의의 업무 이름 */
 export const GENERAL_TASK = '분장표에 없는 문의';
 
 type CardRow = Pick<ChartRow, 'id' | 'task' | 'team' | 'desk' | 'deskUrl' | 'nextStep' | 'processingPeriod'> & { revisedOn: string };
 
-export function rowEvidence(row: Pick<CardRow, 'task' | 'revisedOn'>): string {
+function rowEvidence(row: Pick<CardRow, 'task' | 'revisedOn'>): string {
   return `분장표 "${row.task}" 행 · 개정일 ${row.revisedOn}`;
 }
 
-export function candidateLabel(row: Pick<CardRow, 'task' | 'team'>): string {
+function candidateLabel(row: Pick<CardRow, 'task' | 'team'>): string {
   return `${row.task} · ${row.team}`;
 }
 

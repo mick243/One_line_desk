@@ -321,7 +321,7 @@ export class PlanService {
   }
 }
 
-export function featureOffCard(module: ModuleKind): Card {
+function featureOffCard(module: ModuleKind): Card {
   return {
     id: `feature-off-${module}`,
     kind: module,

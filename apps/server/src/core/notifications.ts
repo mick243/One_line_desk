@@ -5,7 +5,7 @@ import type { DeskUser } from './user';
 // 앱 안 알림(10/26, ADR-16). 받는 쪽은 한 사람 또는 한 부서예요.
 // 알림 글에는 내용(문의 글 등)을 넣지 않아요. 무슨 일인지와 볼 페이지만 넣고, 내용은 그 페이지에서 권한을 확인한 뒤 보여 줘요.
 
-export interface NotifyInput {
+interface NotifyInput {
   module: ModuleKind | 'core';
   title: string;
   page: AppDestination;

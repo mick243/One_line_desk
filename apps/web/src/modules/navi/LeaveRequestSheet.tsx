@@ -2,6 +2,7 @@ import {
   addDays,
   type CardAction,
   checkInput,
+  dayLabel,
   INQUIRY_KEEP_DAYS,
   INQUIRY_REASON_MAX,
   kstDate,
@@ -45,9 +46,7 @@ import { newRequestId } from '../../net';
 
 type LeaveRequest = Extract<CardAction, { type: 'leave-request' }>;
 
-const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const weekday = (date: string) => new Date(`${date}T00:00:00Z`).getUTCDay();
-const dayLabel = (date: string) => `${Number(date.slice(5, 7))}월 ${Number(date.slice(8, 10))}일(${WEEKDAYS[weekday(date)]})`;
 const fmt = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}일`;
 const total = (days: readonly LeaveDay[]) => days.reduce((n, d) => n + (d.kind === 'full' ? 1 : 0.5), 0);
 

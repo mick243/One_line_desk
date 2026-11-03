@@ -108,7 +108,7 @@ export const INQUIRY_QUESTION_MAX = 1000;
 export const INQUIRY_REASON_MAX = 500;
 export const INQUIRY_KEEP_DAYS = RECORD_KEEP_DAYS;
 /** 승인·반려는 휴가 요청에만 있어요(10/30, ADR-24). */
-export const INQUIRY_STATES = ['new', 'seen', 'done', 'approved', 'rejected'] as const;
+const INQUIRY_STATES = ['new', 'seen', 'done', 'approved', 'rejected'] as const;
 export type InquiryState = (typeof INQUIRY_STATES)[number];
 export const INQUIRY_STATE_LABEL: Record<InquiryState, string> = {
   new: '새 문의',
@@ -192,7 +192,7 @@ export type LeaveDayChoice = 'full' | HalfPart;
 export const LEAVE_DAY_CHOICES: readonly LeaveDayChoice[] = ['full', 'am', 'pm'];
 export const LEAVE_DAY_CHOICE_LABEL: Record<LeaveDayChoice, string> = { full: '하루', am: '오전 반차', pm: '오후 반차' };
 /** 오전·오후 구분 없이 남아 있는 옛 반차(11/3 전 요청) */
-export const LEAVE_HALF_UNKNOWN_LABEL = '반차(구분 없음)';
+const LEAVE_HALF_UNKNOWN_LABEL = '반차(구분 없음)';
 
 /** 고른 값 → 휴가 하루 */
 export const leaveDayOf = (date: string, choice: LeaveDayChoice): LeaveDay =>
@@ -274,7 +274,7 @@ export interface LeaveRequestBalance {
 }
 
 /** 다음 연차 기간에서 빠지는 몫 */
-export interface LeaveNextPeriod {
+interface LeaveNextPeriod {
   /** 다음 연차 기간 첫날 */
   periodStart: string;
   /** 다음 기간에 생기는 연차에서 이미 잡힌 날을 뺀 값 */
@@ -283,7 +283,7 @@ export interface LeaveNextPeriod {
   days: number;
 }
 
-export interface InquiryReply {
+interface InquiryReply {
   /** 지금은 받은 팀만 답장해요 */
   from: 'team';
   /** 답장한 팀 사람 이름(보낸 사람 화면에서 누가 답했는지 보여요) */
@@ -394,7 +394,7 @@ export interface ItHelpRequest {
   text: string;
 }
 
-export interface ItFaq {
+interface ItFaq {
   id: string;
   title: string;
   /** FAQ 원문 단계(고치지 않고 그대로) */
@@ -446,7 +446,7 @@ export type ItFaqColumn = keyof typeof IT_FAQ_COLUMNS;
 export const IT_FAQ_LIST_SEPARATOR = '|';
 
 /** IT FAQ 한 항목(올리기 화면 목록) */
-export interface ItFaqSummary {
+interface ItFaqSummary {
   id: string;
   title: string;
   aliases: string[];

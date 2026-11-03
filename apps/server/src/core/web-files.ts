@@ -47,7 +47,7 @@ interface WebFile {
 }
 
 /** dist 폴더를 읽어 경로별 파일 표를 만들어요. 소스맵과 점(.)으로 시작하는 파일은 내보내지 않아요. */
-export function loadWebFiles(dir: string): Map<string, WebFile> {
+function loadWebFiles(dir: string): Map<string, WebFile> {
   if (!existsSync(join(dir, 'index.html'))) {
     throw new Error(`웹 화면 파일이 없어요(${join(dir, 'index.html')}). npm run build로 만든 뒤 띄워 주세요`);
   }

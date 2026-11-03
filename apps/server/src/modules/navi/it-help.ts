@@ -75,7 +75,7 @@ const MASK_WORDS = new Set(['사용자', '폴더', '이메일', 'ip']);
 const NUMBER_NEAR_WORD = /(?:오류|에러|error|코드|code)\D{0,6}(\d{3,5})/gi;
 
 /** 띄어 쓴 16진수 코드를 한 덩어리로 붙여요. */
-export function compactCodes(text: string): string {
+function compactCodes(text: string): string {
   return text.replace(SPACED_HEX, '0x$1$2');
 }
 
@@ -89,7 +89,7 @@ export function errorCodesIn(raw: string): Set<string> {
   return out;
 }
 
-export interface ScoredFaq {
+interface ScoredFaq {
   faq: ItFaqRow;
   score: number;
 }

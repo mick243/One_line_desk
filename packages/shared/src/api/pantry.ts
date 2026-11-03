@@ -38,9 +38,9 @@ export const PANTRY_TEXT = {
 export const PREVIEW_LIMIT_FIELD = '표 상한';
 
 /** 판에서 고칠 수 없는 글자 종류. 막힘 카드 "올릴 수 없는 글자가 있어요: [전화번호]"에 써요. */
-export type NameBlockKind = LockKind | MaskKind | 'phone' | 'person' | 'shape';
+type NameBlockKind = LockKind | MaskKind | 'phone' | 'person' | 'shape';
 
-export const NAME_BLOCK_LABEL: Record<NameBlockKind, string> = {
+const NAME_BLOCK_LABEL: Record<NameBlockKind, string> = {
   'key-token': '키·토큰',
   grade3: '주민번호·카드·계좌·비밀번호',
   health: '건강 정보',
@@ -142,7 +142,7 @@ export interface PantryDraftRequest {
   text: string;
 }
 
-/** 게시 초안. 같은 품목 카드(먼저) 또는 공개 미리보기 카드, 담당 질문이면 [담당 찾기로 옮기기] 카드예요. */
+/** 게시 초안. 같은 품목 카드(먼저) 또는 공개 미리보기 카드, 담당 질문이면 [문의하기로 옮기기] 카드예요. */
 export interface PantryDraftResponse {
   cards: Card[];
 }
@@ -194,8 +194,8 @@ export interface VoteResponse {
   limit: number;
 }
 
-export const MY_REQUEST_STATUS = ['표 받는 중', '주문에 들어감', '다음 주기로 넘어감'] as const;
-export type MyRequestStatus = (typeof MY_REQUEST_STATUS)[number];
+const MY_REQUEST_STATUS = ['표 받는 중', '주문에 들어감', '다음 주기로 넘어감'] as const;
+type MyRequestStatus = (typeof MY_REQUEST_STATUS)[number];
 
 export interface MyRequestItem {
   bundleId: number;
@@ -210,7 +210,7 @@ export interface MyRequestsResponse {
   items: MyRequestItem[];
 }
 
-export interface SuggestionSide {
+interface SuggestionSide {
   bundleId: number;
   bundleVersion: number;
   name: string;

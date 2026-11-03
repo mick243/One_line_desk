@@ -6,7 +6,7 @@ import { markNewVersion } from '../api';
 // 오류 내용은 어디에도 보내거나 남기지 않아요(R13).
 
 /** 옛 화면 조각을 부르지 못했을 때 그 자리에 보여요. 문구는 "옛 화면이 없는 API를 부름(D2)"과 같아요. */
-export const OLD_PART_MESSAGE = '화면이 옛 버전이에요. 새로 고친 뒤 다시 해 주세요';
+const OLD_PART_MESSAGE = '화면이 옛 버전이에요. 새로 고친 뒤 다시 해 주세요';
 
 type AnyProps = Record<string, unknown>;
 

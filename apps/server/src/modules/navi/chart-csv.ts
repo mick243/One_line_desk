@@ -24,7 +24,7 @@ export const CHART_FORMAT_MESSAGE = '분장표 양식으로 올려 주세요';
 /**
  * 행·칸을 알면 어디를 고칠지 덧붙여요(11/1 QA M8). 칸 값은 싣지 않아요(이름이 든 칸일 수 있어요).
  */
-export const chartFormatError = (where?: string) => new DeskError('chart-format', 422, where ? `${CHART_FORMAT_MESSAGE}. ${where}` : CHART_FORMAT_MESSAGE);
+const chartFormatError = (where?: string) => new DeskError('chart-format', 422, where ? `${CHART_FORMAT_MESSAGE}. ${where}` : CHART_FORMAT_MESSAGE);
 const cellError = (rowLabel: string, col: ChartColumn, rule: string) => chartFormatError(`${rowLabel} "${CHART_COLUMNS[col]}" 칸은 ${rule}`);
 
 const REQUIRED: ChartColumn[] = ['id', 'task', 'team', 'desk', 'nextStep', 'ownerDepartment'];

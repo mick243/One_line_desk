@@ -6,7 +6,7 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, hkdfSync, ran
 // - DB에는 갱신 토큰의 해시만 남겨요.
 
 export const TOKEN_PREFIX = { access: 'mat_', refresh: 'mrt_', request: 'mrq_' } as const;
-export type TokenKind = keyof typeof TOKEN_PREFIX;
+type TokenKind = keyof typeof TOKEN_PREFIX;
 
 const MAX_TOKEN_LENGTH = 4096;
 
@@ -64,7 +64,7 @@ export function verifyClientSecret(secret: string, expectedHash: string): boolea
 }
 
 /** PKCE S256(RFC 7636). code_verifier는 43~128자의 예약되지 않은 문자예요. */
-export const CODE_VERIFIER_RE = /^[A-Za-z0-9._~-]{43,128}$/;
+const CODE_VERIFIER_RE = /^[A-Za-z0-9._~-]{43,128}$/;
 /** S256 code_challenge는 sha256을 패딩 없는 base64url로 쓴 43자예요. */
 export const CODE_CHALLENGE_RE = /^[A-Za-z0-9_-]{43}$/;
 

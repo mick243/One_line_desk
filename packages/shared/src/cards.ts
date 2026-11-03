@@ -2,11 +2,11 @@ import type { RoomOverview } from './api/rooms';
 import type { Kind, ModuleKind } from './kinds';
 
 // 카드 머리 라벨은 넷이고, 글자로 보여 줘요. 색만으로 가르지 않아요(R7).
-export const CARD_LABELS = ['제안', '확정', '안내', '막힘'] as const;
+const CARD_LABELS = ['제안', '확정', '안내', '막힘'] as const;
 export type CardLabel = (typeof CARD_LABELS)[number];
 
 // 막힘은 확인 순간 재검사에서만 써요(R5).
-export const BLOCKED_REASONS = ['다른 예약', '올릴 수 없는 글자', '기능 꺼짐'] as const;
+const BLOCKED_REASONS = ['다른 예약', '올릴 수 없는 글자', '기능 꺼짐'] as const;
 export type BlockedReason = (typeof BLOCKED_REASONS)[number];
 
 /**
@@ -15,7 +15,7 @@ export type BlockedReason = (typeof BLOCKED_REASONS)[number];
  * - post: 공개 미리보기의 [올리기]. 이 카드 자체가 확인이에요(게시)
  * - fixed: 고정 버튼 쓰기(+1·표 거두기 등). 모듈 경로를 바로 불러요
  * - link: 바깥 링크(원문·그룹웨어·창구)
- * - reask: 같은 문장을 다른 기능 페이지로 옮겨 다시 찾아요("종류가 달라요", 담당 찾기에서 찾기)
+ * - reask: 같은 문장을 다른 기능 페이지로 옮겨 다시 찾아요("종류가 달라요", 문의하기에서 찾기)
  * - navigate: 앱 안 화면으로 가요
  */
 export type CardAction =
@@ -91,7 +91,7 @@ export const APP_DESTINATIONS = ['home', 'navi', 'rooms', 'notices', 'board', 'm
 export type AppDestination = (typeof APP_DESTINATIONS)[number];
 
 /** "틀렸어요" 시트에 필요한 것. 안내·제안 카드에만 붙어요(화면설계 카드 문법). */
-export interface WrongInfo {
+interface WrongInfo {
   predictedKind: Kind;
   predictedRowId?: string;
   /** 다른 후보 행(최대 3개). 담당 카드에서만 와요. */

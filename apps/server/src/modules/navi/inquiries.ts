@@ -3,6 +3,7 @@ import {
   type Card,
   type CardAction,
   checkInput,
+  dayLabel,
   INQUIRY_KEEP_DAYS,
   INQUIRY_QUESTION_MAX,
   INQUIRY_REASON_MAX,
@@ -14,15 +15,15 @@ import {
   type InquiryReplyRequest,
   type InquiryRequest,
   kstDate,
-  type LeaveDay,
-  leaveDayHalves,
-  leaveDayWord,
   LEAVE_REJECT_REASON_MAX,
   LEAVE_REQUEST_MAX_DAYS,
   LEAVE_TYPE_LABEL,
+  type LeaveDay,
+  leaveDayHalves,
+  leaveDayWord,
   type LeaveRequestBalance,
-  mergeLeaveHalves,
   type LeaveType,
+  mergeLeaveHalves,
   OFFICIAL_LEAVE_REASON_LABEL,
   type OfficialLeaveReason,
   recordCutoff,
@@ -36,7 +37,7 @@ import type { LeaveRecord } from '../../adapters/types';
 import type { AppContext } from '../../context';
 import { makeCard } from '../../core/cards';
 import { DeskError } from '../../core/errors';
-import { WEEKDAYS, weekdayOf } from '../../core/slots';
+import { weekdayOf } from '../../core/slots';
 import type { DeskUser } from '../../core/user';
 import { GENERAL_TASK } from './cards';
 import { GENERAL_DESK } from './fixtures';
@@ -70,10 +71,9 @@ const SENT_TAIL = `보낸 글은 ${INQUIRY_KEEP_DAYS}일 동안 보관돼요`;
 const OPEN: readonly repo.InquiryRow['state'][] = ['new', 'seen'];
 
 const leaveTotal = (days: readonly LeaveDay[]) => days.reduce((n, d) => n + (d.kind === 'full' ? 1 : HALF_DAY), 0);
-const dayText = (d: string) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일(${WEEKDAYS[weekdayOf(d)]})`;
 const fmtDays = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}일`;
 /** "11월 3일(월) 하루 · 11월 5일(수) 오전 반차". 11/3 전에 보낸 구분 없는 반차는 "반차(구분 없음)"이에요. */
-export const leaveSummary = (days: readonly LeaveDay[]) => days.map((d) => `${dayText(d.date)} ${leaveDayWord(d)}`).join(' · ');
+export const leaveSummary = (days: readonly LeaveDay[]) => days.map((d) => `${dayLabel(d.date)} ${leaveDayWord(d)}`).join(' · ');
 /** 알림·카드에 쓰는 요청 이름: "휴가 요청"(연차), "공가 요청", "병가 요청", "문의" */
 const requestWord = (i: Pick<repo.InquiryRow, 'kind' | 'leaveType'>) =>
   i.kind !== 'leave' ? '문의' : i.leaveType === 'official' ? '공가 요청' : i.leaveType === 'sick' ? '병가 요청' : '휴가 요청';
@@ -198,11 +198,11 @@ function checkedLeaveDays(input: readonly LeaveDay[], today: string, earliest = 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date) || addDays(d.date, 0) !== d.date) throw new DeskError('bad-request', 400, '날짜를 다시 골라 주세요');
     if (d.date < earliest) {
       const more = earliest === today ? '' : `. 병가는 ${SICK_LEAVE_PAST_DAYS}일 전까지만 신청할 수 있어요`;
-      throw new DeskError('bad-request', 400, `${dayText(d.date)}은 지난 날이에요${more}`);
+      throw new DeskError('bad-request', 400, `${dayLabel(d.date)}은 지난 날이에요${more}`);
     }
     if (d.date > last) throw new DeskError('bad-request', 400, '1년 안의 날만 신청할 수 있어요');
-    if ([0, 6].includes(weekdayOf(d.date))) throw new DeskError('bad-request', 400, `${dayText(d.date)}은 주말이에요`);
-    if (seen.has(d.date)) throw new DeskError('bad-request', 400, `${dayText(d.date)}을 두 번 골랐어요`);
+    if ([0, 6].includes(weekdayOf(d.date))) throw new DeskError('bad-request', 400, `${dayLabel(d.date)}은 주말이에요`);
+    if (seen.has(d.date)) throw new DeskError('bad-request', 400, `${dayLabel(d.date)}을 두 번 골랐어요`);
     seen.add(d.date);
   }
   return days.sort((a, b) => a.date.localeCompare(b.date));
@@ -236,7 +236,7 @@ function overlapping(record: LeaveRecord | null, days: readonly LeaveDay[]): str
     for (const h of leaveDayHalves(u)) set.add(h);
     taken.set(u.date, set);
   }
-  return days.filter((d) => leaveDayHalves(d).some((h) => taken.get(d.date)?.has(h))).map((d) => `${dayText(d.date)} ${leaveDayWord(d)}`);
+  return days.filter((d) => leaveDayHalves(d).some((h) => taken.get(d.date)?.has(h))).map((d) => `${dayLabel(d.date)} ${leaveDayWord(d)}`);
 }
 
 export function createInquiryService(ctx: AppContext) {

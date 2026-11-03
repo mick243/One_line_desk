@@ -40,7 +40,7 @@ import { type Candidate, collectPairs, extractDraft, judgeName, matchCatalogByRu
  * 게시 plan 매개변수. 제안 토큰 안에는 서버가 서명한 ID·참거짓·HMAC만 넣고, 글자는 넣지 않아요(H2, R13).
  * itemName은 사용자가 미리보기에서 확정한 이름이에요. 토큰에는 없고 [올리기] 요청의 edits로만 와요.
  */
-export const PostParams = z.object({
+const PostParams = z.object({
   itemName: z.string().min(1).max(PANTRY_ITEM_NAME_MAX),
   floor: z.string().max(10),
   /** 카드 하나 = 이 값 하나(멱등) */
@@ -53,7 +53,7 @@ export const PostParams = z.object({
   /** 그중 AI만 고른 것. 이름을 안 고쳤으면 표시 행(출처 'ai')을 만들어요. */
   aiSeen: z.array(z.number().int().positive()).max(20),
 });
-export type PostParams = z.infer<typeof PostParams>;
+type PostParams = z.infer<typeof PostParams>;
 
 type PostDraft = Omit<PostParams, 'postKey' | 'itemName'>;
 
@@ -80,7 +80,7 @@ const unique = <T>(xs: T[]) => [...new Set(xs)];
 const iso = (at: number) => new Date(at).toISOString();
 
 /** 대표 카드 고르기(ADR-07): 카탈로그에 맞춘 카드, 같으면 먼저 만든 카드예요. */
-export function chooseRepresentative<T extends { id: number; catalogItemId: string | null; createdAt: string }>(a: T, b: T): T {
+function chooseRepresentative<T extends { id: number; catalogItemId: string | null; createdAt: string }>(a: T, b: T): T {
   if ((a.catalogItemId !== null) !== (b.catalogItemId !== null)) return a.catalogItemId !== null ? a : b;
   if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? a : b;
   return a.id < b.id ? a : b;

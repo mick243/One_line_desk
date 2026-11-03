@@ -1,6 +1,7 @@
 import {
   type Card,
   type CardAction,
+  dayLabel,
   formatKstDateTime,
   kstTime,
   type LoanKind,
@@ -8,11 +9,10 @@ import {
   ROOM_CONDITIONS_VARIANT,
   ROOM_OVERVIEW_VARIANT,
   roomConditionFields,
-  roomDateLabel,
   type RoomListResponse,
   type RoomOverviewRow,
-  roomStatusText,
   type RoomQuery,
+  roomStatusText,
 } from '@one-line-desk/shared';
 import { makeCard } from '../../core/cards';
 import type { LoanRow, LoanStockRow, ReservationRow, RoomRow } from './repo';
@@ -350,11 +350,11 @@ export function equipmentOverviewCard(rooms: RoomRow[], aiSummarized: boolean): 
 
 /** "오늘 10월 30일(금)"·"10월 31일(토)" */
 export function dayText(date: string, today: string): string {
-  return date === today ? `오늘 ${roomDateLabel(date)}` : roomDateLabel(date);
+  return date === today ? `오늘 ${dayLabel(date)}` : dayLabel(date);
 }
 
 /** 층 묶음 순서: 내 층 먼저, 그다음 층 번호, 이름 순(화면 "모든 회의실"과 같아요) */
-export function byMyFloor(myFloor: string) {
+function byMyFloor(myFloor: string) {
   return (a: { floor: string; name: string }, b: { floor: string; name: string }) =>
     Number(b.floor === myFloor) - Number(a.floor === myFloor) || parseInt(a.floor, 10) - parseInt(b.floor, 10) || a.name.localeCompare(b.name);
 }
@@ -461,7 +461,7 @@ export function chatHelpCard(o: { mode: 'auto' | 'confirm' | 'read-only'; navi?:
     ],
     evidence: { text: '회의실 채팅', aiSummarized: false },
     // 회의실 일이 아니면 담당 찾기로 같은 문장을 옮겨요(통합 입력 칸, 10/28).
-    ...(o.navi ? { secondary: [{ type: 'reask' as const, text: '담당 찾기에서 찾기', kind: 'navi' as const }] } : {}),
+    ...(o.navi ? { secondary: [{ type: 'reask' as const, text: '문의하기에서 찾기', kind: 'navi' as const }] } : {}),
     tail:
       o.mode === 'auto'
         ? '"잡아 줘·빌려 줘"처럼 시키면 바로 예약·대여하고, 물어보면 카드로만 보여 줘요'

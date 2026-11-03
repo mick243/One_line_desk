@@ -10,7 +10,7 @@ import type { ItFaqRow } from './repo';
 
 export type ItFaqFileRow = Omit<ItFaqRow, 'revisedOn'> & { revisedOn: string | null };
 
-export const IT_FAQ_FORMAT_MESSAGE = 'IT FAQ 양식으로 올려 주세요';
+const IT_FAQ_FORMAT_MESSAGE = 'IT FAQ 양식으로 올려 주세요';
 /** 행·칸을 알면 어디를 고칠지 덧붙여요. 칸 값은 싣지 않아요. */
 export const itFaqFormatError = (where?: string) => new DeskError('faq-format', 422, where ? `${IT_FAQ_FORMAT_MESSAGE}. ${where}` : IT_FAQ_FORMAT_MESSAGE);
 const cellError = (label: string, col: ItFaqColumn, rule: string) => itFaqFormatError(`${label} "${IT_FAQ_COLUMNS[col]}" 칸은 ${rule}`);

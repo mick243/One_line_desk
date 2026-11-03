@@ -1,4 +1,4 @@
-import { addDays, AWAY_KIND_LABEL, AWAY_KINDS, AWAY_MAX_DAYS, type AwayKind, type AwayListResponse, kstDate } from '@one-line-desk/shared';
+import { addDays, AWAY_KIND_LABEL, AWAY_KINDS, AWAY_MAX_DAYS, type AwayKind, type AwayListResponse, dayLabel, kstDate } from '@one-line-desk/shared';
 import { useEffect, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
 import { newRequestId } from '../../net';
@@ -7,10 +7,8 @@ import { newRequestId } from '../../net';
 // 종류·날·시간만 골라요. 사유·장소 같은 글 칸은 없어요. 정하기·지우기는 고정 버튼이고 본인 것만 돼요.
 // 같은 팀 일정이나 담당 찾기가 꺼져 있으면 서버가 enabled: false를 줘서 이 칸을 숨겨요.
 
-const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
-const dayLabel = (date: string) => `${Number(date.slice(5, 7))}월 ${Number(date.slice(8, 10))}일(${WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]})`;
 /** ISO 시각 → 한국 시간 "11월 3일(화) 14:00" */
-export function awayWhen(iso: string): string {
+function awayWhen(iso: string): string {
   const at = Date.parse(iso) + 9 * 60 * 60 * 1000;
   const kst = new Date(at).toISOString();
   return `${dayLabel(kst.slice(0, 10))} ${kst.slice(11, 16)}`;

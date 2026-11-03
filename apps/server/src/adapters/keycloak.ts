@@ -7,7 +7,7 @@ import type { AdapterCapabilities, DirectoryAdapter, EmployeeProfile, IdpAdapter
 // 회사 IdP를 흉내 내요: 부서·층·역할은 그룹(/부서/개발팀, /층/5층, /역할/facilities)으로 받아요. 가상 직원이라 띠에는 시연 데이터로 떠요.
 // 명단은 몇 분마다 새로 받아 두고(검색·이름 표시), 재직 확인은 그때그때 IdP에 바로 물어요(ADR-13).
 
-export interface KeycloakConfig {
+interface KeycloakConfig {
   /** 예: http://localhost:8180/realms/one-line-desk */
   issuer: string;
   clientId: string;
@@ -52,7 +52,7 @@ export function profileFromGroups(paths: string[]): Pick<EmployeeProfile, 'depar
 }
 
 /** ID 토큰의 인증 근거(amr·acr·auth_time). 모양이 틀린 값은 버려요(ADR-20). */
-export function evidenceOf(claims: JWTPayload): LoginEvidence {
+function evidenceOf(claims: JWTPayload): LoginEvidence {
   const amr = Array.isArray(claims.amr) ? claims.amr.filter((a): a is string => typeof a === 'string') : typeof claims.amr === 'string' ? [claims.amr] : [];
   return {
     amr,

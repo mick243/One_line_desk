@@ -25,7 +25,7 @@ export async function setupMcp(t: TestApp, opts: { mcp?: boolean } = {}) {
   if (opts.mcp ?? true) await t.ctx.ops.setFlag(OPERATOR_ID, 'mcp', true);
 }
 
-export function authorizeQuery(overrides: Record<string, string | undefined> = {}, challenge = pkce().challenge): string {
+function authorizeQuery(overrides: Record<string, string | undefined> = {}, challenge = pkce().challenge): string {
   const params: Record<string, string | undefined> = {
     response_type: 'code',
     client_id: DEMO_CLIENT.clientId,

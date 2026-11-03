@@ -1,5 +1,5 @@
 // 가명 ID × 동작별 요청 횟수(ADR-13). 서버 메모리에 횟수만 둬요. 서버를 다시 켜면 처음으로 돌아가요.
-export type LimitedAction =
+type LimitedAction =
   | 'ask'
   /** 홈 AI 채팅(ADR-27) */
   | 'home-ask'

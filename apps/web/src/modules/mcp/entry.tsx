@@ -110,7 +110,7 @@ export function ConsentScreen({ me }: ScreenProps) {
             <li>빈 회의실·장비 대여 찾기: 회의실·층·시간·인원·장비와 장비 남은 수만{roomsWrite ? '' : ' · 예약은 그룹웨어에서 해요'}</li>
           )}
           {tools.includes('notices.read') && <li>공지 찾기: 허용 게시판 공지의 제목·게시일·원문 링크만</li>}
-          {tools.includes('navi.read') && <li>담당 찾기: 업무 분장표의 받을 팀·창구·할 일, IT 오류 FAQ, 첫 2주 할 일만 · 묻는 글은 남지 않아요</li>}
+          {tools.includes('navi.read') && <li>문의하기: 업무 분장표의 받을 팀·창구·할 일, IT 오류 FAQ, 첫 2주 할 일만 · 묻는 글은 남지 않아요</li>}
           {tools.includes('mine.read') && <li>내 요청 상태: 내가 보낸 문의·휴가 요청의 처리 상태와 내 회의실 예약만</li>}
           {tools.includes('leave.prepare') && <li>휴가 신청 준비: 고른 날짜·종류로 휴가 신청 양식을 여는 링크만 · 남은 연차는 보내지 않아요</li>}
           {tools.includes('pantry.read') && <li>같이 채워요: 내 층 판의 품목 이름·표 수만 · 찾는 품목 이름은 남지 않아요</li>}
@@ -162,15 +162,15 @@ type LinkView =
 const LINK_MESSAGES = {
   gone: '분장표가 바뀌어서 그 업무를 찾지 못했어요. 여기서 다시 찾아 주세요',
   expired: '링크 시간이 지났어요. AI 앱에서 다시 찾거나 여기서 찾아 주세요',
-  off: '지금은 담당 찾기가 꺼져 있어요',
+  off: '지금은 문의하기가 꺼져 있어요',
 } as const;
 
 /** 11/3 확인 링크 넓히기: 휴가 준비·판·장비 대여 링크가 열지 못할 때 */
 const ABOUT_MESSAGES: Record<LinkAbout, Record<'gone' | 'expired' | 'off', string>> = {
   leave: {
     gone: '지금은 앱에서 휴가를 신청할 수 없어요. 그룹웨어 근태 메뉴에서 신청해 주세요',
-    expired: '링크 시간이 지났어요. AI 앱에서 다시 준비하거나 담당 찾기에서 휴가를 신청해 주세요',
-    off: '지금은 담당 찾기가 꺼져 있어요',
+    expired: '링크 시간이 지났어요. AI 앱에서 다시 준비하거나 문의하기에서 휴가를 신청해 주세요',
+    off: '지금은 문의하기가 꺼져 있어요',
   },
   pantry: {
     gone: '그 품목은 이제 판에 없어요. 판에서 다시 찾아 주세요',
@@ -185,8 +185,8 @@ const ABOUT_MESSAGES: Record<LinkAbout, Record<'gone' | 'expired' | 'off', strin
 };
 
 const BACK_TO: Record<LinkAbout | 'navi', { text: string; to: 'navi' | 'board' | 'rooms' }> = {
-  navi: { text: '담당 찾기에서 찾기', to: 'navi' },
-  leave: { text: '담당 찾기에서 찾기', to: 'navi' },
+  navi: { text: '문의하기에서 찾기', to: 'navi' },
+  leave: { text: '문의하기에서 찾기', to: 'navi' },
   pantry: { text: '같이 채워요에서 보기', to: 'board' },
   equipment: { text: '회의실에서 찾기', to: 'rooms' },
 };
@@ -301,7 +301,7 @@ export function LinkEntry({
           <p>
             <strong>{action.team}</strong> · {action.task}
           </p>
-          {sent && <p className='hint'>보냈어요. 담당 찾기 "내 문의"에서 처리 상태를 볼 수 있어요</p>}
+          {sent && <p className='hint'>보냈어요. 문의하기 "내 문의"에서 처리 상태를 볼 수 있어요</p>}
           <div className='actions'>
             {!sent && (
               <button type='button' className='primary' onClick={() => setSheetOpen(true)}>

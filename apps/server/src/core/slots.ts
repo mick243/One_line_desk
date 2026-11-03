@@ -58,7 +58,7 @@ export function mondayOf(date: string): string {
   return addDays(date, -((weekdayOf(date) + 6) % 7));
 }
 
-export function ymd(y: number, m: number, d: number): string | undefined {
+function ymd(y: number, m: number, d: number): string | undefined {
   const at = new Date(Date.UTC(y, m - 1, d));
   const real = at.getUTCFullYear() === y && at.getUTCMonth() === m - 1 && at.getUTCDate() === d;
   return real ? `${y}-${pad(m)}-${pad(d)}` : undefined;

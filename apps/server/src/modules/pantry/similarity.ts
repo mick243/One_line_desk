@@ -10,9 +10,9 @@ import { extractItemName } from '../../core/slots';
 // 요청 글과 품목 이름은 직원이 쓴 글이라 등급 1이에요(ADR-10, R6). 무보관 계약 확인 전에는 게이트웨이가 거절하고 이름 규칙으로 가요.
 
 /** 사람이 쓴 글이 들어가는 호출의 등급. 판 품목 이름도 실제 파일럿에서는 직원이 쓴 글이에요. */
-export const HUMAN_TEXT_GRADE = GRADE.internal;
+const HUMAN_TEXT_GRADE = GRADE.internal;
 
-export interface CatalogEntry {
+interface CatalogEntry {
   id: string;
   name: string;
   aliases: string[];
@@ -108,7 +108,7 @@ const NAME_SYSTEM = `탕비실 요청판이에요. 직원이 판에 쓴 한 줄�
 
 const NameSchema = z.object({ pantryRequest: z.boolean(), itemName: z.string().nullable() });
 
-export interface DraftExtraction {
+interface DraftExtraction {
   pantryRequest: boolean;
   itemName: string | null;
   /** 실제 모델이 뽑았는지("AI 정리" 표시). 거절·실패·가짜 공급자면 이름 규칙이라 거짓이에요. */
@@ -145,7 +145,7 @@ const JUDGE_SYSTEM = `탕비실 요청판이에요. 새 품목 이름 하나와 
 
 const JudgeSchema = z.object({ sameIds: z.array(z.string()).max(20), catalogId: z.string().nullable() });
 
-export interface Judgement {
+interface Judgement {
   /** 같은 상품 같아 보이는 묶음(대표 카드 ID). 이름 규칙 + AI */
   same: number[];
   /** 그중 이름 규칙에는 없고 AI만 고른 것(표시 행 출처 'ai') */

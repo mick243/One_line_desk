@@ -46,7 +46,7 @@ export function App() {
   const [view, setView] = useState<View>('home');
   const [entry, setEntry] = useState(entryFromPath);
   const [offline, setOffline] = useState(false);
-  // 다른 페이지로 옮겨 가는 문장(예시 문장, "종류가 달라요", [담당 찾기로 옮기기]). 앱 메모리에만 둬요(R13).
+  // 다른 페이지로 옮겨 가는 문장(예시 문장, "종류가 달라요", [문의하기로 옮기기]). 앱 메모리에만 둬요(R13).
   // auto: 다른 기능에서 옮겨 온 문장이면 그 페이지에서 바로 찾아요. 홈 예시 문장은 채우기만 해요.
   const [handoff, setHandoff] = useState<{ to: View; text: string; at: number; auto: boolean } | null>(null);
   // 회의실 입력 칸의 최근 쓴 문장(최대 5개). 이 창 메모리에만 있어요. 저장소·서버에는 두지 않아요(R13).

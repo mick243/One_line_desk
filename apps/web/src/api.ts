@@ -60,10 +60,10 @@ export class ApiFailure extends Error {
   }
 }
 
-export type HomeAskResult =
+type HomeAskResult =
   { status: 'ok'; response: HomeAskResponse } | { status: 'locked'; locks: { kind: LockKind; message: string }[] } | { status: 'failed'; message: string };
 
-export type AskResult =
+type AskResult =
   { status: 'ok'; response: AskResponse } | { status: 'locked'; locks: { kind: LockKind; message: string }[] } | { status: 'failed'; message: string };
 
 // CSRF 토큰은 페이지 메모리에만 둬요. 브라우저 저장소에 아무것도 넣지 않아요(R13).

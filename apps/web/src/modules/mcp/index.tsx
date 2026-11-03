@@ -12,7 +12,7 @@ import { failMessage, josa } from './text';
 const SCOPE_LABEL: Record<McpScope, string> = {
   'rooms.read': '회의실',
   'notices.read': '공지',
-  'navi.read': '담당 찾기',
+  'navi.read': '문의하기',
   'mine.read': '내 요청 상태',
   'leave.prepare': '휴가 준비',
   'pantry.read': '같이 채워요',

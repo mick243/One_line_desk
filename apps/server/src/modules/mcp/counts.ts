@@ -10,7 +10,7 @@ import * as repo from './repo';
 //   이번 달과 지난 12달(13개 달)만 남기고, 그보다 앞선 날은 mcp 모듈 retention이 한 시간마다 지워요.
 
 /** 보관하는 달 수(이번 달 포함). */
-export const COUNT_KEEP_MONTHS = 13;
+const COUNT_KEEP_MONTHS = 13;
 
 /** 'YYYY-MM'을 delta달 옮겨요. */
 export function shiftMonth(month: string, delta: number): string {

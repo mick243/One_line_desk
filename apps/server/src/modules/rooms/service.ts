@@ -146,7 +146,7 @@ function clockOf(at: number, dayEnd: number): string {
  * 고른 날 회의실 상태. 오늘이면 지금 시각으로 "비어 있음(다음 예약 HH:MM)" 또는 "사용 중(HH:MM부터 비어요)",
  * 다른 날이면 그날 예약 수예요. 이어진 예약은 하나로 이어 보고 비는 시각을 계산해요.
  */
-export function roomStatus(roomId: string, busy: BusyRow[], date: string, now: number): RoomStatus {
+function roomStatus(roomId: string, busy: BusyRow[], date: string, now: number): RoomStatus {
   const blocks = busy.filter((b) => b.roomId === roomId).sort((a, b) => a.start - b.start);
   if (date !== kstDate(now)) return { kind: 'day', bookings: blocks.length };
   const current = blocks.find((b) => b.start <= now && now < b.end);

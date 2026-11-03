@@ -19,6 +19,14 @@ export function addDays(date: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+const WEEKDAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
+
+/** 화면·문의 글용 "11월 3일(화)". 날짜(YYYY-MM-DD)만 보고 만들어요. */
+export function dayLabel(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  return `${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일(${WEEKDAY_NAMES[d.getUTCDay()]})`;
+}
+
 /** 한국 날짜·시각을 UTC 밀리초로 바꿔요. */
 export function kstToEpoch(date: string, time: string): number {
   return Date.parse(`${date}T${time}:00${KST_OFFSET}`);
