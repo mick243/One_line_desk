@@ -1,4 +1,15 @@
-import type { AskResponse, Kind, LockKind, ModuleKind, ModuleSwitch, PlanConfirmResponse, PlanCreateResponse, Role } from '@one-line-desk/shared';
+import type {
+  AskResponse,
+  HomeAskResponse,
+  HomeTodayResponse,
+  Kind,
+  LockKind,
+  ModuleKind,
+  ModuleSwitch,
+  PlanConfirmResponse,
+  PlanCreateResponse,
+  Role,
+} from '@one-line-desk/shared';
 import { fetchWithin, isOtherBuild, TIMEOUT_MESSAGE, unavailableMessage } from './net';
 
 export interface PublicConfig {
@@ -7,6 +18,8 @@ export interface PublicConfig {
   mcp: boolean;
   /** 채팅 자동 실행(ADR-19) */
   autoActions: boolean;
+  /** 홈 AI 채팅 "나에게 해당하는 일"(ADR-27) */
+  homeAsk: boolean;
   standalone: boolean;
   demoData: string[];
   rulesVersion: number;
@@ -44,6 +57,9 @@ export class ApiFailure extends Error {
     super(message);
   }
 }
+
+export type HomeAskResult =
+  { status: 'ok'; response: HomeAskResponse } | { status: 'locked'; locks: { kind: LockKind; message: string }[] } | { status: 'failed'; message: string };
 
 export type AskResult =
   { status: 'ok'; response: AskResponse } | { status: 'locked'; locks: { kind: LockKind; message: string }[] } | { status: 'failed'; message: string };
@@ -182,6 +198,19 @@ export const api = {
     if (status === 200) return { status: 'ok', response: data };
     if (status === 422 && data.locks) return { status: 'locked', locks: data.locks };
     return { status: 'failed', message: data.message ?? '지금 답을 만들지 못했어요' };
+  },
+  /** 홈 AI 채팅(ADR-27). 원문은 POST 본문으로만 보내요. URL·저장소에 넣지 않아요. 서버는 읽기만 해요. */
+  async homeAsk(text: string): Promise<HomeAskResult> {
+    const { status, data } = await raw<HomeAskResponse & { message?: string; locks?: { kind: LockKind; message: string }[] }>('POST', '/api/home/ask', {
+      text,
+    });
+    if (status === 200) return { status: 'ok', response: data };
+    if (status === 422 && data.locks) return { status: 'locked', locks: data.locks };
+    return { status: 'failed', message: data.message ?? '지금 답을 만들지 못했어요' };
+  },
+  /** 홈 "오늘·이번 주 내 일". 홈을 열 때 한 번 불러요(폴링 아님). */
+  homeToday(): Promise<HomeTodayResponse> {
+    return apiRequest('GET', '/api/home/today');
   },
   createPlan(proposalToken: string): Promise<PlanCreateResponse> {
     return apiRequest('POST', '/api/plans', { proposalToken });

@@ -9,7 +9,7 @@ import { DeskError } from './errors';
 
 export type OpsValues = OpsSettings['values'];
 /** 운영 설정의 켜고 끄는 값 */
-export type OpsFlag = 'roomsWrite' | 'mcp' | 'autoActions';
+export type OpsFlag = 'roomsWrite' | 'mcp' | 'autoActions' | 'homeAsk';
 
 interface Overrides {
   modules?: Partial<Record<ModuleKind, ModuleSwitch>>;
@@ -17,6 +17,7 @@ interface Overrides {
   mcp?: boolean;
   mcpToolsOff?: string[];
   autoActions?: boolean;
+  homeAsk?: boolean;
   links?: Partial<Record<ModuleKind, string>>;
   values?: Partial<OpsValues>;
 }
@@ -45,6 +46,7 @@ function merge(base: OpsSettings, o: Overrides): OpsSettings {
     mcp: o.mcp ?? base.mcp,
     mcpToolsOff: o.mcpToolsOff ?? base.mcpToolsOff,
     autoActions: o.autoActions ?? base.autoActions,
+    homeAsk: o.homeAsk ?? base.homeAsk,
     links: { ...base.links, ...o.links },
     values: { ...base.values, ...o.values },
   };

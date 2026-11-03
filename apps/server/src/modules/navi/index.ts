@@ -3,6 +3,7 @@ import type { AppContext } from '../../context';
 import type { DeskModule, PlanHandler } from '../../core/module';
 import { createInquiryService } from './inquiries';
 import { createItHelpService } from './it-help';
+import { createNaviHomeRead } from './home-read';
 import { createNaviMcpRead, inquireLinkHandler, leaveLinkHandler } from './mcp-read';
 import * as repo from './repo';
 import { registerNaviRoutes } from './routes';
@@ -19,7 +20,8 @@ export function createNaviModule(ctx: AppContext): DeskModule {
   const itHelp = createItHelpService(ctx);
   // 분장표 주인 역할 계산(core/guard.ts)이 이걸 써요.
   // MCP 읽기 도구(11/3, ADR-14 개정)는 mcp로만 불러요.
-  ctx.services.navi = { ownerDepartments: () => navi.ownerDepartments(), mcp: createNaviMcpRead(ctx, navi, itHelp) };
+  // 홈 "나에게 해당하는 일"(ADR-27)은 home으로만 불러요.
+  ctx.services.navi = { ownerDepartments: () => navi.ownerDepartments(), mcp: createNaviMcpRead(ctx, navi, itHelp), home: createNaviHomeRead(ctx) };
 
   return {
     kind: 'navi',

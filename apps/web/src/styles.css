@@ -2137,3 +2137,65 @@ select {
   flex: 0 0 auto;
   width: auto;
 }
+
+/* 홈 AI 채팅 "나에게 해당하는 일"(11/3, ADR-27). 칸 아래 문구는 홈 칸이 예약·신청을 하지 않는다는 약속이에요(D8). */
+.home-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.home-ask-note {
+  margin: 0;
+}
+.home-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.home-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.home-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+.home-answer .home-items {
+  border-radius: var(--radius-m);
+  padding: 4px 14px;
+  background: var(--surface);
+}
+.home-items li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.home-items li:first-child {
+  border-top: 0;
+}
+.home-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.home-items .secondary.small {
+  flex-shrink: 0;
+}
+.home-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.home-today h2 {
+  margin: 0 0 4px;
+}
