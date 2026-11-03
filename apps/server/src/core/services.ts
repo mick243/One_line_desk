@@ -1,4 +1,18 @@
-import type { Card, CardAction, LeaveDay, LeaveType, LoanKind, MyReservationsResponse, NoticeHit, RoomQuery, RoomSearchResult } from '@one-line-desk/shared';
+import type {
+  Card,
+  CardAction,
+  InquiryState,
+  InvitedMeetingsResponse,
+  LeaveDay,
+  LeaveType,
+  LoanKind,
+  MyLoansResponse,
+  MyRequestsResponse,
+  MyReservationsResponse,
+  NoticeHit,
+  RoomQuery,
+  RoomSearchResult,
+} from '@one-line-desk/shared';
 import type { DeskUser } from './user';
 
 // 모듈 사이에 필요한 기능은 이 인터페이스로만 주고받아요(ADR-01 모듈 경계).
@@ -13,6 +27,16 @@ export interface RoomsService {
   myReservations?(user: Pick<DeskUser, 'pseudonymId'>): Promise<MyReservationsResponse>;
   /** MCP 장비 대여 확인(11/3 확인 링크 넓히기). rooms 모듈의 equipment.ts가 채워요. */
   equipment?: RoomsEquipmentRead;
+  /** 홈 "나에게 해당하는 일"(ADR-27)이 쓰는 본인 읽기. rooms 모듈이 채워요. */
+  home?: RoomsHomeRead;
+}
+
+/** 홈이 모으는 회의실 쪽 내 일. 회의실 쓰기가 꺼져 있으면 enabled가 거짓이고 비어 있어요. */
+export interface RoomsHomeRead {
+  /** 본인 장비 대여(지금 쓰는 것·다가오는 것) */
+  myLoans(user: Pick<DeskUser, 'pseudonymId'>): Promise<MyLoansResponse>;
+  /** 나를 부른 회의(다가오는 것). 부른 사람 이름은 초대받은 본인에게만 보여요(ADR-17). */
+  invited(user: DeskUser): Promise<InvitedMeetingsResponse>;
 }
 
 /** 장비 대여 링크 값. 장비 종류와 하루 안의 한 구간(KST ISO)만이에요. */
@@ -43,6 +67,31 @@ export interface NaviService {
   ownerDepartments(): Promise<Set<string>>;
   /** MCP 읽기 도구용 읽기 함수(11/3, ADR-14 개정). navi 모듈의 mcp-read.ts가 채워요. */
   mcp?: NaviMcpRead;
+  /** 홈 "나에게 해당하는 일"(ADR-27)이 쓰는 본인 읽기. navi 모듈의 home-read.ts가 채워요. */
+  home?: NaviHomeRead;
+}
+
+/** 홈에 보이는 내 문의·휴가 요청 한 줄. 글(질문·사유·답장·반려 사유)·답한 사람은 없어요. 휴가 날은 본인 것이라 본인 홈에만 가요(ADR-18). */
+export interface NaviHomeRequest {
+  kind: 'inquiry' | 'leave';
+  /** 휴가 요청 종류. 일반 문의는 null이에요. */
+  leaveType: LeaveType | null;
+  task: string;
+  team: string;
+  state: InquiryState;
+  sentAt: number;
+  /** 상태가 바뀌거나 답장이 온 마지막 때 */
+  updatedAt: number;
+  hasReply: boolean;
+  /** 휴가 요청의 쓸 날(본인 것). 일반 문의는 빈 배열이에요. */
+  days: LeaveDay[];
+}
+
+export interface NaviHomeRead {
+  /** 본인이 보낸 문의·휴가 요청(보관 기간 7일 안) */
+  myRequests(pseudonymId: string): Promise<NaviHomeRequest[]>;
+  /** 내 부서가 받은 새 문의 수만. 받는 부서가 아니면 null이에요. 보낸 사람·글은 없어요. */
+  newInboxCount(user: Pick<DeskUser, 'department'>): Promise<number | null>;
 }
 
 /** 담당 팀 한 줄. rowId는 앱 확인 링크(봉인 토큰)를 만들 때만 쓰고 MCP 출력에는 넣지 않아요. 대표 창구는 rowId가 null이에요. */
@@ -98,6 +147,8 @@ export interface LeaveLink {
 export interface PantryService {
   /** MCP 탕비실 요청 찾기(11/3 확인 링크 넓히기). pantry 모듈이 채워요. */
   mcp?: PantryMcpRead;
+  /** 홈 "나에게 해당하는 일"(ADR-27): 내가 올리거나 +1한 품목 상태(투표자 없음). 같이 채워요가 켬일 때만 불러요. */
+  home?: { myRequests(user: DeskUser): Promise<MyRequestsResponse> };
 }
 
 export interface PantryMcpRead {

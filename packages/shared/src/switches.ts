@@ -13,6 +13,8 @@ export interface OpsSettings {
   mcpToolsOff: string[];
   /** 채팅 자동 실행(ADR-19). 끄면 채팅도 카드와 확인 시트로만 예약·대여해요. */
   autoActions: boolean;
+  /** 홈 AI 채팅 "나에게 해당하는 일"(ADR-27). 끄면 홈 칸과 홈 경로가 닫혀요. 읽기만 해서 출시 기본값도 켬이에요. */
+  homeAsk: boolean;
   /** 이번 2주는 고정이에요(M6). */
   noticeSummary: false;
   s5Mode: 'list-only';
@@ -43,6 +45,7 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
   mcp: false,
   mcpToolsOff: [],
   autoActions: true,
+  homeAsk: true,
   noticeSummary: false,
   s5Mode: 'list-only',
   links: {

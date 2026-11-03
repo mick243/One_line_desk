@@ -299,6 +299,15 @@ export async function inquiriesOfDepartment(q: Queryable, department: string, si
   return rows;
 }
 
+/** 그 부서로 온 새 문의 수(홈 "받은 문의", ADR-27). 수만 세고 글·보낸 사람은 읽지 않아요. */
+export async function newInquiryCount(q: Queryable, department: string, since: number): Promise<number> {
+  const { rows } = await q.query<{ n: number }>(`select count(*)::int as n from navi_inquiries where department = $1 and state = 'new' and created_at >= $2`, [
+    department,
+    since$(since),
+  ]);
+  return rows[0]?.n ?? 0;
+}
+
 export async function inquiriesOfSender(q: Queryable, pseudonymId: string, since: number): Promise<InquiryRow[]> {
   const { rows } = await q.query<InquiryRow>(
     `select ${INQUIRY_COLUMNS} from navi_inquiries where sender_pseudonym = $1 and created_at >= $2 order by created_at desc, id desc limit 50`,

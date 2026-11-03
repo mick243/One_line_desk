@@ -28,6 +28,7 @@ import { registerWebFiles } from './core/web-files';
 import { createModules } from './modules';
 import { registerAskRoutes } from './routes/ask';
 import { registerAuthRoutes } from './routes/auth';
+import { registerHomeRoutes } from './routes/home';
 import { purgeDemoInbox, registerDemoInboxRoutes } from './routes/demo-inbox';
 import { registerPeopleRoutes } from './routes/people';
 import { registerConfigRoutes, registerHealthRoutes } from './routes/config';
@@ -169,6 +170,7 @@ export async function buildApp(opts: BuildOptions) {
   registerConfigRoutes(app, ctx, ctx.dataAdapters);
   registerAuthRoutes(app, ctx);
   registerAskRoutes(app, ctx, router);
+  registerHomeRoutes(app, ctx);
   registerPlanRoutes(app, ctx);
   registerNotificationRoutes(app, ctx);
   registerPeopleRoutes(app, ctx);
