@@ -1,9 +1,25 @@
-import { checkInput, IT_HELP_TEXT_MAX, type ItHelpResponse } from '@one-line-desk/shared';
+import { createHash } from 'node:crypto';
+import {
+  checkInput,
+  IT_FAQ_COLUMNS,
+  IT_FAQ_LIST_SEPARATOR,
+  IT_HELP_TEXT_MAX,
+  type ItFaqApplyResponse,
+  type ItFaqChange,
+  type ItFaqColumn,
+  type ItFaqListResponse,
+  type ItFaqPreviewResponse,
+  type ItHelpResponse,
+  kstDate,
+} from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
+import type { Queryable } from '../../core/db';
 import { DeskError } from '../../core/errors';
+import type { DeskUser } from '../../core/user';
 import { demoItFaqs } from './fixtures';
+import { type ItFaqFileRow, itFaqFormatError, parseItFaqFile, toItFaqCsv } from './it-faq-csv';
 import * as repo from './repo';
-import type { ItFaqRow } from './repo';
+import type { ItFaqRow, OwnedItFaq } from './repo';
 import { bigramSet, coverage, keywords, normalize, words } from './text';
 
 // IT 오류 문장 → IT FAQ 원문 단계(10/31 넓힐 후보 ②).
@@ -108,6 +124,92 @@ export function rankFaqs(raw: string, faqs: ItFaqRow[]): ScoredFaq[] {
     .sort((a, b) => b.score - a.score || a.faq.id.localeCompare(b.faq.id));
 }
 
+// ── IT FAQ 파일 올리기(11/3) ───────────────────────────────────────
+// 권한은 분장표와 같은 계산이에요: 분장표 주인(라우트 가드) + 부서. FAQ의 주인 부서는 그 FAQ "문의 행"이 가리키는 분장표 행의 주인 부서예요.
+// 그래서 IT FAQ를 고치는 사람은 FAQ 주인 부서(지금은 IT지원팀)의 분장표 주인이에요. FAQ가 하나도 없으면 IT지원팀으로 봐요.
+
+const FAQ_COMPARED: ItFaqColumn[] = ['title', 'aliases', 'errorCodes', 'steps', 'rowId'];
+
+function showFaq(f: Pick<ItFaqRow, 'title' | 'aliases' | 'errorCodes' | 'steps' | 'rowId'>, key: ItFaqColumn): string {
+  switch (key) {
+    case 'aliases':
+    case 'errorCodes':
+      return f[key].join(IT_FAQ_LIST_SEPARATOR);
+    case 'steps':
+      return f.steps.map((step, i) => `${i + 1}) ${step}`).join(' ');
+    case 'rowId':
+      return f.rowId ?? '';
+    case 'title':
+      return f.title;
+    default:
+      return '';
+  }
+}
+
+function faqFields(before: ItFaqRow | undefined, after: ItFaqFileRow): ItFaqChange['fields'] {
+  return FAQ_COMPARED.filter((k) => !before || showFaq(before, k) !== showFaq(after, k))
+    .filter((k) => before || showFaq(after, k) !== '')
+    .map((k) => ({ name: IT_FAQ_COLUMNS[k], ...(before ? { before: showFaq(before, k) } : {}), after: showFaq(after, k) }));
+}
+
+interface FaqOwners {
+  faqs: OwnedItFaq[];
+  /** IT FAQ를 고칠 수 있는 부서(FAQ 문의 행의 주인 부서들) */
+  departments: Set<string>;
+}
+
+async function faqOwners(q: Queryable): Promise<FaqOwners> {
+  const faqs = await repo.itFaqsWithOwner(q);
+  const departments = new Set(faqs.map((f) => f.ownerDepartment).filter((d): d is string => d !== null));
+  if (departments.size === 0) departments.add(IT_TEAM_FALLBACK);
+  return { faqs, departments };
+}
+
+/** 문의 행이 비어 주인을 모르는 FAQ는 IT FAQ 주인 부서 누구나 고쳐요. */
+const ownsFaq = (f: OwnedItFaq, department: string, owners: FaqOwners) =>
+  f.ownerDepartment === department || (f.ownerDepartment === null && owners.departments.has(department));
+
+const notFaqOwner = (owners: FaqOwners) => new DeskError('forbidden', 403, `IT FAQ는 ${[...owners.departments].join('·')} 분장표 주인만 올려요`);
+const OTHER_FAQ = () => new DeskError('other-department', 422, '다른 부서 IT FAQ는 바뀌지 않아요');
+
+function faqVersion(faqs: OwnedItFaq[]): string {
+  return createHash('sha256').update(JSON.stringify(faqs)).digest('hex').slice(0, 24);
+}
+
+/**
+ * 올린 파일과 지금 IT FAQ를 견줘요. 바뀌는 것은 우리 부서 FAQ뿐이에요.
+ * 다른 부서 FAQ를 바꾸거나, 문의 행을 우리 부서 분장표 행이 아닌 곳으로 두면 거부해요. 파일에 없는 FAQ는 지우지 않아요.
+ */
+async function diffFaqs(q: Queryable, department: string, fileRows: ItFaqFileRow[]) {
+  const owners = await faqOwners(q);
+  if (!owners.departments.has(department)) throw notFaqOwner(owners);
+  const current = new Map(owners.faqs.map((f) => [f.id, f]));
+  const ownRows = new Set((await repo.rowsOfDepartment(q, department)).map((r) => r.id));
+  const changes: ItFaqChange[] = [];
+  const rows: ItFaqFileRow[] = [];
+  const seenOwn = new Set<string>();
+  let unchanged = 0;
+  for (const f of fileRows) {
+    const existing = current.get(f.id);
+    if (existing && !ownsFaq(existing, department, owners)) {
+      if (faqFields(existing, f).length > 0) throw OTHER_FAQ();
+      continue;
+    }
+    if (!f.rowId || !ownRows.has(f.rowId)) throw itFaqFormatError(`${f.id} 행 "${IT_FAQ_COLUMNS.rowId}" 칸은 우리 부서(${department}) 분장표 행 ID를 써요`);
+    seenOwn.add(f.id);
+    const fields = faqFields(existing, f);
+    if (existing && fields.length === 0) {
+      unchanged += 1;
+      continue;
+    }
+    changes.push({ faqId: f.id, title: f.title, type: existing ? 'changed' : 'added', fields });
+    rows.push(f);
+  }
+  const owned = owners.faqs.filter((f) => ownsFaq(f, department, owners));
+  const untouched = owned.filter((f) => !seenOwn.has(f.id)).length;
+  return { changes, rows, unchanged, untouched, version: faqVersion(owned) };
+}
+
 export function createItHelpService(ctx: AppContext) {
   let realFaqs = true;
   const refreshSource = async () => {
@@ -159,6 +261,68 @@ export function createItHelpService(ctx: AppContext) {
         inquiryTeam: inquiryRow?.team ?? IT_TEAM_FALLBACK,
         inquiryTask: inquiryRow?.task ?? IT_TASK_FALLBACK,
       };
+    },
+
+    /** IT FAQ 올리기 화면 목록: 우리 부서 FAQ. IT FAQ 주인 부서가 아니면 enabled: false예요(화면이 칸을 숨겨요). */
+    async listFaqs(user: DeskUser): Promise<ItFaqListResponse> {
+      const owners = await faqOwners(ctx.db);
+      if (!owners.departments.has(user.department)) return { department: user.department, enabled: false, faqs: [] };
+      const faqs = owners.faqs
+        .filter((f) => ownsFaq(f, user.department, owners))
+        .map((f) => ({
+          id: f.id,
+          title: f.title,
+          aliases: f.aliases,
+          errorCodes: f.errorCodes,
+          steps: f.steps,
+          revisedOn: f.revisedOn,
+          rowId: f.rowId,
+          source: f.source,
+        }));
+      return { department: user.department, enabled: true, faqs };
+    },
+
+    /** IT FAQ 파일 받기: 우리 부서 FAQ만 IT FAQ 양식으로 내보내요. 사람 이름 칸은 없어요. */
+    async exportFaqs(user: DeskUser): Promise<{ filename: string; csv: string }> {
+      const owners = await faqOwners(ctx.db);
+      if (!owners.departments.has(user.department)) throw notFaqOwner(owners);
+      const own = owners.faqs.filter((f) => ownsFaq(f, user.department, owners));
+      return { filename: `IT-FAQ-${user.department}-${kstDate(ctx.now())}.csv`, csv: toItFaqCsv(own) };
+    },
+
+    /** IT FAQ 미리보기: 바뀌는 FAQ·칸만 보여 줘요. DB는 바꾸지 않아요. */
+    async previewFaqs(user: DeskUser, csv: string): Promise<ItFaqPreviewResponse> {
+      const file = parseItFaqFile(csv);
+      const diff = await diffFaqs(ctx.db, user.department, file);
+      return { department: user.department, baseVersion: diff.version, changes: diff.changes, unchanged: diff.unchanged, untouched: diff.untouched };
+    },
+
+    /**
+     * IT FAQ 반영(확인 시트 뒤). 고정 버튼 쓰기 실행기(ctx.fixed.run)를 거쳐요: 스위치·멱등 키·감사 로그(내용 없음).
+     * 실행 순간 다시 검사해요: 미리보기 뒤 우리 부서 FAQ가 바뀌었으면 반영하지 않아요. 바뀐 FAQ는 개정일이 오늘로 올라가요.
+     */
+    async applyFaqs(user: DeskUser, csv: string, baseVersion: string): Promise<ItFaqApplyResponse> {
+      const file = parseItFaqFile(csv);
+      const key = createHash('sha256').update(['it-faq', user.department, baseVersion, csv].join('\n')).digest('hex').slice(0, 32);
+      const result = await ctx.fixed.run(user, {
+        module: 'navi',
+        action: 'it-faq-apply',
+        idempotencyKey: key,
+        resultCode: (r: ItFaqApplyResponse) => (r.applied > 0 ? 'done' : 'no-change'),
+        run: async (q, now) => {
+          const diff = await diffFaqs(q, user.department, file);
+          if (diff.version !== baseVersion) throw new DeskError('faq-changed', 409, '그사이 IT FAQ가 바뀌었어요. 다시 미리 봐 주세요');
+          const revisedOn = kstDate(now);
+          for (const row of diff.rows) await repo.upsertUploadedItFaq(q, { ...row, revisedOn });
+          return {
+            applied: diff.rows.length,
+            revisedOn,
+            message: diff.rows.length > 0 ? '반영했어요. 개정일이 올라갔어요.' : '바뀌는 FAQ가 없어서 그대로 뒀어요.',
+          };
+        },
+      });
+      await refreshSource();
+      return result;
     },
 
     /** 다른 후보 제목을 눌렀을 때. 사람이 고른 FAQ의 원문 단계예요. */

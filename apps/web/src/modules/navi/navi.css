@@ -39,6 +39,35 @@
   color: var(--text-quiet);
   font-size: 0.8rem;
   font-weight: 400;
+  /* "FIN-/01"처럼 ID 가운데서 끊기지 않게 해요(11/3 QA L10). */
+  white-space: nowrap;
+  display: inline-block;
+}
+/* 업무 이름이 폰에서 글자 단위로 끊기지 않게 낱말 단위로 줄을 바꿔요(11/3 QA L10). */
+.chart-table th,
+.chart-table td {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+.chart-table th[scope='row'] {
+  min-width: 8em;
+}
+.chart-table .date {
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .chart-table {
+    font-size: 0.85rem;
+  }
+  .chart-table th,
+  .chart-table td {
+    padding: 8px 4px;
+  }
+  /* 폰에서는 ID를 업무 이름 아래 줄에 둬요. */
+  .chart-table th[scope='row'] .row-id {
+    display: block;
+    margin-left: 0;
+  }
 }
 .chart-row-buttons {
   display: flex;
@@ -122,6 +151,36 @@
   justify-content: space-between;
   gap: 12px;
 }
+/* 카운터는 한 줄로 둬요. 넘친 안내는 아래 줄로 옮겼어요(11/3 QA L5). */
+.it-help-count {
+  white-space: nowrap;
+  flex: none;
+}
+.it-help-keys {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 키보드가 없는 폰에서는 단축키 안내를 숨겨요. */
+@media (hover: none) {
+  .it-help-keys {
+    visibility: hidden;
+  }
+}
+/* 찾는 동안에도 버튼을 잠그지 않아서(초점 유지, L4) 꺼진 모양은 aria-disabled로 보여 줘요. */
+.it-help-input button[type='submit'][aria-disabled='true'] {
+  opacity: 0.38;
+}
+/* PC(마우스)에서는 오류 스택 줄을 접지 않고 옆으로 밀어 봐요. 줄마다 한 줄로 읽혀요(11/3 QA L5). */
+@media (hover: hover) and (pointer: fine) {
+  .it-help-input textarea {
+    white-space: pre;
+    overflow-x: auto;
+    overflow-wrap: normal;
+  }
+}
 .it-help-foot button {
   flex: 0 1 auto;
   width: auto;
@@ -156,4 +215,34 @@
 }
 .inquiry-stats td.hint {
   text-align: left;
+}
+
+/* 누르는 영역은 44px 이상이에요(11/3 QA L9): 창구 링크·문의 버튼·돌아가기·FAQ 칩 */
+.onboarding-list .card-actions .small,
+.desk-link,
+.feature-page .back,
+.it-others .chip {
+  min-height: 44px;
+}
+.desk-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+.feature-page .back {
+  display: inline-flex;
+  align-items: center;
+}
+.onboarding-list .card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.it-help .headline:focus {
+  outline: none;
+}
+.it-help .headline:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

@@ -224,6 +224,8 @@ function overlapping(record: LeaveRecord | null, days: readonly LeaveDay[]): str
 
 export function createInquiryService(ctx: AppContext) {
   const purge = () => ctx.db.tx((q) => repo.purgeInquiries(q, recordCutoff(ctx.now()), ctx.now()));
+  /** 보관 기간 시작(지금 - 7일). 읽고 바꾸는 쿼리는 이 뒤에 보낸 문의만 봐요(11/3). */
+  const since = () => recordCutoff(ctx.now());
   const personOf = async (subject: string) => {
     const profile = await ctx.adapters.directory.getProfile(subject).catch(() => null);
     return { idpSubject: subject, ...(profile?.email ? { email: profile.email } : {}) };
@@ -254,7 +256,10 @@ export function createInquiryService(ctx: AppContext) {
   };
 
   return {
-    /** 7일(INQUIRY_KEEP_DAYS) 지난 문의·답장을 지워요. 서버가 한 시간마다, 목록을 열 때도 불러요(L-33). */
+    /**
+     * 7일(INQUIRY_KEEP_DAYS) 지난 문의·답장을 지우고 주간 셈에 더해요. 한 시간 보관 회차(모듈 retention)만 불러요.
+     * 11/3(ADR-21 개정): 목록을 열 때 지우던 것을 뺐어요. 읽기는 created_at으로 걸러서 7일 지난 문의가 보이지 않아요.
+     */
     purge,
 
     /**
@@ -346,14 +351,12 @@ export function createInquiryService(ctx: AppContext) {
     async inbox(user: DeskUser): Promise<InquiryListResponse> {
       const owners = ctx.services.navi ? await ctx.services.navi.ownerDepartments() : new Set<string>();
       if (!owners.has(user.department) && user.department !== GENERAL_DESK.team) return { enabled: false, items: [] };
-      await purge();
-      return { enabled: true, items: await withReplies(await repo.inquiriesOfDepartment(ctx.db, user.department), 'inbox') };
+      return { enabled: true, items: await withReplies(await repo.inquiriesOfDepartment(ctx.db, user.department, since()), 'inbox') };
     },
 
     /** 내 문의: 내가 보낸 문의와 처리 상태·답장·반려 사유 */
     async mine(user: DeskUser): Promise<InquiryListResponse> {
-      await purge();
-      return { enabled: true, items: await withReplies(await repo.inquiriesOfSender(ctx.db, user.pseudonymId), 'mine') };
+      return { enabled: true, items: await withReplies(await repo.inquiriesOfSender(ctx.db, user.pseudonymId, since()), 'mine') };
     },
 
     /** [확인했어요]·[처리했어요]: 받은 부서 사람만. 바뀌면 보낸 사람에게 알림이 가요. 휴가 요청은 [확인했어요]만이에요. */
@@ -363,7 +366,7 @@ export function createInquiryService(ctx: AppContext) {
         action: `inquiry.${to}`,
         enabled: (s) => s.modules.navi !== 'off',
         run: async (q, now) => {
-          const moved = await repo.moveInquiryState(q, id, user.department, to, now);
+          const moved = await repo.moveInquiryState(q, id, user.department, to, now, recordCutoff(now));
           if (!moved) throw new DeskError('not-found', 404, '바꿀 수 있는 문의가 없어요. 새로 불러와 주세요');
           const verb = to === 'seen' ? '확인했어요' : '처리했어요';
           await ctx.notify.toUser(q, moved.senderPseudonym, {
@@ -387,7 +390,7 @@ export function createInquiryService(ctx: AppContext) {
         action: d.decision === 'approved' ? 'leave.approve' : 'leave.reject',
         enabled: (s) => s.modules.navi !== 'off',
         run: async (q, now) => {
-          const i = await repo.lockOpenLeaveRequest(q, id, user.department);
+          const i = await repo.lockOpenLeaveRequest(q, id, user.department, recordCutoff(now));
           if (!i || !i.leaveDays || !i.senderSubject) throw new DeskError('not-found', 404, '결정할 수 있는 휴가 요청이 없어요. 새로 불러와 주세요');
           let recorded: boolean | null = null;
           if (d.decision === 'approved') {
@@ -422,7 +425,7 @@ export function createInquiryService(ctx: AppContext) {
         action: 'inquiry.reply',
         enabled: (s) => s.modules.navi !== 'off',
         run: async (q, now) => {
-          const i = await repo.inquiryOfDepartment(q, id, user.department);
+          const i = await repo.inquiryOfDepartment(q, id, user.department, recordCutoff(now));
           if (!i) throw new DeskError('not-found', 404, '답장할 수 있는 문의가 없어요. 새로 불러와 주세요');
           const added = await repo.insertReply(q, {
             inquiryId: id,

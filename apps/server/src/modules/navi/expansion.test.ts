@@ -225,18 +225,21 @@ describe('④ 받은 부서 주간 문의 셈', () => {
     const t = await setup();
     await sendMany(t, 3, 0);
     t.advance(14 * DAY);
+    await t.runRetention();
     const hr = await t.loginAs(MOCK.hr);
-    await hr.call('GET', '/api/navi/inquiries/inbox');
     const stats = (await hr.call('GET', '/api/navi/inquiry-stats')).body as InquiryStatsResponse;
     expect(stats.weeks).toEqual([{ week: '2026-W44', from: '2026-10-26', to: '2026-11-01', folded: true }]);
   });
 
-  it('지우기가 겹쳐도(목록 열기와 정시 지우기) 한 번만 세요', async () => {
+  it('지우기가 겹쳐도(보관 회차 두 번) 한 번만 세고, 목록 열기는 지우지도 세지도 않아요(11/3)', async () => {
     const t = await setup();
     await sendMany(t, 10, 0);
     t.advance(8 * DAY);
     const hr = await t.loginAs(MOCK.hr);
-    await Promise.all([t.runRetention(), hr.call('GET', '/api/navi/inquiries/inbox'), hr.call('GET', '/api/navi/inquiries/inbox')]);
+    await hr.call('GET', '/api/navi/inquiries/inbox');
+    expect((await t.db.query('select * from navi_inquiry_weeks')).rows).toEqual([]);
+    const navi = t.modules.find((m) => m.kind === 'navi')!;
+    await Promise.all([t.runRetention(), navi.retention!(), hr.call('GET', '/api/navi/inquiries/inbox')]);
     const { rows } = await t.db.query<{ sent: number }>('select sent from navi_inquiry_weeks');
     expect(rows).toEqual([{ sent: 10 }]);
   });

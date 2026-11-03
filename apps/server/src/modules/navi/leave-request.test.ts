@@ -314,6 +314,8 @@ describe('답장(ADR-24)', () => {
     t.advance(7 * 24 * 60 * 60_000 + 60_000);
     // 쉬는 시간이 지나 세션이 끊겨서 다시 들어와요.
     expect(await inbox(await t.loginAs(MOCK.hr))).toEqual([]);
+    // 지우기는 한 시간 보관 회차가 해요(11/3, 목록 열기는 걸러 읽기만 해요).
+    await t.runRetention();
     expect((await t.db.query('select 1 from navi_inquiry_replies')).rows).toHaveLength(0);
   });
 });
