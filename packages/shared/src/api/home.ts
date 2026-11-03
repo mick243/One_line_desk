@@ -12,11 +12,14 @@ export type HomeKind = (typeof HOME_KINDS)[number];
 export const HOME_PERIODS = ['today', 'tomorrow', 'this-week', 'next-week', 'recent'] as const;
 export type HomePeriod = (typeof HOME_PERIODS)[number];
 
-/** 다른 일이면 옮겨 갈 기능 페이지 */
-export const HOME_MOVE_TO = ['rooms', 'navi', 'notices', 'board'] as const;
+/** 다른 일이면 옮겨 갈 기능 페이지. away는 마이 페이지의 "자리비움 알리기" 양식이에요(11/3). */
+export const HOME_MOVE_TO = ['rooms', 'navi', 'notices', 'board', 'away'] as const;
 export type HomeMoveTo = (typeof HOME_MOVE_TO)[number];
 
-export const HOME_INTENTS = ['mine', 'move', 'unknown'] as const;
+/**
+ * mine: 내 일 · move: 기능 페이지로 옮기기 · team-schedule: 같은 팀 일정(11/3, 같은 부서만. 팀 전체 또는 같은 팀 한 사람) · unknown: 그 밖
+ */
+export const HOME_INTENTS = ['mine', 'move', 'team-schedule', 'unknown'] as const;
 export type HomeIntent = (typeof HOME_INTENTS)[number];
 
 /** 홈 질문 글 최대 길이. 원문은 POST 본문·요청 메모리에서만 다뤄요. */
@@ -76,6 +79,83 @@ export interface HomeAskResponse {
   links: HomeOpen[];
   /** 옮기기·모름 카드(move/unknown일 때) */
   cards: Card[];
+  /** 같은 팀 일정(team-schedule일 때). 그 밖에는 null이에요. */
+  team: HomeTeamSchedule | null;
+}
+
+/**
+ * 휴가 칸(11/3 사용자 결정): 하루/오전/오후만이에요. 휴가 종류(연차·병가·공가)·사유·남은 연차 칸은 일부러 없어요.
+ * half는 근태 기록에 오전·오후가 없는 반차예요("반나절"로 보여요).
+ */
+export type AbsencePart = 'full' | 'am' | 'pm' | 'half';
+
+/** 자리비움 종류(정해진 코드만, 자유 글 없음). 직원이 자기 것만 정해요(11/3). */
+export const AWAY_KINDS = ['outside', 'trip', 'remote', 'away'] as const;
+export type AwayKind = (typeof AWAY_KINDS)[number];
+export const AWAY_KIND_LABEL: Record<AwayKind, string> = { outside: '외근', trip: '출장', remote: '재택', away: '자리비움' };
+/** 자리비움은 오늘부터 이만큼 뒤까지만 정해요. 7일 보관(ADR-21)과 같아요. */
+export const AWAY_MAX_DAYS = 7;
+/** 한 사람이 한꺼번에 둘 수 있는 자리비움 수 */
+export const AWAY_MAX_ITEMS = 20;
+
+/**
+ * 같은 팀 일정 한 칸(11/3 사용자 결정). 이름·날과, 종류마다 정해진 칸만 있어요.
+ * - leave: 근태 기록에 들어간(승인된) 휴가. 하루/오전/오후만(종류·사유 없음).
+ * - meeting: 그 사람이 앱에서 예약했거나 초대받아 "참석할게요"로 답한 회의. 시간·회의실 이름만(제목·참석자·부른 사람 없음).
+ * - away: 그 사람이 스스로 알린 자리비움(외근·출장·재택·자리비움). 시간·종류만.
+ * start·end는 그날 안의 "HH:MM"(한국 시간)이고, 하루를 다 덮으면 allDay예요.
+ */
+export type TeamEntry =
+  | { name: string; date: string; what: 'leave'; part: AbsencePart }
+  | { name: string; date: string; what: 'meeting'; start: string; end: string; room: string }
+  | { name: string; date: string; what: 'away'; start: string; end: string; allDay: boolean; away: AwayKind };
+
+/**
+ * 같은 팀 일정 답. 같은 부서 사람에게만 보여요. shown이 false면 entries는 비어 있고 headline이 이유(다른 팀·꺼짐·연결 안 됨)예요.
+ */
+export interface HomeTeamSchedule {
+  shown: boolean;
+  /** 묻는 사람의 부서 이름(본인 부서). 다른 팀 이름은 넣지 않아요. */
+  team: string;
+  /** 같은 팀 한 사람을 물었으면 그 사람 이름, 팀 전체면 null */
+  person: string | null;
+  entries: TeamEntry[];
+  /** 근태 기록을 읽었는지. 거짓이면 휴가 칸이 빠졌다고 알려요(회의·자리비움만 보여요). */
+  leaveConnected: boolean;
+}
+
+export const ABSENCE_PART_LABEL: Record<AbsencePart, string> = { full: '하루', am: '오전', pm: '오후', half: '반나절' };
+
+/** 같은 팀 일정 문구(화면설계 "보안이 보이는 문구"에 올릴 후보, 11/3) */
+export const TEAM_SCHEDULE_TEXT = {
+  tail: '같은 팀에게만 보여요. 휴가 종류·사유, 회의 참석자는 보이지 않아요',
+  otherTeam: '다른 팀의 일정은 볼 수 없어요. 그룹웨어 팀 일정에서 확인해 주세요',
+  otherPerson: '다른 팀 사람의 일정은 볼 수 없어요. 그룹웨어 팀 일정에서 확인해 주세요',
+  off: '이 회사에서는 팀 일정을 여기서 보여 주지 않아요. 그룹웨어 팀 일정에서 확인해 주세요',
+  notConnected: '근태 기록이 연결되지 않아 팀 일정을 볼 수 없어요. 그룹웨어 팀 일정에서 확인해 주세요',
+  noTeam: '내 부서를 알 수 없어서 팀 일정을 볼 수 없어요',
+  awayMove: '자리비움은 마이 페이지에서 알려요',
+  leaveMissing: '근태 기록이 연결되지 않아 휴가는 보이지 않아요',
+} as const;
+
+/** GET /api/navi/away: 내 자리비움(본인 것만). enabled가 거짓이면 양식을 숨겨요(팀 일정이나 담당 찾기가 꺼짐). */
+export interface AwayItem {
+  id: string;
+  kind: AwayKind;
+  /** ISO 시각 */
+  start: string;
+  end: string;
+}
+export interface AwayListResponse {
+  enabled: boolean;
+  items: AwayItem[];
+}
+/** POST /api/navi/away: 종류·시작·끝·멱등 키만. 자유 글 칸은 없어요. */
+export interface AwaySetRequest {
+  kind: AwayKind;
+  start: string;
+  end: string;
+  requestId: string;
 }
 
 /** GET /api/home/today: 홈 첫 화면 "오늘·이번 주 내 일". 열 때 한 번 불러요(폴링 아님). */

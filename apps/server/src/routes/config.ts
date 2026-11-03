@@ -52,6 +52,7 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
       mcp: s.mcp,
       autoActions: s.autoActions,
       homeAsk: s.homeAsk,
+      teamSchedule: s.teamSchedule,
       standalone: isPantryStandalone(s),
       demoData: demoAdapters()
         .filter((a) => a.mock || a.partial)
@@ -105,7 +106,7 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
           type: 'object',
           required: ['flag', 'value'],
           additionalProperties: false,
-          properties: { flag: { enum: ['roomsWrite', 'mcp', 'autoActions', 'homeAsk'] }, value: { type: 'boolean' } },
+          properties: { flag: { enum: ['roomsWrite', 'mcp', 'autoActions', 'homeAsk', 'teamSchedule'] }, value: { type: 'boolean' } },
         },
       },
     },

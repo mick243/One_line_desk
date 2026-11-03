@@ -14,10 +14,12 @@ import { pageOfKind } from './features';
 import { HomeAnswer, HomeItemList, type HomeTurn, pushTurn } from './HomeAnswer';
 
 const EXAMPLES = ['이번 주 내 일정 뭐 있어?', '내 휴가 어떻게 됐어?', '오늘 나한테 온 거 있어?'];
+/** 같은 팀 일정이 켜져 있을 때만 더해요(11/3). */
+const TEAM_EXAMPLE = '오늘 우리 팀 누가 없어?';
 
 type Open = (page: AppDestination, text?: string, auto?: boolean) => void;
 
-export function HomeAsk({ onOpen }: { onOpen: Open }) {
+export function HomeAsk({ onOpen, teamSchedule = false }: { onOpen: Open; teamSchedule?: boolean }) {
   const actions = useActions();
   const [text, setText] = useState('');
   const [turns, setTurns] = useState<HomeTurn[]>([]);
@@ -66,7 +68,7 @@ export function HomeAsk({ onOpen }: { onOpen: Open }) {
         />
         <p className='hint home-ask-note'>{HOME_ASK_NOTE}</p>
         <div className='chips scroll' aria-label='예시 문장'>
-          {EXAMPLES.map((ex) => (
+          {(teamSchedule ? [...EXAMPLES, TEAM_EXAMPLE] : EXAMPLES).map((ex) => (
             <button key={ex} type='button' className='chip' onClick={() => setText(ex)}>
               {ex}
             </button>

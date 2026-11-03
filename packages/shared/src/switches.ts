@@ -15,6 +15,12 @@ export interface OpsSettings {
   autoActions: boolean;
   /** 홈 AI 채팅 "나에게 해당하는 일"(ADR-27). 끄면 홈 칸과 홈 경로가 닫혀요. 읽기만 해서 출시 기본값도 켬이에요. */
   homeAsk: boolean;
+  /**
+   * 홈 채팅 "같은 팀 일정"(11/3). 같은 부서 사람의 휴가(하루/오전/오후, 종류·사유 없음)·회의(시간·회의실)·자리비움을 보여요.
+   * 다른 사람의 인사 자료·일정이라 회사 규정·보안팀 확인 뒤 켜요: 개발·시연은 켬, 출시 기본값은 끔이에요.
+   * 끄면 마이 페이지의 "자리비움 알리기"도 닫혀요(보는 곳이 팀 일정뿐이라서요).
+   */
+  teamSchedule: boolean;
   /** 이번 2주는 고정이에요(M6). */
   noticeSummary: false;
   s5Mode: 'list-only';
@@ -46,6 +52,7 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
   mcpToolsOff: [],
   autoActions: true,
   homeAsk: true,
+  teamSchedule: true,
   noticeSummary: false,
   s5Mode: 'list-only',
   links: {
@@ -68,8 +75,11 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
   },
 };
 
-/** 출시(운영) 기본값(CD-14): 회의실 쓰기·MCP·채팅 자동 실행은 끈 채로 시작해요. 운영자가 바꾸면 운영 설정 표에 남아요. */
-export const LAUNCH_OPS_SETTINGS: OpsSettings = { ...DEFAULT_OPS_SETTINGS, roomsWrite: false, mcp: false, autoActions: false };
+/**
+ * 출시(운영) 기본값(CD-14): 회의실 쓰기·MCP·채팅 자동 실행·같은 팀 일정은 끈 채로 시작해요. 운영자가 바꾸면 운영 설정 표에 남아요.
+ * 같은 팀 일정(11/3)은 회사 규정·보안팀 확인 뒤 켜요.
+ */
+export const LAUNCH_OPS_SETTINGS: OpsSettings = { ...DEFAULT_OPS_SETTINGS, roomsWrite: false, mcp: false, autoActions: false, teamSchedule: false };
 
 /** "같이 채워요 단독" 모드 = navi·notices·rooms 모두 끔. 묻기 탭을 숨기고 같이 채워요 탭이 첫 화면이에요. */
 export function isPantryStandalone(settings: OpsSettings): boolean {
@@ -84,4 +94,9 @@ export function roomsWriteOn(settings: OpsSettings): boolean {
 /** 라우터 후보에 남는 종류. 끔인 종류는 빠지고, 링크만은 남아서 링크 카드를 받아요. */
 export function routableModules(settings: OpsSettings): ModuleKind[] {
   return MODULES.filter((m) => settings.modules[m] !== 'off');
+}
+
+/** 자리비움 알리기(11/3)가 열려 있는지. 보는 곳이 같은 팀 일정뿐이라 같은 팀 일정과 담당 찾기가 모두 켬일 때만이에요. */
+export function awayOn(settings: OpsSettings): boolean {
+  return settings.modules.navi === 'on' && settings.teamSchedule;
 }

@@ -4,3 +4,4 @@
 // 처음 열 때 따로 불러요(registry의 lazyPart). 여기서 내보내면 첫 화면에 같이 묶이니 내보내지 않아요.
 export { InquiryInbox, MyInquiries } from './Inquiries';
 export { InquirySheet } from './InquirySheet';
+export { MyAway } from './Away';

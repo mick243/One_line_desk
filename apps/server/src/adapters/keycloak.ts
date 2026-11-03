@@ -258,6 +258,17 @@ export class KeycloakAdapter implements IdpAdapter, DirectoryAdapter, OidcLogin 
     ).map(strip);
   }
 
+  async departmentMembers(department: string, limit: number): Promise<EmployeeProfile[]> {
+    return (await this.people())
+      .filter((p) => p.active && p.department === department)
+      .slice(0, limit)
+      .map(strip);
+  }
+
+  async departments(): Promise<string[]> {
+    return [...new Set((await this.people()).filter((p) => p.active && p.department).map((p) => p.department))];
+  }
+
   async personNameWords(): Promise<string[]> {
     return (await this.people()).filter((p) => p.active).flatMap((p) => personNameWords(p.displayName));
   }

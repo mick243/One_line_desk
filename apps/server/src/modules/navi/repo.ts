@@ -1,4 +1,5 @@
 import {
+  type AwayKind,
   type Kind,
   type LeaveDay,
   type LeaveType,
@@ -458,4 +459,56 @@ export async function upsertUploadedItFaq(q: Queryable, f: ItFaqRow): Promise<vo
        steps = excluded.steps, revised_on = excluded.revised_on, row_id = excluded.row_id, source = 'upload'`,
     [f.id, f.title, f.aliases, f.errorCodes, f.steps, f.revisedOn, f.rowId],
   );
+}
+
+// ── 자리비움(11/3, 140) ───────────────────────────────────────────────
+
+export interface AwayRow {
+  id: string;
+  pseudonymId: string;
+  kind: AwayKind;
+  start: number;
+  end: number;
+}
+
+const AWAY_COLUMNS = `id::text as id, pseudonym_id as "pseudonymId", kind,
+  (extract(epoch from starts_at) * 1000)::float8 as start,
+  (extract(epoch from ends_at) * 1000)::float8 as "end"`;
+
+/** 본인 자리비움 중 아직 끝나지 않은 것 */
+export async function myAway(q: Queryable, pseudonymId: string, now: number): Promise<AwayRow[]> {
+  const { rows } = await q.query<AwayRow>(`select ${AWAY_COLUMNS} from navi_away where pseudonym_id = $1 and ends_at > $2 order by starts_at, id`, [
+    pseudonymId,
+    new Date(now).toISOString(),
+  ]);
+  return rows;
+}
+
+export async function insertAway(q: Queryable, a: { pseudonymId: string; kind: AwayKind; start: number; end: number; now: number }): Promise<string> {
+  const { rows } = await q.query<{ id: string }>(
+    'insert into navi_away (pseudonym_id, kind, starts_at, ends_at, created_at) values ($1, $2, $3, $4, $5) returning id::text as id',
+    [a.pseudonymId, a.kind, new Date(a.start).toISOString(), new Date(a.end).toISOString(), new Date(a.now).toISOString()],
+  );
+  return rows[0]!.id;
+}
+
+/** 본인 것만 지워요. 남의 줄이면 0이에요. */
+export async function deleteAway(q: Queryable, id: string, pseudonymId: string): Promise<number> {
+  const { rows } = await q.query('delete from navi_away where id = $1 and pseudonym_id = $2 returning id', [id, pseudonymId]);
+  return rows.length;
+}
+
+/** 같은 팀 일정: 그 사람들의 자리비움 중 [from, to)와 겹치는 것 */
+export async function awayOf(q: Queryable, pseudonymIds: string[], from: number, to: number): Promise<AwayRow[]> {
+  if (!pseudonymIds.length) return [];
+  const { rows } = await q.query<AwayRow>(
+    `select ${AWAY_COLUMNS} from navi_away where pseudonym_id = any($1::text[]) and starts_at < $3 and ends_at > $2 order by starts_at, id`,
+    [pseudonymIds, new Date(from).toISOString(), new Date(to).toISOString()],
+  );
+  return rows;
+}
+
+/** 보관 7일(ADR-21): 정한 지 7일 지났거나 끝난 지 7일 지난 줄을 지워요. */
+export async function purgeAway(q: Queryable, before: number): Promise<void> {
+  await q.query('delete from navi_away where created_at < $1 or ends_at < $1', [new Date(before).toISOString()]);
 }

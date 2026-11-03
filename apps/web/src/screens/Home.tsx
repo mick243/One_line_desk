@@ -17,7 +17,7 @@ export function Home({
   onOpen,
 }: {
   me: Me;
-  switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; autoActions: boolean; homeAsk?: boolean };
+  switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; autoActions: boolean; homeAsk?: boolean; teamSchedule?: boolean };
   onOpen: (page: AppDestination, text?: string, auto?: boolean) => void;
 }) {
   const { MyReservations, MyRequests, MyInquiries } = webModules;
@@ -38,7 +38,7 @@ export function Home({
         </h1>
       </header>
 
-      {homeAsk && <HomeAsk onOpen={onOpen} />}
+      {homeAsk && <HomeAsk onOpen={onOpen} teamSchedule={switches.teamSchedule === true} />}
 
       <section className='card' aria-label='할 수 있는 일'>
         <ul className='menu-list'>

@@ -1,6 +1,7 @@
 import { recordCutoff } from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
 import type { DeskModule, PlanHandler } from '../../core/module';
+import { createAwayRead, registerAwayRoutes } from './away';
 import { createInquiryService } from './inquiries';
 import { createItHelpService } from './it-help';
 import { createNaviHomeRead } from './home-read';
@@ -21,14 +22,24 @@ export function createNaviModule(ctx: AppContext): DeskModule {
   // 분장표 주인 역할 계산(core/guard.ts)이 이걸 써요.
   // MCP 읽기 도구(11/3, ADR-14 개정)는 mcp로만 불러요.
   // 홈 "나에게 해당하는 일"(ADR-27)은 home으로만 불러요.
-  ctx.services.navi = { ownerDepartments: () => navi.ownerDepartments(), mcp: createNaviMcpRead(ctx, navi, itHelp), home: createNaviHomeRead(ctx) };
+  // 홈 "같은 팀 일정"(11/3)은 away로 같은 부서 사람의 자리비움(종류·시간)만 읽어요.
+  ctx.services.navi = {
+    ownerDepartments: () => navi.ownerDepartments(),
+    mcp: createNaviMcpRead(ctx, navi, itHelp),
+    home: createNaviHomeRead(ctx),
+    away: createAwayRead(ctx),
+  };
 
   return {
     kind: 'navi',
     ask: (input) => navi.ask(input),
     // MCP 문의 양식·휴가 준비 앱 링크 토큰(열어 보기만, 실행 없음)
     planHandlers: [inquireLinkHandler as PlanHandler<unknown>, leaveLinkHandler as PlanHandler<unknown>],
-    register: (app) => registerNaviRoutes(app, ctx, navi, inquiries, itHelp),
+    register: (app) => {
+      registerNaviRoutes(app, ctx, navi, inquiries, itHelp);
+      // 자리비움(11/3): 본인 정하기·지우기(고정 버튼)
+      registerAwayRoutes(app, ctx);
+    },
     async seed() {
       await navi.seed();
       await itHelp.seed();
@@ -49,11 +60,13 @@ export function createNaviModule(ctx: AppContext): DeskModule {
           : { name: 'chart', label: '업무 분장표', mock: false },
       itHelp.hasRealFaqs() ? { name: 'it-faq', label: 'IT FAQ', mock: false } : { name: 'mock-it-faq', label: 'IT FAQ(가상 FAQ)', mock: true },
     ],
-    // 보관 기간(7일, 10/28): 문의(지우며 주간 셈에 더해요)·주간 셈·바꿔 보낸 기록. 문의는 여기서만 지워요(11/3, 목록 열기는 읽을 때 걸러요).
+    // 보관 기간(7일, 10/28): 문의(지우며 주간 셈에 더해요)·주간 셈·바꿔 보낸 기록·자리비움(11/3). 문의는 여기서만 지워요(11/3, 목록 열기는 읽을 때 걸러요).
     async retention() {
       await inquiries.purge();
       await repo.purgeInquiryWeeks(ctx.db, recordCutoff(ctx.now()));
       await repo.purgeFeedback(ctx.db, recordCutoff(ctx.now()));
+      // 자리비움(11/3): 정한 지 7일 지났거나 끝난 지 7일 지난 줄
+      await repo.purgeAway(ctx.db, recordCutoff(ctx.now()));
     },
   };
 }

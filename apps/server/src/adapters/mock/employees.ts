@@ -55,6 +55,17 @@ export class MockEmployees implements IdpAdapter, DirectoryAdapter {
     ).map(strip);
   }
 
+  async departmentMembers(department: string, limit: number): Promise<EmployeeProfile[]> {
+    return this.people
+      .filter((e) => e.active && e.department === department)
+      .slice(0, limit)
+      .map(strip);
+  }
+
+  async departments(): Promise<string[]> {
+    return [...new Set(this.people.filter((e) => e.active && e.department).map((e) => e.department))];
+  }
+
   async personNameWords(): Promise<string[]> {
     return this.people.filter((e) => e.active).flatMap((e) => personNameWords(e.displayName));
   }

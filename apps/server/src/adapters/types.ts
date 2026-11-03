@@ -84,6 +84,8 @@ export interface LeaveUse {
   /** YYYY-MM-DD(한국 날짜). 앞으로 쓸 예정인 날도 들어 있어요. */
   date: string;
   kind: 'full' | 'half';
+  /** 반차의 오전·오후(근태 기록이 알려 줄 때만, 11/3 팀 부재). 없으면 "반나절"로 보여요. */
+  half?: 'am' | 'pm';
   /** 없으면 연차예요. 공가(official, 11/1)·병가(sick, 11/3)는 남은 연차 계산에서 빼지 않아요. 병가 사유는 받지 않아요. */
   type?: 'annual' | 'official' | 'sick';
 }
@@ -123,6 +125,13 @@ export interface DirectoryAdapter {
   chartOwnerDepartments(): Promise<Set<string>>;
   /** 참석자 고르기용 직원 검색(이름·부서). 재직 중인 사람만, limit명까지예요. 명단을 통째로 주지 않아요. */
   search(query: string, limit: number): Promise<EmployeeProfile[]>;
+  /**
+   * 같은 부서 재직자(11/3 홈 채팅 "우리 팀 부재"). 묻는 사람 본인 부서만 부르고, limit명까지예요.
+   * 이름은 같은 부서 사람에게만 보여요. 다른 부서 목록을 화면·API·LLM에 내보내지 않아요.
+   */
+  departmentMembers(department: string, limit: number): Promise<EmployeeProfile[]>;
+  /** 재직자 부서 이름들. 질문에 다른 팀 이름이 있는지 서버 안에서 대조만 해요(화면·API·LLM에 내보내지 않아요). */
+  departments(): Promise<string[]>;
   /** 공개 판 이름 검사에 대조할 직원 이름 낱말(재직자). 서버 안에서 대조만 하고 화면·API·LLM에 내보내지 않아요(QA-4). */
   personNameWords(): Promise<string[]>;
 }

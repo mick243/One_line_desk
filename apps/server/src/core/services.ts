@@ -1,5 +1,6 @@
 import type {
   Card,
+  AwayKind,
   CardAction,
   InquiryState,
   InvitedMeetingsResponse,
@@ -29,6 +30,24 @@ export interface RoomsService {
   equipment?: RoomsEquipmentRead;
   /** 홈 "나에게 해당하는 일"(ADR-27)이 쓰는 본인 읽기. rooms 모듈이 채워요. */
   home?: RoomsHomeRead;
+  /** 홈 "같은 팀 일정"(11/3)이 쓰는 같은 팀 회의 읽기. rooms 모듈이 채워요. */
+  team?: RoomsTeamRead;
+}
+
+/** 같은 팀 사람의 회의 한 칸. 누구(가명 ID)·시간·회의실 이름만이에요. 회의 제목·참석자·부른 사람은 없어요. */
+export interface TeamMeeting {
+  pseudonymId: string;
+  start: number;
+  end: number;
+  roomName: string;
+}
+
+export interface RoomsTeamRead {
+  /**
+   * 그 사람들이 앱에서 예약한 회의와 초대받아 "참석할게요"로 답한 회의 중 [from, to)와 겹치는 것.
+   * 부르는 쪽(core/home-team.ts)이 묻는 사람과 같은 부서 사람의 가명 ID만 넘겨요. 모의 장부(남의 바깥 예약)는 넣지 않아요.
+   */
+  meetingsOf(pseudonymIds: string[], from: number, to: number): Promise<TeamMeeting[]>;
 }
 
 /** 홈이 모으는 회의실 쪽 내 일. 회의실 쓰기가 꺼져 있으면 enabled가 거짓이고 비어 있어요. */
@@ -69,6 +88,21 @@ export interface NaviService {
   mcp?: NaviMcpRead;
   /** 홈 "나에게 해당하는 일"(ADR-27)이 쓰는 본인 읽기. navi 모듈의 home-read.ts가 채워요. */
   home?: NaviHomeRead;
+  /** 홈 "같은 팀 일정"(11/3)이 쓰는 자리비움 읽기. navi 모듈의 away.ts가 채워요. */
+  away?: NaviAwayRead;
+}
+
+/** 자리비움 한 칸. 누구(가명 ID)·종류 코드·시간만이에요. 자유 글은 없어요. */
+export interface TeamAway {
+  pseudonymId: string;
+  kind: AwayKind;
+  start: number;
+  end: number;
+}
+
+export interface NaviAwayRead {
+  /** 그 사람들이 스스로 알린 자리비움 중 [from, to)와 겹치는 것. 부르는 쪽이 같은 부서 사람의 가명 ID만 넘겨요. */
+  ofPeople(pseudonymIds: string[], from: number, to: number): Promise<TeamAway[]>;
 }
 
 /** 홈에 보이는 내 문의·휴가 요청 한 줄. 글(질문·사유·답장·반려 사유)·답한 사람은 없어요. 휴가 날은 본인 것이라 본인 홈에만 가요(ADR-18). */

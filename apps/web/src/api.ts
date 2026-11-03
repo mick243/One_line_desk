@@ -20,6 +20,8 @@ export interface PublicConfig {
   autoActions: boolean;
   /** 홈 AI 채팅 "나에게 해당하는 일"(ADR-27) */
   homeAsk: boolean;
+  /** 홈 채팅 "같은 팀 일정"(11/3, 출시 기본 끔) */
+  teamSchedule?: boolean;
   standalone: boolean;
   demoData: string[];
   rulesVersion: number;

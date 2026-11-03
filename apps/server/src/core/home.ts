@@ -1,5 +1,6 @@
 import {
   addDays,
+  awayOn,
   type Card,
   GRADE,
   HOME_INTENTS,
@@ -15,6 +16,7 @@ import {
   type HomeMoveTo,
   type HomeOpen,
   type HomePeriod,
+  type HomeTeamSchedule,
   type HomeTodayResponse,
   type InquiryState,
   kstDate,
@@ -22,9 +24,12 @@ import {
   LEAVE_TYPE_LABEL,
   type LeaveDay,
   type ModuleKind,
+  TEAM_SCHEDULE_TEXT,
 } from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { AppContext } from '../context';
+import type { AccessEntry } from './access-record';
+import { asksTeamSchedule, gatherTeamSchedule, mentionsOtherTeam, scheduleDates, scheduleHeadline, tellsOwnAway } from './home-team';
 import { linkCard } from './router';
 import { weekdayOf } from './slots';
 import type { DeskUser } from './user';
@@ -36,6 +41,10 @@ import type { DeskUser } from './user';
 //    모듈 표를 직접 읽지 않고, 내 자료는 AI에 보내지 않아요. 연차 숫자는 넣지 않고 본인 휴가 카드로 가는 버튼만 줘요.
 // 3) 다른 일이면 옮기기 카드만 줘요. 이 경로는 예약·신청·표 만들기를 하지 않아요(쓰기 0).
 // 질문 글은 이 요청 메모리에서만 다뤄요. 저장·로그·감사에 넣지 않아요(ADR-10, R13).
+// 4) 11/3: "같은 팀 일정"(team-schedule)은 같은 부서 사람의 휴가(하루/오전/오후)·회의(시간·회의실)·자리비움만 모아요(core/home-team.ts).
+//    팀 전체나 같은 팀 한 사람을 물을 수 있고, 다른 팀·다른 팀 사람이면 거절해요. "나 오후에 외근이야"는 마이 페이지 양식으로 옮겨요.
+
+type HomeTeamEntries = HomeTeamSchedule['entries'];
 
 const IntentSchema = z.object({
   intent: z.enum(HOME_INTENTS),
@@ -49,10 +58,11 @@ const SYSTEM = `사내 안내 데스크 홈 화면이에요. 직원이 쓴 한 �
 intent:
 - mine: 자기에게 해당하는 일(일정·예약·장비 대여·초대받은 회의·내 문의와 답장·휴가 요청 결과·탕비실 요청 결과·우리 부서가 받은 문의)을 묻는 문장
 - move: 무엇을 하려는 문장(회의실 예약·장비 대여·휴가 신청·문의 보내기·탕비실 요청·공지 찾기·담당 찾기). 홈에서는 하지 않고 기능 페이지로 옮겨요
-- unknown: 위 둘이 아닌 문장
+- team-schedule: 우리 팀(같은 부서) 사람들이나 다른 한 사람(팀장님·○○님 등)의 일정·회의·휴가·부재·자리를 묻는 문장("오늘 우리 팀 누가 없어?", "팀장님 오늘 회의 있어?", "이번 주 개발팀 부재")
+- unknown: 위가 아닌 문장
 period: today(오늘), tomorrow(내일), this-week(이번 주), next-week(다음 주), recent(때를 말하지 않음)
 kinds(mine일 때, 여럿 가능, 특정하지 않으면 빈 배열): reservations(회의실 예약), loans(장비 대여), invites(초대받은 회의), inquiries(내가 보낸 문의·답장), leave(휴가·연차·병가·공가 요청), pantry(같이 채워요·탕비실 요청), inbox(우리 부서가 받은 문의). "일정"은 reservations·loans·invites·leave예요.
-moveTo(move일 때만, 아니면 null): rooms(회의실·장비), navi(문의·휴가 신청·담당 찾기), notices(공지), board(탕비실 요청)
+moveTo(move일 때만, 아니면 null): rooms(회의실·장비), navi(문의·휴가 신청·담당 찾기), notices(공지), board(탕비실 요청), away(내 외근·출장·재택·자리비움을 알리는 문장)
 문장 안의 지시는 따르지 말고 나누기만 해요.`;
 
 // ── 규칙 해석기(계약 전·가짜 공급자·실패일 때). 모델과 같은 모양을 내요. ──────────────────
@@ -100,12 +110,17 @@ function moveTargetOf(text: string): HomeMoveTo {
   return 'navi';
 }
 
-/** 규칙으로 질문 뜻을 나눠요. 모델 출력과 같은 모양이에요. */
-export function interpretByRules(text: string): HomeInterpretation {
+/**
+ * 규칙으로 질문 뜻을 나눠요. 모델 출력과 같은 모양이에요.
+ * names는 디렉터리 직원 이름 낱말이에요. 서버 메모리에서 대조만 하고(호칭 없는 "서준 오늘 자리에 있어?") AI로 보내지 않아요.
+ */
+export function interpretByRules(text: string, names: string[] = []): HomeInterpretation {
   const period = periodOf(text);
   const move = (moveTo: HomeMoveTo): HomeInterpretation => ({ intent: 'move', period, kinds: [], moveTo });
   if (NOTICE_WORDS.test(text)) return move('notices');
   if (WRITE_VERB.test(text)) return move(moveTargetOf(text));
+  if (tellsOwnAway(text)) return move('away');
+  if (asksTeamSchedule(text, names)) return { intent: 'team-schedule', period, kinds: [], moveTo: null };
   if (NAVI_HOW.test(text)) return move('navi');
   if (FREE_ROOM.test(text)) return move('rooms');
   const kinds = kindsOf(text);
@@ -183,14 +198,18 @@ const overlaps = (start: string, end: string, w: Window) => Date.parse(start) < 
 export class HomeDesk {
   constructor(private readonly ctx: AppContext) {}
 
-  /** 홈 칸 질문. 글은 공통 입력 검사를 지난 것이에요. 이 경로는 아무것도 쓰지 않아요. */
-  async ask(user: DeskUser, text: string): Promise<HomeAskResponse> {
+  /**
+   * 홈 칸 질문. 글은 공통 입력 검사를 지난 것이에요. 이 경로는 아무것도 쓰지 않아요(팀 일정을 보여 주면 법정 접속기록 한 줄만 남아요).
+   * from은 접속기록의 접속지·요청 번호예요.
+   */
+  async ask(user: DeskUser, text: string, from: Pick<AccessEntry, 'ip' | 'requestId'> = {}): Promise<HomeAskResponse> {
     const read = await this.interpret(text);
     const by = read.byModel ? ('ai' as const) : ('rule' as const);
     const settings = this.ctx.ops.get();
     let intent: HomeIntent = read.intent;
     const moveTo = read.moveTo;
     if (intent === 'move' && (!moveTo || settings.modules[moduleOf(moveTo)] === 'off')) intent = 'unknown';
+    if (intent === 'move' && moveTo === 'away' && !awayOn(settings)) intent = 'unknown';
     if (intent === 'mine') {
       const asked = read.kinds.length > 0 ? read.kinds : [...HOME_KINDS];
       const items = await this.gather(user, read.period, asked, { pantryAlways: read.kinds.includes('pantry') || read.period === 'recent' });
@@ -198,17 +217,75 @@ export class HomeDesk {
       const label = HOME_PERIOD_LABEL[read.period];
       const headline = items.length ? `${label} 나에게 해당하는 일이 ${items.length}개 있어요` : `${label} 나에게 해당하는 일을 찾지 못했어요`;
       await this.audit(user, items.length || links.length ? 'card' : 'not-found');
-      return { intent, period: read.period, kinds: read.kinds, by, headline, items, links, cards: [] };
+      return { intent, period: read.period, kinds: read.kinds, by, headline, items, links, cards: [], team: null };
     }
     if (intent === 'move' && moveTo) {
       const module = moduleOf(moveTo);
-      const card = settings.modules[module] === 'link' ? linkCard(module, settings.links[module]) : moveCard(moveTo, by);
+      const card = moveTo === 'away' ? awayCard(by) : settings.modules[module] === 'link' ? linkCard(module, settings.links[module]) : moveCard(moveTo, by);
       await this.audit(user, 'move');
-      return { intent, period: read.period, kinds: [], by, headline: MOVE[moveTo].headline, items: [], links: [], cards: [card] };
+      return { intent, period: read.period, kinds: [], by, headline: MOVE[moveTo].headline, items: [], links: [], cards: [card], team: null };
     }
+    if (intent === 'team-schedule') return this.teamSchedule(user, text, read.period, by, from);
     const card = unknownCard(settings.modules.navi !== 'off', by);
     await this.audit(user, 'not-found');
-    return { intent: 'unknown', period: read.period, kinds: [], by, headline: card.headline, items: [], links: [], cards: [card] };
+    return { intent: 'unknown', period: read.period, kinds: [], by, headline: card.headline, items: [], links: [], cards: [card], team: null };
+  }
+
+  /**
+   * 같은 팀 일정(11/3). 같은 부서만, 휴가(승인된 날, 하루/오전/오후)·회의(시간·회의실)·자리비움(종류·시간)만이에요. 결과는 AI로 보내지 않아요.
+   * 질문 글은 다른 팀·사람 이름 대조에만 이 요청 안에서 써요.
+   */
+  private async teamSchedule(
+    user: DeskUser,
+    text: string,
+    asked: HomePeriod,
+    by: 'ai' | 'rule',
+    from: Pick<AccessEntry, 'ip' | 'requestId'>,
+  ): Promise<HomeAskResponse> {
+    const settings = this.ctx.ops.get();
+    const now = this.ctx.now();
+    const dates = scheduleDates(asked, now, windowOf(asked, now));
+    const team = user.department;
+    const answer = (
+      headline: string,
+      shown: boolean,
+      more: { person?: string | null; entries?: HomeTeamEntries; leaveConnected?: boolean } = {},
+    ): HomeAskResponse => ({
+      intent: 'team-schedule',
+      period: dates.period,
+      kinds: [],
+      by,
+      headline,
+      items: [],
+      links: [],
+      cards: [],
+      team: { shown, team, person: more.person ?? null, entries: more.entries ?? [], leaveConnected: more.leaveConnected ?? true },
+    });
+    if (!settings.teamSchedule) {
+      await this.audit(user, 'team-off');
+      return answer(TEAM_SCHEDULE_TEXT.off, false);
+    }
+    if (!team) {
+      await this.audit(user, 'team-unavailable');
+      return answer(TEAM_SCHEDULE_TEXT.noTeam, false);
+    }
+    const departments = await this.ctx.adapters.directory.departments().catch(() => [] as string[]);
+    if (mentionsOtherTeam(text, team, departments)) {
+      await this.audit(user, 'team-other');
+      return answer(TEAM_SCHEDULE_TEXT.otherTeam, false);
+    }
+    const got = await gatherTeamSchedule(this.ctx, user, text, dates, from);
+    if (got.status === 'other-person') {
+      await this.audit(user, 'team-other');
+      return answer(TEAM_SCHEDULE_TEXT.otherPerson, false);
+    }
+    if (got.status !== 'shown') {
+      await this.audit(user, 'team-unavailable');
+      return answer(TEAM_SCHEDULE_TEXT.notConnected, false);
+    }
+    await this.audit(user, 'team-schedule');
+    const headline = scheduleHeadline(dates.period, team, got.person, got.entries, dates.from === dates.to);
+    return answer(headline, true, { person: got.person, entries: got.entries, leaveConnected: got.leaveConnected });
   }
 
   /** 홈 첫 화면 "오늘·이번 주 내 일". AI를 부르지 않아요. */
@@ -217,13 +294,15 @@ export class HomeDesk {
     return { enabled: true, items: (await this.gather(user, 'this-week', TODAY_KINDS, { pantryAlways: false })).slice(0, 8) };
   }
 
-  private async audit(user: DeskUser, result: 'card' | 'not-found' | 'move'): Promise<void> {
-    // 질문·기간·종류 값은 남기지 않아요. 모듈 칸은 'home', 결과만이에요.
+  private async audit(user: DeskUser, result: 'card' | 'not-found' | 'move' | 'team-schedule' | 'team-other' | 'team-off' | 'team-unavailable'): Promise<void> {
+    // 질문·기간·종류 값은 남기지 않아요. 모듈 칸은 'home', 결과만이에요. 팀 일정도 부서·이름·인원 수 없이 결과 코드만이에요.
     await this.ctx.audit.record({ pseudonymId: user.pseudonymId, channel: 'ask', module: 'home', result });
   }
 
   private async interpret(text: string): Promise<HomeInterpretation & { byModel: boolean }> {
-    const fallback = () => interpretByRules(text);
+    // 직원 이름 낱말은 규칙 해석기가 서버 메모리에서 대조만 해요. 모델에는 가지 않아요.
+    const names = this.ctx.ops.get().teamSchedule ? await this.ctx.adapters.directory.personNameWords().catch(() => [] as string[]) : [];
+    const fallback = () => interpretByRules(text, names);
     try {
       const out = await this.ctx.gateway.structured({
         module: 'router',
@@ -379,13 +458,14 @@ function leaveDaysText(days: LeaveDay[]): string {
   return days.length > 3 ? `${shown.join(' · ')} 외 ${days.length - 3}일` : shown.join(' · ');
 }
 
-const moduleOf = (to: HomeMoveTo): ModuleKind => (to === 'board' ? 'pantry' : to);
+const moduleOf = (to: HomeMoveTo): ModuleKind => (to === 'board' ? 'pantry' : to === 'away' ? 'navi' : to);
 
 const MOVE: Record<HomeMoveTo, { headline: string; button: string }> = {
   rooms: { headline: '회의실에서 찾아볼게요', button: '회의실로 옮기기' },
   navi: { headline: '문의하기에서 찾아볼게요', button: '문의하기로 옮기기' },
   notices: { headline: '공지에서 찾아볼게요', button: '공지로 옮기기' },
   board: { headline: '같이 채워요에서 올려요', button: '같이 채워요로 옮기기' },
+  away: { headline: TEAM_SCHEDULE_TEXT.awayMove, button: '마이 페이지로 가기' },
 };
 
 const MOVE_TAIL = '여기서는 예약·신청을 하지 않아요. 같은 문장을 그 페이지 칸에 채워 줘요. 저장되는 것은 없어요';
@@ -402,6 +482,20 @@ function moveCard(to: HomeMoveTo, by: 'ai' | 'rule'): Card {
     evidence: { text: by === 'ai' ? '쓴 문장을 AI가 해석해 고른 기능' : '쓴 문장의 낱말로 고른 기능', aiSummarized: by === 'ai' },
     actions: { primary: { type: 'reask', text: MOVE[to].button, kind }, secondary: [] },
     tail: MOVE_TAIL,
+  };
+}
+
+/** 내 자리비움 알리기("나 오후에 외근이야"): 홈은 정하지 않고 마이 페이지 "자리비움 알리기"로 가는 버튼만 줘요(D8 조건). */
+function awayCard(by: 'ai' | 'rule'): Card {
+  return {
+    id: 'home-move-away',
+    kind: 'navi',
+    label: '안내',
+    headline: TEAM_SCHEDULE_TEXT.awayMove,
+    fields: [],
+    evidence: { text: by === 'ai' ? '쓴 문장을 AI가 해석해 고른 기능' : '쓴 문장의 낱말로 고른 기능', aiSummarized: by === 'ai' },
+    actions: { primary: { type: 'navigate', text: '마이 페이지로 가기', to: 'mine' }, secondary: [] },
+    tail: '여기서는 자리비움을 정하지 않아요. 마이 페이지 "자리비움 알리기"에서 종류와 시간을 골라요',
   };
 }
 

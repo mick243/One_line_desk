@@ -1,6 +1,7 @@
 import { checkInput, HOME_ASK_MAX, type HomeAskResponse, type HomeTodayResponse } from '@one-line-desk/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context';
+import { accessFrom } from '../core/access-record';
 import { HomeDesk } from '../core/home';
 
 // 홈 AI 채팅 "나에게 해당하는 일"(ADR-27, 개선 회의 D8 해제).
@@ -37,7 +38,8 @@ export function registerHomeRoutes(app: FastifyInstance, ctx: AppContext) {
         await ctx.audit.record({ pseudonymId: user.pseudonymId, channel: 'ask', module: 'home', result: 'locked' });
         return reply.code(422).send({ error: 'locked', message: checked.locks[0]!.message, locks: checked.locks, rulesVersion: checked.rulesVersion });
       }
-      return home.ask(user, checked.text);
+      // 팀 부재를 보여 주면 접속기록에 접속지·요청 번호가 같이 남아요(ADR-20).
+      return home.ask(user, checked.text, accessFrom(req));
     },
   );
 

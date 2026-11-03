@@ -340,6 +340,37 @@ export async function seedFacilityStatus(q: Queryable, rows: { roomId: string; f
 }
 
 /**
+ * 같은 팀 일정(11/3): 그 사람들이 앱에서 예약했거나 초대받아 "참석할게요"로 답한 회의 중 [from, to)와 겹치는 것.
+ * 누구(가명 ID)·시간·회의실 이름만 골라요. 부른 사람·다른 참석자 칸은 고르지 않아요. 모의 장부 예약(source 'ledger')은 넣지 않아요.
+ */
+export async function teamMeetings(
+  q: Queryable,
+  pseudonymIds: string[],
+  from: number,
+  to: number,
+): Promise<{ pseudonymId: string; start: number; end: number; roomName: string }[]> {
+  if (!pseudonymIds.length) return [];
+  const { rows } = await q.query<{ pseudonymId: string; start: number; end: number; roomName: string }>(
+    `select who as "pseudonymId", r.name as "roomName",
+            (extract(epoch from lower(x.slot)) * 1000)::float8 as start,
+            (extract(epoch from upper(x.slot)) * 1000)::float8 as "end"
+       from (
+         select id, pseudonym_id as who from room_reservations
+          where source = 'app' and pseudonym_id = any($1::text[]) and slot && tstzrange($2, $3, '[)')
+         union
+         select i.reservation_id, i.attendee_pseudonym from room_invites i
+          where i.response = 'accepted' and i.attendee_pseudonym = any($1::text[])
+       ) m
+       join room_reservations x on x.id = m.id
+       join rooms r on r.id = x.room_id
+      where x.slot && tstzrange($2, $3, '[)')
+      order by lower(x.slot), r.name`,
+    [pseudonymIds, iso(from), iso(to)],
+  );
+  return rows;
+}
+
+/**
  * 보관 기간(7일, 10/28)이 지난 회의실 기록을 지워요. 서버가 한 시간마다 불러요.
  * 끝난 지 7일 지난 예약(초대·같이 빌린 장비는 함께 지워져요), 끝난 지 7일 지난 대여, 취소한 지 7일 지난 취소 이력이에요.
  * 앞으로 할 예약·대여는 언제 잡았든 남아요.
