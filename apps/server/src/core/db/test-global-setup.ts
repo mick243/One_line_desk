@@ -1,4 +1,7 @@
 import { randomBytes } from 'node:crypto';
+import { rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import pg from 'pg';
 import type { TestProject } from 'vitest/node';
 
@@ -11,6 +14,8 @@ declare module 'vitest' {
     testDatabaseUrl: string;
     /** 이번 실행이 만드는 스키마 이름 앞머리. 끝날 때 이 앞머리만 지워요. */
     testSchemaPrefix: string;
+    /** PGlite 시험: 마이그레이션까지 끝낸 DB 묶음 파일. 비어 있으면 시험마다 새로 만들어요. */
+    pgliteSnapshot: string;
   }
 }
 
@@ -19,7 +24,19 @@ export default async function setup(project: TestProject) {
   const prefix = `desk_t_${randomBytes(4).toString('hex')}`;
   project.provide('testDatabaseUrl', url);
   project.provide('testSchemaPrefix', prefix);
-  if (!url) return;
+  if (!url) {
+    // PGlite를 처음 띄우는 일(initdb)이 시험 DB 하나에 1~3초 걸려요. 마이그레이션까지 끝낸 DB를 한 번 떠 두고 시험마다 불러와요(약 0.4초).
+    const { createPgliteDb } = await import('./pglite');
+    const { applyMigrations } = await import('./migrate');
+    const db = await createPgliteDb();
+    await applyMigrations(db);
+    const file = join(tmpdir(), `${prefix}-pglite.tar`);
+    writeFileSync(file, Buffer.from(await (await db.dumpDataDir!()).arrayBuffer()));
+    await db.close();
+    project.provide('pgliteSnapshot', file);
+    return () => rmSync(file, { force: true });
+  }
+  project.provide('pgliteSnapshot', '');
 
   // 개발·운영 DB에서 시험을 돌리지 않게 이름으로 막아요.
   // 던지면 vite가 오류 위치를 찾다 다른 오류(code.charCodeAt)로 덮어서, 문구를 직접 찍고 끝내요. 시험은 아직 하나도 시작하지 않았어요.

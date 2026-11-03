@@ -250,8 +250,8 @@ describe('공가 요청(11/1)', () => {
     expect(back.title).toBe('인사팀이 공가 요청을 승인했어요 · 휴가 신청');
     // 공가로 근태 기록에 들어간 날도 겹치면 다시 신청하지 못해요.
     expect((await sendLeave(haneul, [{ date: '2026-11-03', kind: 'full' }])).status).toBe(409);
-    // 감사 로그에는 사유 코드·날짜가 없어요.
-    const audit = await t.db.query<{ row: string }>('select row_to_json(a)::text as row from audit_log a');
+    // 감사 로그에는 사유 코드·날짜가 없어요. 기록 시각(at)은 실제 오늘 날짜라서 빼고 봐요.
+    const audit = await t.db.query<{ row: string }>("select (to_jsonb(a) - 'at')::text as row from audit_log a");
     expect(audit.rows.map((r) => r.row).join('\n')).not.toMatch(/reserve|2026-11-03|LEAVECANARY5/);
   });
 });

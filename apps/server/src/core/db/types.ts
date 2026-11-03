@@ -10,4 +10,6 @@ export interface Db extends Queryable {
   /** fn이 던지면 되돌려요. */
   tx<T>(fn: (q: Queryable) => Promise<T>): Promise<T>;
   close(): Promise<void>;
+  /** PGlite만: 지금 DB를 묶음으로 떠요(시험 globalSetup의 스냅숏). */
+  dumpDataDir?(): Promise<Blob>;
 }
