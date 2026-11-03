@@ -20,7 +20,7 @@ export interface ServerConfig {
   mcpTokenSecret: string;
   databaseUrl: string | undefined;
   noRetentionContractConfirmed: boolean;
-  aiProvider: 'fake' | 'anthropic';
+  aiProvider: AiProviderName;
   aiModel: string;
   /** 비어 있는 DB에 가상 자료(등급 0)를 넣을지. 시연에서만 기본으로 켜요. */
   seedDemo: boolean;
@@ -91,8 +91,24 @@ const list = (value: string | undefined) =>
     .map((s) => s.trim())
     .filter(Boolean);
 
-/** 운영에서 받는 모델(BE-3). 목록 밖 값으로는 뜨지 않아요. */
+/** AI 공급자(11/3): Anthropic·Gemini 둘 다 쓸 수 있고, 기본은 Anthropic이에요. 비우면 모델을 부르지 않는 fake예요. */
+export type AiProviderName = 'fake' | 'anthropic' | 'gemini';
+const AI_PROVIDERS: readonly AiProviderName[] = ['fake', 'anthropic', 'gemini'];
+
+/** 운영에서 받는 Anthropic 모델(BE-3). 목록 밖 값으로는 뜨지 않아요. */
 export const ALLOWED_AI_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'];
+/** Gemini 모델 이름은 판마다 바뀌어서 목록을 박지 않고, 운영자가 계약한 모델을 DESK_AI_MODEL로 꼭 적게 해요. 모양만 검사해요. */
+export const GEMINI_MODEL_RE = /^gemini-[a-z0-9.-]{1,60}$/;
+
+/** 공급자마다 기본 모델. Gemini는 기본값이 없어요(계약한 모델을 직접 적어요). */
+function defaultModel(provider: AiProviderName): string {
+  return provider === 'gemini' ? '' : 'claude-opus-5-5';
+}
+
+/** 모르는 값은 fake로 두고, 운영 설정 검사(productionProblems)가 이유를 말하며 막아요. */
+function aiProviderOf(value: string | undefined): AiProviderName {
+  return value === 'anthropic' || value === 'gemini' ? value : 'fake';
+}
 
 const SECRET_MIN = 32;
 /** 시연 비밀번호 최소 길이. 공개 주소에 올라가서 맞히기 어렵게 해요. */
@@ -117,10 +133,15 @@ function productionProblems(env: NodeJS.ProcessEnv, config: ServerConfig, runtim
   if (new Set(given).size !== given.length) problems.push('비밀 값끼리는 서로 달라야 해요');
   if (!env.PUBLIC_BASE_URL?.startsWith('https://')) problems.push('PUBLIC_BASE_URL은 https 주소여야 해요');
   if (env.ANTHROPIC_LOG) problems.push('ANTHROPIC_LOG를 지워 주세요(요청 본문이 로그에 남을 수 있어요)');
+  if (env.DESK_AI_PROVIDER && !(AI_PROVIDERS as readonly string[]).includes(env.DESK_AI_PROVIDER))
+    problems.push(`DESK_AI_PROVIDER는 ${AI_PROVIDERS.filter((p) => p !== 'fake').join('·')} 중 하나이거나 비워야 해요`);
   if (config.aiProvider === 'anthropic' && !ALLOWED_AI_MODELS.includes(config.aiModel))
     problems.push(`DESK_AI_MODEL은 ${ALLOWED_AI_MODELS.join('·')} 중 하나여야 해요`);
+  if (config.aiProvider === 'gemini' && !GEMINI_MODEL_RE.test(config.aiModel))
+    problems.push('DESK_AI_PROVIDER=gemini이면 DESK_AI_MODEL에 계약한 Gemini 모델 이름(gemini-…)을 꼭 적어야 해요');
   // 키 없이 뜨면 묻기마다 모델 호출이 실패해서 규칙으로만 돌아요. 켠 줄 알았는데 꺼진 상태를 막아요(10/29 배포 준비 회의 B4).
   if (config.aiProvider === 'anthropic' && !env.ANTHROPIC_API_KEY) problems.push('DESK_AI_PROVIDER=anthropic인데 ANTHROPIC_API_KEY가 없어요');
+  if (config.aiProvider === 'gemini' && !env.GEMINI_API_KEY) problems.push('DESK_AI_PROVIDER=gemini인데 GEMINI_API_KEY가 없어요');
   problems.push(...networkProblems(env, runtime));
   if (config.demo) {
     // 시연 깃발이 운영 배포에 섞이면 가상 자료·모의 로그인이 실제 연결과 같이 떠요(QA-47). 시연은 다른 주소·DB·비밀로 따로 띄워요(CD-34).
@@ -210,8 +231,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, runtime: Runtim
     mcpTokenSecret: secret('MCP_TOKEN_SECRET', 'dev-only-mcp-token-secret-change-me-000'),
     databaseUrl: env.DATABASE_URL || undefined,
     noRetentionContractConfirmed: env.NO_RETENTION_CONTRACT_CONFIRMED === 'true',
-    aiProvider: env.DESK_AI_PROVIDER === 'anthropic' ? 'anthropic' : 'fake',
-    aiModel: env.DESK_AI_MODEL ?? 'claude-opus-5-5',
+    aiProvider: aiProviderOf(env.DESK_AI_PROVIDER),
+    aiModel: env.DESK_AI_MODEL ?? defaultModel(aiProviderOf(env.DESK_AI_PROVIDER)),
     seedDemo: env.DESK_SEED_DEMO ? env.DESK_SEED_DEMO === 'true' : demo,
     production,
     demo,

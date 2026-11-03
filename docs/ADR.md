@@ -254,6 +254,7 @@
 
 ### ADR-10 AI 호출과 원문 비보관
 - 상태: 채택 · 날짜: 2026-10-23 · 관련: D5, D9, R6, R11, R12, R13, M5, M6, 공통 바닥, F1~F3
+- 개정(2026-11-03, 사용자 결정): AI 공급자는 Anthropic(`DESK_AI_PROVIDER=anthropic`, `ANTHROPIC_API_KEY`, 모델 `claude-opus-5-5`·`claude-sonnet-5-5`·`claude-haiku-5-5`)과 Gemini(`DESK_AI_PROVIDER=gemini`, `GEMINI_API_KEY`, `DESK_AI_MODEL`에 계약한 `gemini-…` 모델을 꼭 적음) 둘 중 하나로 배포마다 고정해요. 기본은 Anthropic이에요. 거절·빈 답이면 다른 공급자·모델로 넘기지 않고 실패로 다뤄요. Gemini는 의존성 없이 generateContent REST(JSON 응답 + 스키마, zod 재검사)로 부르고, 오류 응답 본문은 읽지 않아요(`core/ai/gemini-provider.ts`). 무보관 계약 스위치(`NO_RETENTION_CONTRACT_CONFIRMED`)는 고른 공급자와의 계약을 뜻해요. 공급자를 바꾸면 그 공급자 계약부터 확인해요. 시연 서버는 계약을 가정하고 Anthropic으로 켜요(키는 `fly secrets`로만).
 - 맥락: 회사 업무 내용을 외부 AI로 보내지 않는 게 원칙이에요. 모듈 넷이 같은 LLM을 쓰면 대화 기억이나 로그를 타고 등급이 섞일 수 있어요.
 - 결정
   - LLM 호출은 게이트웨이 하나로만 해요. 호출마다 모듈·목적·데이터 등급을 붙이고, 등급 2 이상이면 거부해요.

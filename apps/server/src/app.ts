@@ -8,6 +8,7 @@ import { type Adapters, createAdapters, withOutboundAdapters } from './adapters'
 import type { ServerConfig } from './config';
 import type { AppContext } from './context';
 import { AnthropicProvider } from './core/ai/anthropic-provider';
+import { GeminiProvider } from './core/ai/gemini-provider';
 import { AiGateway, FakeProvider, type LlmProvider } from './core/ai/gateway';
 import { AccessRecorder } from './core/access-record';
 import { AuditLog } from './core/audit';
@@ -69,7 +70,14 @@ export async function buildApp(opts: BuildOptions) {
   const ops = new OpsSettingsStore(audit, db, config.production ? LAUNCH_OPS_SETTINGS : DEFAULT_OPS_SETTINGS);
   await ops.load();
   const settings = () => ops.get();
-  const provider = opts.provider ?? (config.aiProvider === 'anthropic' ? new AnthropicProvider(config.aiModel) : new FakeProvider());
+  // AI 공급자(11/3): Anthropic·Gemini 중 하나로 고정해요. 기본은 Anthropic이고, 비우면 모델을 부르지 않아요.
+  const provider =
+    opts.provider ??
+    (config.aiProvider === 'anthropic'
+      ? new AnthropicProvider(config.aiModel)
+      : config.aiProvider === 'gemini'
+        ? new GeminiProvider(config.aiModel, process.env.GEMINI_API_KEY ?? '', process.env.GEMINI_BASE_URL || undefined)
+        : new FakeProvider());
   const tokens = new ProposalTokens(config.proposalSecret, now, () => settings().values.proposalTtlSeconds * 1000);
   const adapters = withOutboundAdapters(opts.adapters ?? createAdapters(config), db, now, config.demo);
   // 운영 환경에서 모의 IdP로 뜨면 누구나 운영자로 들어와요. 시연 배포는 DESK_MOCK_LOGIN=true로 드러내 놓고 열어요.
