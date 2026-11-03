@@ -43,7 +43,10 @@ describe('입력 검사 다섯 경로(L-39)', () => {
     expect(chat.status, 'chat').toBe(control ? 400 : 422);
     const itHelp = await me.call('POST', '/api/navi/it-help', { text });
     expect(itHelp.status, 'it-help').toBe(control ? 400 : 422);
-    for (const res of [ask, inquiry, draft, post, chat, itHelp]) expect(res.body.message).not.toContain(text.trim());
+    // 홈 AI 채팅(ADR-27)
+    const home = await me.call('POST', '/api/home/ask', { text });
+    expect(home.status, 'home').toBe(control ? 400 : 422);
+    for (const res of [ask, inquiry, draft, post, chat, itHelp, home]) expect(res.body.message).not.toContain(text.trim());
   });
 
   it('잠긴 글은 문의함·판 어디에도 저장되지 않아요', async () => {

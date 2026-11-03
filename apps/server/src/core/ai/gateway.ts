@@ -29,7 +29,7 @@ export interface ProviderResult<T> {
 }
 
 export interface LlmProvider {
-  readonly name: 'anthropic' | 'fake';
+  readonly name: 'anthropic' | 'gemini' | 'fake';
   complete<T>(req: StructuredRequest<T>): Promise<ProviderResult<T>>;
 }
 

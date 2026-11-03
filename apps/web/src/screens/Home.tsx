@@ -1,10 +1,13 @@
 // 홈: 무엇을 할 수 있는지 목록 하나로 보여 줘요(10/26 화면 구조 변경, 10/26 디자인 정리).
 // 한 줄을 누르면 그 기능 페이지가 열려요. 아래에는 다가오는 내 예약·내 요청이 있어요.
+// 11/3(ADR-27, D8 해제): 맨 위에 "나에게 해당하는 일" 채팅 칸과 "오늘·이번 주 내 일" 카드가 있어요. 켜져 있으면
+// 겹치는 작은 카드(내 예약·내 문의 요약)는 빼고, 그 카드에 없는 같이 채워요 내 요청만 남겨요.
 import type { AppDestination, ModuleKind, ModuleSwitch } from '@one-line-desk/shared';
 import type { Me } from '../api';
 import { Icon } from '../components/Icon';
 import { webModules } from '../modules/registry';
 import { FEATURES, featureFor } from './features';
+import { HomeAsk } from './HomeAsk';
 
 const ICON = { navi: 'navi', rooms: 'rooms', notices: 'notices', pantry: 'pantry' } as const;
 
@@ -14,11 +17,12 @@ export function Home({
   onOpen,
 }: {
   me: Me;
-  switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; autoActions: boolean };
-  onOpen: (page: AppDestination, text?: string) => void;
+  switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; autoActions: boolean; homeAsk?: boolean };
+  onOpen: (page: AppDestination, text?: string, auto?: boolean) => void;
 }) {
   const { MyReservations, MyRequests, MyInquiries } = webModules;
   const { modules } = switches;
+  const homeAsk = switches.homeAsk === true;
   const features = FEATURES.filter((f) => modules[f.module] !== 'off').map((f) => featureFor(f, switches));
 
   return (
@@ -33,6 +37,8 @@ export function Home({
           무엇을 할까요?
         </h1>
       </header>
+
+      {homeAsk && <HomeAsk onOpen={onOpen} />}
 
       <section className='card' aria-label='할 수 있는 일'>
         <ul className='menu-list'>
@@ -55,9 +61,9 @@ export function Home({
         </ul>
       </section>
 
-      {modules.rooms !== 'off' && <MyReservations compact />}
+      {!homeAsk && modules.rooms !== 'off' && <MyReservations compact />}
       {modules.pantry !== 'off' && <MyRequests compact />}
-      {modules.navi === 'on' && <MyInquiries compact />}
+      {!homeAsk && modules.navi === 'on' && <MyInquiries compact />}
     </div>
   );
 }

@@ -139,6 +139,17 @@ describe('사내망·밖 접속 설정 검사(10/28 망 회의, C-3)', () => {
     [{ TRUST_PROXY: '10.0.0.0/8' }, 'TRUST_PROXY의 10.0.0.0/8는 너무 넓어요'],
     [{ TRUST_PROXY: '10.0.3.11,fd00::/48' }, 'TRUST_PROXY의 fd00::/48는 너무 넓어요'],
     [{ DESK_AI_PROVIDER: 'anthropic' }, 'ANTHROPIC_API_KEY가 없어요'],
+    // 11/3: Gemini도 쓸 수 있어요. 키와 계약한 모델 이름이 꼭 있어야 하고, 모르는 공급자는 막아요.
+    [{ DESK_AI_PROVIDER: 'gemini', DESK_AI_MODEL: 'gemini-3.5-flash' }, 'GEMINI_API_KEY가 없어요'],
+    [
+      { DESK_AI_PROVIDER: 'gemini', GEMINI_API_KEY: 'g-test' },
+      'DESK_AI_PROVIDER=gemini이면 DESK_AI_MODEL에 계약한 Gemini 모델 이름(gemini-…)을 꼭 적어야 해요',
+    ],
+    [
+      { DESK_AI_PROVIDER: 'gemini', GEMINI_API_KEY: 'g-test', DESK_AI_MODEL: 'claude-opus-5-5' },
+      'DESK_AI_PROVIDER=gemini이면 DESK_AI_MODEL에 계약한 Gemini 모델 이름(gemini-…)을 꼭 적어야 해요',
+    ],
+    [{ DESK_AI_PROVIDER: 'openai' }, 'DESK_AI_PROVIDER는 anthropic·gemini 중 하나이거나 비워야 해요'],
   ])('운영에서 %o → 뜨지 않아요', (patch, reason) => {
     expect(problemsOf({ ...PROD, ...patch })).toContain(reason);
   });
@@ -149,6 +160,11 @@ describe('사내망·밖 접속 설정 검사(10/28 망 회의, C-3)', () => {
     // 관문 없이 직접 받는 구성은 none으로 일부러 정했다고 남겨요. 아무도 믿지 않아요.
     expect(loadConfig({ ...PROD, TRUST_PROXY: 'none' }, NODE24).trustProxy).toBe(false);
     expect(() => loadConfig({ ...PROD, DESK_AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test' }, NODE24)).not.toThrow();
+    expect(loadConfig({ ...PROD, DESK_AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test' }, NODE24).aiModel).toBe('claude-opus-5-5');
+    expect(loadConfig({ ...PROD, DESK_AI_PROVIDER: 'gemini', GEMINI_API_KEY: 'g-test', DESK_AI_MODEL: 'gemini-3.5-flash' }, NODE24)).toMatchObject({
+      aiProvider: 'gemini',
+      aiModel: 'gemini-3.5-flash',
+    });
     expect(() => loadConfig({ ...PROD, HTTPS_PROXY: 'http://proxy.corp:8080', NODE_USE_ENV_PROXY: '1' }, NODE24)).not.toThrow();
     expect(() =>
       loadConfig({ ...PROD, HTTPS_PROXY: 'http://proxy.corp:8080', NODE_OPTIONS: '--max-old-space-size=512 --use-env-proxy' }, NODE24),

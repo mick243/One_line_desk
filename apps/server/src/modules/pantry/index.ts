@@ -11,7 +11,8 @@ import { createBoardService } from './service';
 export function createPantryModule(ctx: AppContext): DeskModule {
   const board = createBoardService(ctx);
   // MCP 탕비실 요청 찾기(11/3 확인 링크 넓히기)는 mcp로만 불러요.
-  ctx.services.pantry = { mcp: createPantryMcpRead(ctx, board) };
+  // 홈 "나에게 해당하는 일"(ADR-27)은 home으로 내 요청 상태만 읽어요.
+  ctx.services.pantry = { mcp: createPantryMcpRead(ctx, board), home: { myRequests: (user) => board.myRequests(user) } };
   return {
     kind: 'pantry',
     ask: (input) => board.ask(input),

@@ -23,6 +23,12 @@ kill_timeout = 60
   # 앞단이 Vercel이라 접속지는 모두 Vercel 주소예요. 믿지 않고, 시연 접속지는 법정 기록으로 쓰지 않아요.
   TRUST_PROXY = "none"
   SERVER_PORT = "3190"
+  # AI 공급자(11/3 사용자 결정): Anthropic을 써요. 키는 비밀이라 여기 적지 않고 `fly secrets set ANTHROPIC_API_KEY=…`로만 넣어요.
+  # 키 없이 배포하면 운영 설정 검사가 막아서 서버가 뜨지 않아요. Gemini로 바꾸려면 DESK_AI_PROVIDER="gemini"·DESK_AI_MODEL="gemini-…"·GEMINI_API_KEY(비밀).
+  DESK_AI_PROVIDER = "anthropic"
+  DESK_AI_MODEL = "claude-opus-5-5"
+  # 무보관 계약을 했다고 가정한 시연이에요(11/3 사용자 결정). 사람이 쓴 질문 글(등급 1)이 모델로 가요. 자료는 모두 가상이에요.
+  NO_RETENTION_CONTRACT_CONFIRMED = "true"
 
 [http_service]
   internal_port = 3190

@@ -24,6 +24,8 @@ export function createRoomsModule(ctx: AppContext): DeskModule {
     proposeReservation: (user, candidate) => desk.proposeReservation(user, candidate),
     myReservations: (user) => desk.myReservations(user),
     equipment: equipment.mcpRead(),
+    // 홈 "나에게 해당하는 일"(ADR-27): 내 대여·초대받은 회의 읽기만
+    home: { myLoans: (user) => equipment.myLoans(user), invited: (user) => desk.invites.invited(user) },
   };
 
   return {
