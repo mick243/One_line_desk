@@ -1,4 +1,4 @@
-import type { CardAction, OnboardingResponse } from '@one-line-desk/shared';
+import { type CardAction, deskLinkText, type OnboardingResponse } from '@one-line-desk/shared';
 import { useEffect, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
 import { InquirySheet } from './InquirySheet';
@@ -59,8 +59,9 @@ export function OnboardingScreen({ onBack }: { onBack: () => void }) {
                 </p>
                 <div className='card-actions'>
                   {item.deskUrl && (
-                    <a className='link' href={item.deskUrl} target='_blank' rel='noopener noreferrer'>
-                      창구 열기
+                    // 창구 링크가 메일이면 [메일 보내기], 웹 창구면 [창구 열기]예요(11/3). 누르는 영역은 44px 이상이에요(L9).
+                    <a className='neutral small desk-link' href={item.deskUrl} target='_blank' rel='noopener noreferrer'>
+                      {deskLinkText(item.deskUrl)}
                     </a>
                   )}
                   <button
