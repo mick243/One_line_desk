@@ -1,6 +1,6 @@
 import type { AppDestination, Card, CardAction, PlanConfirmResponse, PlanSheet } from '@one-line-desk/shared';
-import { type ComponentType, createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
-import { ApiFailure, api, apiRequest } from '../api';
+import { type ComponentType, createContext, type ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { ApiFailure, api, apiRequest, type PublicConfig } from '../api';
 import { CardView } from './CardView';
 import { Sheet } from './Sheet';
 
@@ -30,6 +30,8 @@ interface ActionsApi {
   show(shown: Shown): void;
   /** 쓰기가 끝나거나 새 알림이 올 때마다 올라가요. 목록 화면은 이 값이 바뀌면 다시 불러요. */
   version: number;
+  /** 마지막으로 version을 올린 게 사람이 누르지 않은 새 알림(폴링)인지. 목록 화면은 useListVersion으로 읽어요(ADR-20). */
+  quiet: boolean;
   /**
    * 이 화면에서 내가 한 쓰기가 끝날 때만 올라가요. 양식(문의·초대)과 고른 칸은 이 값으로만 닫거나 비워요.
    * 새 알림으로 목록만 다시 부를 때는 그대로라서, 쓰던 글이 사라지지 않아요(10/29 개선 회의 A2).
@@ -37,8 +39,11 @@ interface ActionsApi {
   writes: number;
   /** 카드 버튼 밖에서 쓰기가 끝났을 때(회의실 채팅 자동 실행, ADR-19) 목록을 다시 불러요. */
   refresh(): void;
-  /** 남이 한 일(새 알림)로 목록만 다시 불러요. 열린 양식은 그대로예요. */
-  reload(): void;
+  /**
+   * 남이 한 일(새 알림)로 목록만 다시 불러요. 열린 양식은 그대로예요.
+   * background: 폴링이 부른 거라 목록 요청도 쉬는 시간을 늘리지 않아요(ADR-20). 사람이 누른 거면 빼요.
+   */
+  reload(opts?: { background?: boolean }): void;
 }
 
 const ActionsContext = createContext<ActionsApi | null>(null);
@@ -49,26 +54,49 @@ export function useActions(): ActionsApi {
   return ctx;
 }
 
+/**
+ * version으로 다시 부르는 목록 화면이 써요. background()는 effect 안에서 한 번 불러요.
+ * 새 알림(폴링) 때문에 version만 올랐을 때만 true예요. 처음 열 때·내가 쓴 뒤·날짜 같은 조건을 바꾼 때는 false예요(ADR-20).
+ */
+export function useListVersion(): { version: number; background: () => boolean } {
+  const { version, quiet } = useActions();
+  const seen = useRef<number | null>(null);
+  return {
+    version,
+    background: () => {
+      const bg = quiet && seen.current !== null && seen.current !== version;
+      seen.current = version;
+      return bg;
+    },
+  };
+}
+
 type InviteAction = Extract<CardAction, { type: 'invite' }>;
+type InviteChannels = PublicConfig['inviteChannels'];
 
 export function ActionHost({
   children,
   onNavigate,
   InviteSheet,
+  inviteChannels,
 }: {
   children: ReactNode;
   onNavigate: (to: AppDestination) => void;
   /** 참석자 고르기 양식(ADR-17). 모듈 부품이라 App이 넘겨줘요(공통 부품이 모듈을 import하지 않게). */
-  InviteSheet?: ComponentType<{ action: InviteAction; onClose: () => void }>;
+  InviteSheet?: ComponentType<{ action: InviteAction; channels: InviteChannels; onClose: () => void }>;
+  /** 초대 알릴 길. App이 이미 받은 공개 설정에서 넘겨줘요(양식을 열 때마다 다시 부르지 않게). */
+  inviteChannels: InviteChannels;
 }) {
   const [confirming, setConfirming] = useState<Confirming | null>(null);
   const [shown, setShown] = useState<Shown | null>(null);
   const [version, setVersion] = useState(0);
+  const [quiet, setQuiet] = useState(false);
   const [writes, setWrites] = useState(0);
   const [inviting, setInviting] = useState<InviteAction | null>(null);
 
   // 내 쓰기가 끝났어요: 목록도 다시 부르고, 양식도 닫게 해요.
   const wrote = useCallback(() => {
+    setQuiet(false);
     setVersion((v) => v + 1);
     setWrites((w) => w + 1);
   }, []);
@@ -150,8 +178,14 @@ export function ActionHost({
     [fail, onNavigate, showOutcome, wrote],
   );
 
-  const reload = useCallback(() => setVersion((v) => v + 1), []);
-  const value = useMemo<ActionsApi>(() => ({ run, show: setShown, version, writes, refresh: wrote, reload }), [run, version, writes, wrote, reload]);
+  const reload = useCallback((opts?: { background?: boolean }) => {
+    setQuiet(opts?.background === true);
+    setVersion((v) => v + 1);
+  }, []);
+  const value = useMemo<ActionsApi>(
+    () => ({ run, show: setShown, version, quiet, writes, refresh: wrote, reload }),
+    [run, version, quiet, writes, wrote, reload],
+  );
 
   return (
     <ActionsContext.Provider value={value}>
@@ -175,7 +209,7 @@ export function ActionHost({
           }}
         />
       )}
-      {inviting && InviteSheet && <InviteSheet action={inviting} onClose={() => setInviting(null)} />}
+      {inviting && InviteSheet && <InviteSheet action={inviting} channels={inviteChannels} onClose={() => setInviting(null)} />}
       {shown && (
         <Sheet title={shown.title} onClose={() => setShown(null)}>
           {shown.message && <p>{shown.message}</p>}

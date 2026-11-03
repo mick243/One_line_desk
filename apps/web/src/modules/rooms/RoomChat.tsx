@@ -10,7 +10,7 @@ import {
 } from '@one-line-desk/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
-import { replaceCard, useActions } from '../../components/ActionHost';
+import { replaceCard, useActions, useListVersion } from '../../components/ActionHost';
 import { CardView } from '../../components/CardView';
 import { CheckedInput } from '../../components/CheckedInput';
 import { Icon } from '../../components/Icon';
@@ -335,12 +335,13 @@ export function RoomChat({
 
 /** 회의실 페이지 "내 대여" 칸. 대여가 없거나 회의실 쓰기가 꺼지면 숨겨요. [대여 취소]·[반납]은 확인 시트를 거쳐요. */
 export function MyLoans() {
-  const { run, version } = useActions();
+  const { run } = useActions();
+  const { version, background } = useListVersion();
   const [data, setData] = useState<MyLoansResponse | null>(null);
 
   useEffect(() => {
     let alive = true;
-    apiRequest<MyLoansResponse>('GET', '/api/rooms/my-loans')
+    apiRequest<MyLoansResponse>('GET', '/api/rooms/my-loans', undefined, { background: background() })
       .then((d) => {
         if (alive) setData(d);
       })

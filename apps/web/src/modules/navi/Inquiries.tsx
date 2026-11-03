@@ -13,7 +13,7 @@ import {
 } from '@one-line-desk/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
-import { useActions } from '../../components/ActionHost';
+import { useActions, useListVersion } from '../../components/ActionHost';
 import { newRequestId } from '../../net';
 
 // 받은 문의함(내 부서로 온 문의)과 내 문의(내가 보낸 문의). 담당 찾기 페이지 아래에 있어요(ADR-16).
@@ -34,12 +34,12 @@ const isOfficial = (item: InquiryItem) => item.leave?.type === 'official';
 const leaveText = (item: InquiryItem) => `${daysText(item.leave!.days)} · ${LEAVE_TYPE_LABEL[item.leave!.type]} ${fmt(item.leave!.total)}`;
 
 function useInquiries(path: string) {
-  const { version } = useActions();
+  const { version, background } = useListVersion();
   const [data, setData] = useState<InquiryListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    apiRequest<InquiryListResponse>('GET', path)
+    apiRequest<InquiryListResponse>('GET', path, undefined, { background: background() })
       .then((res) => alive && (setData(res), setError(null)))
       .catch((e) => alive && setError(e instanceof ApiFailure ? e.message : '문의를 불러오지 못했어요'));
     return () => {

@@ -542,6 +542,26 @@ describe('[F1-9·R9] S5 분장표 수정 제안함', () => {
     expect(rows[0]!.processing_period).toBe('매월 25일 일괄 지급');
   });
 
+  it('묻기가 메모리에 둔 분장표는 반영 뒤 새로 읽어서 옛 행이 보이지 않아요', async () => {
+    const t = await setup();
+    const dev = await t.loginAs(MOCK.dev);
+    // 반영 전에 한 번 물어서 메모리 분장표를 채워요.
+    const old = (await ask(t, dev, '세금계산서 발행은 어디서 해요?', 'navi')).cards[0]!;
+    expect(old.fields.find((f) => f.name === '처리 기간')?.value).toBe('분장표에 없음');
+    expect((await ask(t, dev, '외화 송금은 어디서 해요', 'navi')).cards[0]!.id).not.toBe('navi-FIN-07');
+
+    const staff = await t.loginAs(MOCK.staff);
+    const mine = parseChart(((await staff.call('GET', '/api/navi/chart/export')).body as { csv: string }).csv);
+    const edited = mine.map((r) => (r.id === 'FIN-04' ? { ...r, processingPeriod: '2영업일' } : r));
+    const csv = toCsv([...edited, { ...mine[0]!, id: 'FIN-07', task: '외화 송금 요청', aliases: ['해외 송금', '외화'] }]);
+    const preview = (await staff.call('POST', '/api/navi/chart/preview', { csv })).body as ChartPreviewResponse;
+    expect((await staff.call('POST', '/api/navi/chart/apply', { csv, baseVersion: preview.baseVersion })).status).toBe(200);
+
+    const fresh = (await ask(t, dev, '세금계산서 발행은 어디서 해요?', 'navi')).cards[0]!;
+    expect(fresh.fields.find((f) => f.name === '처리 기간')?.value).toBe('2영업일');
+    expect((await ask(t, dev, '외화 송금은 어디서 해요', 'navi')).cards[0]!.id).toBe('navi-FIN-07');
+  });
+
   it('[F1 완료 기준·D9] 사람 이름 칸이 든 분장표를 가져와도 그 이름이 DB·응답에 0건이에요', async () => {
     const t = await setup();
     const staff = await t.loginAs(MOCK.staff);

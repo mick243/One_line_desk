@@ -1,17 +1,18 @@
 import { type DemoInboxResponse, INVITE_RESPONSE_LABEL, type InvitedMeetingsResponse } from '@one-line-desk/shared';
 import { useEffect, useState } from 'react';
 import { apiRequest } from '../../api';
-import { useActions } from '../../components/ActionHost';
+import { useActions, useListVersion } from '../../components/ActionHost';
 
 // 나를 부른 회의(10/26, ADR-17). 초대받은 사람만 회의실·시간·부른 사람을 봐요. [참석할게요]·[못 가요]·캘린더 파일.
 
 export function InvitedMeetings() {
-  const { run, version } = useActions();
+  const { run } = useActions();
+  const { version, background } = useListVersion();
   const [data, setData] = useState<InvitedMeetingsResponse | null>(null);
 
   useEffect(() => {
     let alive = true;
-    apiRequest<InvitedMeetingsResponse>('GET', '/api/rooms/invites')
+    apiRequest<InvitedMeetingsResponse>('GET', '/api/rooms/invites', undefined, { background: background() })
       .then((d) => alive && setData(d))
       .catch(() => alive && setData({ enabled: false, items: [] }));
     return () => {
@@ -56,12 +57,12 @@ export function InvitedMeetings() {
 
 /** 시연 받은편지함: 모의 그룹웨어 캘린더·모의 Slack이 나에게 보낸 것. 실제 어댑터면 숨겨요. */
 export function DemoInbox() {
-  const { version } = useActions();
+  const { version, background } = useListVersion();
   const [data, setData] = useState<DemoInboxResponse | null>(null);
 
   useEffect(() => {
     let alive = true;
-    apiRequest<DemoInboxResponse>('GET', '/api/demo/inbox')
+    apiRequest<DemoInboxResponse>('GET', '/api/demo/inbox', undefined, { background: background() })
       .then((d) => alive && setData(d))
       .catch(() => alive && setData(null));
     return () => {

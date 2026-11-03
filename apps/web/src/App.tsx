@@ -127,6 +127,10 @@ export function App() {
   }, []);
   const navigate = useCallback((to: AppDestination) => go(to), [go]);
   const move = useCallback((kind: Kind, text: string) => go(pageOfKind(kind), text, true), [go]);
+  // 회의실 채팅에 넘기는 함수는 렌더마다 새로 만들지 않아요(채팅 안 useMemo가 깨지지 않게).
+  const showRooms = useCallback((show: RoomShowQuery | null) => setRoomShow(show ?? null), []);
+  const addRecent = useCallback((text: string) => setRoomRecent((list) => [text, ...list.filter((x) => x !== text)].slice(0, 5)), []);
+  const removeRecent = useCallback((text: string) => setRoomRecent((list) => list.filter((x) => x !== text)), []);
 
   if (offline) {
     return (
@@ -178,7 +182,7 @@ export function App() {
           reauth={ended && sessionEndedByIdle()}
         />
       ) : (
-        <ActionHost onNavigate={navigate} InviteSheet={webModules.InviteSheet}>
+        <ActionHost onNavigate={navigate} InviteSheet={webModules.InviteSheet} inviteChannels={config.inviteChannels}>
           <div className='app-bar'>
             <span className='brand'>한 줄 데스크</span>
             <NotificationBell onNavigate={navigate} />
@@ -202,10 +206,10 @@ export function App() {
                           auto={config.autoActions && config.roomsWrite}
                           write={config.roomsWrite}
                           recent={roomRecent}
-                          onShowRooms={(show) => setRoomShow(show ?? null)}
+                          onShowRooms={showRooms}
                           canEditFacilities={me.roles.includes('facilities')}
-                          onSent={(text) => setRoomRecent((list) => [text, ...list.filter((x) => x !== text)].slice(0, 5))}
-                          onRemoveRecent={(text) => setRoomRecent((list) => list.filter((x) => x !== text))}
+                          onSent={addRecent}
+                          onRemoveRecent={removeRecent}
                           {...p}
                         />
                       )

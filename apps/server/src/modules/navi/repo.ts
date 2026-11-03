@@ -59,11 +59,6 @@ export async function findRows(q: Queryable, ids: string[]): Promise<StoredRow[]
   return rows.map(toRow);
 }
 
-export async function ownerDepartments(q: Queryable): Promise<Set<string>> {
-  const { rows } = await q.query<{ owner_department: string }>('select distinct owner_department from navi_rows');
-  return new Set(rows.map((r) => r.owner_department));
-}
-
 const rowParams = (row: StoredRow) => [
   row.id,
   row.task,

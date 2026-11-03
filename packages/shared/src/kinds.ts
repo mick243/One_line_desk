@@ -2,14 +2,6 @@
 export const KINDS = ['navi', 'notices', 'rooms', 'pantry', 'unknown'] as const;
 export type Kind = (typeof KINDS)[number];
 
-export const KIND_LABEL: Record<Kind, string> = {
-  navi: '담당',
-  notices: '공지',
-  rooms: '회의실',
-  pantry: '탕비실',
-  unknown: '모름',
-};
-
 // 끄기 스위치가 붙는 모듈. unknown은 담당 안내(navi)로 가요.
 export const MODULES = ['navi', 'notices', 'rooms', 'pantry'] as const;
 export type ModuleKind = (typeof MODULES)[number];

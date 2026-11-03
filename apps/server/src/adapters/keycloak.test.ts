@@ -134,6 +134,16 @@ describe('임시 IdP 어댑터', () => {
     expect(await adapter.isActive('kc|nobody')).toBe(false);
     expect(await adapter.isActive('mock|emp-001')).toBe(false);
   });
+
+  it('동시에 온 명단 요청은 한 번만 받고, 없는 직원 때문에 30초 안에 다시 받지 않아요', async () => {
+    const { adapter, state } = await fakeIdp();
+    const listCalls = () => state.calls.filter((c) => c === 'GET /admin/realms/one-line-desk/users').length;
+    await Promise.all([adapter.search('개발', 10), adapter.getProfile('kc|u-doyun'), adapter.personNameWords()]);
+    expect(listCalls()).toBe(1);
+    // 방금 받은 명단에 없는 주체는 다시 받지 않고 바로 못 찾음이에요.
+    expect(await adapter.getProfile('kc|u-nobody')).toBeNull();
+    expect(listCalls()).toBe(1);
+  });
 });
 
 describe('IdP 로그인 경로(OIDC 인가 코드 + PKCE)', () => {

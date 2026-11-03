@@ -37,6 +37,8 @@ type Person = EmployeeProfile & { active: boolean };
 
 const SUBJECT_PREFIX = 'kc|';
 const SNAPSHOT_MS = 5 * 60_000;
+/** 못 찾은 직원 때문에 명단을 다시 받는 최소 간격. 없는 주체가 계속 와도 IdP를 두드리지 않아요. */
+const FORCE_MIN_MS = 30_000;
 const PAGE = 200;
 
 /** 그룹 경로 → 부서·층·역할. 모르는 그룹은 버려요. */
@@ -74,6 +76,10 @@ export class KeycloakAdapter implements IdpAdapter, DirectoryAdapter, OidcLogin 
   private keys: JWTVerifyGetKey | undefined;
   private serviceToken: { value: string; until: number } | undefined;
   private snapshot: { at: number; people: Person[] } | undefined;
+  /** 받는 중인 명단. 동시에 온 요청이 같이 기다려서 한 번만 받아요. */
+  private refreshing: Promise<Person[]> | undefined;
+  /** 마지막으로 명단 받기를 시작한 시각(실패해도 세요) */
+  private fetchedAt: number | undefined;
 
   constructor(
     private readonly cfg: KeycloakConfig,
@@ -195,9 +201,17 @@ export class KeycloakAdapter implements IdpAdapter, DirectoryAdapter, OidcLogin 
     };
   }
 
-  /** 명단을 몇 분마다 새로 받아요. IdP가 잠깐 안 되면 지난 명단을 그대로 써요. */
-  private async people(force = false): Promise<Person[]> {
-    if (!force && this.snapshot && this.now() - this.snapshot.at < SNAPSHOT_MS) return this.snapshot.people;
+  /** 명단을 몇 분마다 새로 받아요. 받는 중이면 그 결과를 같이 써요. IdP가 잠깐 안 되면 지난 명단을 그대로 써요. */
+  private people(force = false): Promise<Person[]> {
+    if (!force && this.snapshot && this.now() - this.snapshot.at < SNAPSHOT_MS) return Promise.resolve(this.snapshot.people);
+    this.refreshing ??= this.fetchPeople().finally(() => {
+      this.refreshing = undefined;
+    });
+    return this.refreshing;
+  }
+
+  private async fetchPeople(): Promise<Person[]> {
+    this.fetchedAt = this.now();
     try {
       const users: KcUser[] = [];
       for (let first = 0; ; first += PAGE) {
@@ -217,8 +231,12 @@ export class KeycloakAdapter implements IdpAdapter, DirectoryAdapter, OidcLogin 
   async getProfile(idpSubject: string): Promise<EmployeeProfile | null> {
     if (!idpSubject.startsWith(SUBJECT_PREFIX)) return null;
     const find = (list: Person[]) => list.find((p) => p.idpSubject === idpSubject);
-    const found = find(await this.people()) ?? find(await this.people(true));
-    return found ? strip(found) : null;
+    const found = find(await this.people());
+    if (found) return strip(found);
+    // 못 찾으면(막 들어온 직원) 명단을 다시 받아요. 30초 안에 받기 시작했으면 다시 받지 않아요.
+    if (this.fetchedAt !== undefined && this.now() - this.fetchedAt < FORCE_MIN_MS) return null;
+    const again = find(await this.people(true));
+    return again ? strip(again) : null;
   }
 
   async authenticate(idpSubject: string): Promise<EmployeeProfile | null> {

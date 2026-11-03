@@ -265,8 +265,9 @@ describe('MCP 경로의 경계', () => {
     const canaryQuery = '검색어카나리QX8';
     await callTool(t, at, 'notices_search', { query: canaryQuery });
     await callTool(t, at, 'rooms_find_free', { date: '2026-11-03', start: '07:13', minutes: 47, people: 37, floor: '9층' });
-    const { rows } = await t.db.query('select * from audit_log');
-    const text = JSON.stringify(rows);
+    const { rows } = await t.db.query<Record<string, unknown>>('select * from audit_log');
+    // 기록 시각(at)은 실제 오늘 날짜라서 빼고 봐요. 카나리 날짜가 오늘과 같으면 잘못 걸려요(11/3에 실제로 걸렸어요).
+    const text = JSON.stringify(rows.map(({ at: _at, ...rest }) => rest));
     for (const needle of [canaryQuery, '2026-11-03', '07:13', '"47"', '"37"', '9층']) expect(text, needle).not.toContain(needle);
     const all = await dumpTablesExceptAudit(t.db);
     expect(all).not.toContain(canaryQuery);

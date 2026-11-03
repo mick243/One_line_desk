@@ -21,6 +21,8 @@ export function NotificationBell({ onNavigate }: { onNavigate: (to: AppDestinati
   const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const seen = useRef<Set<string> | null>(null);
+  // 이 종이 새 알림으로 올린 version이에요. 그 version으로는 알림을 곧바로 다시 부르지 않아요.
+  const selfReload = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -32,7 +34,9 @@ export function NotificationBell({ onNavigate }: { onNavigate: (to: AppDestinati
           setToast(fresh.title);
           // 새 알림이 오면 화면의 목록(내 문의·받은 문의함·나를 부른 회의·내 예약)도 다시 불러요(QA D-A03).
           // 목록만 다시 불러요. 쓰던 문의·초대 양식은 닫지 않아요(10/29 개선 회의 A2).
-          reload();
+          // 사람이 누른 게 아니라서 목록 요청도 쉬는 시간을 늘리지 않아요(ADR-20).
+          selfReload.current = true;
+          reload({ background: true });
         }
       }
       seen.current = new Set(res.items.map((i) => i.id));
@@ -43,7 +47,9 @@ export function NotificationBell({ onNavigate }: { onNavigate: (to: AppDestinati
   }, [reload]);
 
   useEffect(() => {
-    void load();
+    // 방금 받은 알림으로 올린 version이면 다시 부르지 않고 간격만 새로 잡아요.
+    if (selfReload.current) selfReload.current = false;
+    else void load();
     // 탭이 가려져 있으면 부르지 않아요(ADR-20).
     const id = window.setInterval(() => {
       if (!document.hidden) void load();

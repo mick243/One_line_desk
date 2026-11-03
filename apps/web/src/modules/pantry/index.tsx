@@ -9,7 +9,7 @@ import { BlockedCardView, PreviewCardView, SameItemCardView } from './PreviewCar
 
 // F3 같이 채워요 화면 부품. 판·게시·표·합치기는 같이 채워요 판 에이전트, S4 주문안은 주문안 에이전트(./order)가 채워요.
 
-export { BoardScreen, MergePanel, MyRequests };
+export { BoardScreen, MyRequests };
 
 /** S4 총무 운영(PC 우선). 합치기 칸과 주문안 칸으로 나뉘어요. */
 export function OpsScreen(props: ScreenProps) {

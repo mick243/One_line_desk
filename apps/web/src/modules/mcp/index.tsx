@@ -12,7 +12,7 @@ import {
 } from '@one-line-desk/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
-import { ConfirmSheet, useActions } from '../../components/ActionHost';
+import { ConfirmSheet, useActions, useListVersion } from '../../components/ActionHost';
 import { CardView } from '../../components/CardView';
 import type { ScreenProps } from '../types';
 
@@ -41,15 +41,15 @@ function formatDay(isoDate: string): string {
 
 /** S6 "연결된 AI 앱" 칸: 앱 이름 · 연결한 날 · 읽을 수 있는 것 칩 · [끊기]. "마지막 사용"은 없어요(M4). */
 export function ConnectedApps() {
-  const { version } = useActions();
+  const { version, background } = useListVersion();
   const [data, setData] = useState<ConnectionsResponse | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [confirming, setConfirming] = useState<ConnectedApp | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (bg = false) => {
     try {
-      setData(await apiRequest<ConnectionsResponse>('GET', '/api/mcp/connections'));
+      setData(await apiRequest<ConnectionsResponse>('GET', '/api/mcp/connections', undefined, { background: bg }));
       setError('');
     } catch (e) {
       setError(failMessage(e, '연결된 AI 앱을 불러오지 못했어요'));
@@ -57,7 +57,7 @@ export function ConnectedApps() {
   }, []);
 
   useEffect(() => {
-    void load();
+    void load(background());
   }, [load, version]);
 
   return (

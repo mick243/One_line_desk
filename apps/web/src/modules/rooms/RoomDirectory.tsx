@@ -1,7 +1,7 @@
 import type { RoomListItem, RoomListResponse, RoomShowQuery } from '@one-line-desk/shared';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
-import { useActions } from '../../components/ActionHost';
+import { useListVersion } from '../../components/ActionHost';
 import type { ScreenProps } from '../types';
 import { RoomDetail } from './RoomDetail';
 import { dateLabel, statusText } from './roomText';
@@ -24,7 +24,7 @@ function floorOrder(myFloor: string) {
 }
 
 export function RoomDirectory({ me, show = null }: ScreenProps & { show?: RoomShowQuery | null }) {
-  const actions = useActions();
+  const { version, background } = useListVersion();
   const [data, setData] = useState<RoomListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [people, setPeople] = useState<number | null>(null);
@@ -42,25 +42,31 @@ export function RoomDirectory({ me, show = null }: ScreenProps & { show?: RoomSh
     setOnly({ floor: show?.floor, roomId: show?.roomId });
   }, [show]);
 
-  const date = show?.date;
-  const load = useCallback(async () => {
-    if (!date) return;
-    try {
-      setData(await apiRequest<RoomListResponse>('GET', `/api/rooms/list?date=${encodeURIComponent(date)}`));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof ApiFailure ? e.message : '회의실을 불러오지 못했어요');
-    }
-  }, [date]);
-
   // 접혀 있으면 부르지 않아요. 펼칠 때(show가 바뀔 때)마다 새로 불러서 지금 기준으로 맞춰요.
+  // 다시 펼친 뒤 늦게 온 앞 응답은 버려요(alive).
   useEffect(() => {
+    // 접혀 있어도 본 version을 적어 둬요. 그래야 펼칠 때 요청이 사람이 누른 것으로 나가요.
+    const bg = background();
     if (!show) {
       setData(null);
       return;
     }
-    void load();
-  }, [show, load, actions.version]);
+    const date = show.date;
+    if (!date) return;
+    let alive = true;
+    apiRequest<RoomListResponse>('GET', `/api/rooms/list?date=${encodeURIComponent(date)}`, undefined, { background: bg })
+      .then((d) => {
+        if (!alive) return;
+        setData(d);
+        setError(null);
+      })
+      .catch((e: unknown) => {
+        if (alive) setError(e instanceof ApiFailure ? e.message : '회의실을 불러오지 못했어요');
+      });
+    return () => {
+      alive = false;
+    };
+  }, [show, version]);
 
   const today = data ? data.checkedAt.slice(0, 10) : '';
   const isToday = data !== null && data.date === today;

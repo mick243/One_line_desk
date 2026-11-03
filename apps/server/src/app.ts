@@ -194,6 +194,15 @@ export async function buildApp(opts: BuildOptions) {
       ['ai-usage', () => ctx.gateway.purgeUsage(before)],
       ['demo-inbox', () => purgeDemoInbox(ctx)],
       ['access-log', () => ctx.access.purge()],
+      // 메모리 정리: 8시간 최대 수명이 지난 세션과 지난 횟수 창이에요.
+      [
+        'memory',
+        async () => {
+          const now = ctx.now();
+          ctx.rateLimiter.sweep(now);
+          ctx.sessions.sweep(now);
+        },
+      ],
       ...modules.map((m): [string, () => Promise<unknown>] => [`module:${m.kind}`, async () => m.retention?.()]),
     ];
     const failed: string[] = [];
@@ -218,13 +227,19 @@ export async function buildApp(opts: BuildOptions) {
   let retentionTimer: NodeJS.Timeout | undefined;
   let retryTimer: NodeJS.Timeout | undefined;
   const scheduledRetention = () => {
-    running = runRetention().then((failed) => {
-      firstRetentionDone = true;
-      if (!failed.length) return;
-      clearTimeout(retryTimer);
-      retryTimer = setTimeout(scheduledRetention, RETENTION_RETRY_MS);
-      retryTimer.unref();
-    });
+    // 앞 회차가 아직 돌면 새로 시작하지 않아요. 한 시간 타이머와 5분 재시도가 겹쳐 같은 표를 두 번 지우지 않게요.
+    if (running) return;
+    running = runRetention()
+      .then((failed) => {
+        firstRetentionDone = true;
+        if (!failed.length) return;
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(scheduledRetention, RETENTION_RETRY_MS);
+        retryTimer.unref();
+      })
+      .finally(() => {
+        running = undefined;
+      });
   };
   if (retentionOn) {
     app.addHook('onListen', async () => scheduledRetention());

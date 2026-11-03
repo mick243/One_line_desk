@@ -18,7 +18,8 @@ export const pantryApi = {
   draft: (text: string) => apiRequest<PantryDraftResponse>('POST', '/api/pantry/draft', { text }),
   /** background: 판 자동 새로 고침(쉬는 시간을 늘리지 않아요) */
   board: (floor?: string, background = false) => apiRequest<BoardResponse>('GET', `/api/pantry/board${floorQuery(floor)}`, undefined, { background }),
-  myRequests: () => apiRequest<MyRequestsResponse>('GET', '/api/pantry/my-requests'),
+  /** background: 새 알림으로 다시 부를 때(쉬는 시간을 늘리지 않아요) */
+  myRequests: (background = false) => apiRequest<MyRequestsResponse>('GET', '/api/pantry/my-requests', undefined, { background }),
   collect: (floor: string) => apiRequest<SuggestionsResponse>('POST', '/api/pantry/suggestions/collect', { floor }),
   suggestions: (floor: string) => apiRequest<SuggestionsResponse>('GET', `/api/pantry/suggestions${floorQuery(floor)}`),
   merge: (bundleIds: [number, number], versions: [number, number]) => apiRequest<MergeResponse>('POST', '/api/pantry/merges', { bundleIds, versions }),

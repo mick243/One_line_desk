@@ -80,7 +80,7 @@ export function onSessionEnded(listener: () => void): () => void {
 const isAuthPath = (url: string) => url === '/api/me' || url.startsWith('/api/auth/') || url.startsWith('/api/config/');
 
 /** 이 화면의 판. 서버 판과 다르면 새 버전 띠를 띄우고, 회의실 채팅은 바로 실행하지 않아요(배포 준비 회의 D1). */
-export const WEB_BUILD = __DESK_BUILD__;
+const WEB_BUILD = __DESK_BUILD__;
 let newVersion = false;
 const newVersionListeners = new Set<() => void>();
 export const newVersionAvailable = () => newVersion;

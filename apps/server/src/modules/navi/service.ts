@@ -241,11 +241,42 @@ async function diffChart(q: Queryable, department: string, fileRows: ChartRow[],
 const ONBOARDING_WORDS = /(첫\s?날|첫\s?주|처음\s?(왔|와|출근|입사)|입사|신입|온보딩|새로\s?왔)/;
 const IT_ERROR_WORDS = /(오류|에러|error|0x[0-9a-f]{4}|실패|안\s?(돼|됨|되|열려|켜져)|접속이?\s?안)/i;
 
+/** 메모리에 둔 분장표. 행 순서는 DB(id 순)와 같아요. */
+interface ChartSnapshot {
+  rows: StoredRow[];
+  owners: Set<string>;
+  hasOnboarding: boolean;
+  /** IT FAQ가 가리키는 분장표 행 ID */
+  itRows: Set<string>;
+}
+
 export function createNaviService(ctx: AppContext) {
+  // 분장표 행·주인 부서·IT FAQ가 가리키는 행을 메모리에 둬요. 로그인한 모든 요청(역할 계산)과 묻기마다 읽던 것이에요.
+  // 이 표들은 seed·S5 반영으로만 바뀌어서, 서버가 뜰 때(init)·seed 뒤·반영 뒤에 refreshSource로 새로 읽어요.
+  // 마지막에 시작한 읽기가 이겨요. 읽기가 실패하면 비워 두고 다음에 다시 읽어요.
+  let chart: Promise<ChartSnapshot> | undefined;
+  const loadChart = (): Promise<ChartSnapshot> => {
+    const p = (async () => {
+      const [rows, faqs] = await Promise.all([repo.allRows(ctx.db), repo.allItFaqs(ctx.db)]);
+      return {
+        rows,
+        owners: new Set(rows.map((r) => r.ownerDepartment)),
+        hasOnboarding: rows.some((r) => r.onboardingWeek !== null),
+        itRows: new Set(faqs.map((f) => f.rowId).filter((x): x is string => x !== null)),
+      };
+    })();
+    chart = p;
+    p.catch(() => {
+      if (chart === p) chart = undefined;
+    });
+    return p;
+  };
+  const currentChart = () => chart ?? loadChart();
+
   /** 담당 카드에 붙일 이동 버튼. 첫 2주 목록이 있을 때만, IT 오류 버튼은 IT FAQ가 가리키는 행이거나 못 찾았을 때 오류 말이 있으면 붙여요. */
-  const guidesFor = async (text: string) => {
-    const onboarding = ONBOARDING_WORDS.test(text) && (await repo.onboardingRows(ctx.db)).length > 0 ? [ONBOARDING_GUIDE] : [];
-    const itRows = new Set((await repo.allItFaqs(ctx.db)).map((f) => f.rowId).filter((x): x is string => x !== null));
+  const guidesFor = (text: string, snapshot: ChartSnapshot) => {
+    const onboarding = ONBOARDING_WORDS.test(text) && snapshot.hasOnboarding ? [ONBOARDING_GUIDE] : [];
+    const itRows = snapshot.itRows;
     const errorWords = IT_ERROR_WORDS.test(text);
     return { onboarding, itRows, it: (row?: StoredRow) => (row ? [IT_HELP_GUIDE] : errorWords && itRows.size > 0 ? [IT_HELP_GUIDE] : []) };
   };
@@ -255,8 +286,9 @@ export function createNaviService(ctx: AppContext) {
   let realChart = true;
   // 실제 분장표인데 가상 행도 남아 있는지(일부 부서만 올림). 띠에 "일부 가상"으로 보여요(11/1 QA M6).
   let partialChart = false;
+  /** 출처와 메모리 분장표를 같이 새로 읽어요. */
   const refreshSource = async () => {
-    const src = await repo.chartSources(ctx.db);
+    const [src] = await Promise.all([repo.chartSources(ctx.db), loadChart()]);
     realChart = src.upload;
     partialChart = src.upload && src.demo;
   };
@@ -268,7 +300,7 @@ export function createNaviService(ctx: AppContext) {
     refreshSource,
 
     async ownerDepartments(): Promise<Set<string>> {
-      const owners = await repo.ownerDepartments(ctx.db);
+      const { owners } = await currentChart();
       // 분장표를 가져오기 전(빈 표)에는 디렉터리의 임시 값을 그대로 써요. 가져온 뒤에는 분장표가 기준이에요(R17).
       return owners.size > 0 ? owners : ctx.adapters.directory.chartOwnerDepartments();
     },
@@ -287,7 +319,7 @@ export function createNaviService(ctx: AppContext) {
           await repo.insertRowIfAbsent(q, { ...row, revisedOn: row.revisedOn ?? kstDate(ctx.now()) });
         }
       });
-      await refreshSource();
+      // 출처·메모리 분장표는 IT FAQ seed까지 끝난 뒤 모듈(index.ts)이 refreshSource로 새로 읽어요.
     },
 
     /** 신규 입사자 첫 2주 할 일(넓힐 후보 ①). 분장표 "온보딩 주차" 칸이 붙은 행만, 읽기만 해요. 진행은 저장하지 않아요. */
@@ -332,9 +364,10 @@ export function createNaviService(ctx: AppContext) {
     async ask(input: AskInput): Promise<AskOutcome> {
       // 휴가 질문이면 담당 카드 뒤에 본인 남은 연차 카드를 붙여요(ADR-18). 숫자는 서버가 계산해요.
       // 분장표에 휴가 신청 행이 있으면 카드에 [휴가 신청하기]가 붙어 그 행의 주인 부서로 휴가 요청을 보내요(ADR-24).
-      const rows = await repo.allRows(ctx.db);
+      const snapshot = await currentChart();
+      const rows = snapshot.rows;
       const leave = await myLeaveCard(ctx, input.user, input.text, findLeaveRequestRow(rows));
-      const guides = await guidesFor(input.text);
+      const guides = guidesFor(input.text, snapshot);
       const withLeave = (card: Card, row?: StoredRow): Card[] => {
         const guided = withGuides(card, [...guides.onboarding, ...(!row || guides.itRows.has(row.id) ? guides.it(row) : [])]);
         return leave ? [guided, leave] : [guided];
@@ -464,7 +497,7 @@ export function createNaviService(ctx: AppContext) {
           };
         },
       });
-      // 반영이 끝난 뒤 출처(실제·일부 가상)를 다시 읽어요.
+      // 반영이 끝난 뒤 출처(실제·일부 가상)와 메모리 분장표를 다시 읽어요. 옛 행·주인 부서가 남지 않아요.
       await refreshSource();
       return result;
     },

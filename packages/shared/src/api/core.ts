@@ -1,12 +1,6 @@
 import type { Card } from '../cards';
 import type { Kind } from '../kinds';
 
-/** POST /api/ask 본문. kind가 있으면 분류를 건너뛰고 그 종류로 불러요(칩 바꾸기). */
-export interface AskRequest {
-  text: string;
-  kind?: Kind;
-}
-
 /** 확신이 낮으면 cards가 비고 chips(최대 3개)로 되물어요. "다른 거예요"는 담당 안내예요(ADR-02). */
 export interface AskResponse {
   kind: Kind;
@@ -31,8 +25,3 @@ export type PlanCreateResponse =
 
 export type PlanConfirmResponse =
   { status: 'done'; card: Card } | { status: 'blocked'; card: Card; alternatives: Card[] } | { status: 'expired'; message: string; cards: Card[] };
-
-export interface ApiError {
-  error: string;
-  message: string;
-}
