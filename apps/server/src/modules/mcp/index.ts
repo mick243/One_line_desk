@@ -1,6 +1,7 @@
 import type { AppContext } from '../../context';
 import type { DeskModule } from '../../core/module';
 import { McpAuth } from './auth-service';
+import * as counts from './counts';
 import { registerMcpRoute } from './mcp-route';
 import { registerOauthRoutes } from './oauth-routes';
 import { registerMcpOpsRoutes } from './ops-routes';
@@ -42,8 +43,11 @@ export function createMcpModule(ctx: AppContext): DeskModule {
       registerOauthRoutes(app, ctx, mcp);
       registerMcpRoute(app, ctx, mcp);
       registerMcpApiRoutes(app, ctx, mcp);
-      registerMcpOpsRoutes(app, ctx);
+      registerMcpOpsRoutes(app, ctx, mcp);
     },
+    // 월간 보고용 날마다 셈(mcp_daily_counts)은 ADR-21(7일)의 예외로 13개월 둬요(11/3 사용자 결정, counts.ts 머리 설명).
+    // 사람·클라이언트 ID가 없는 날짜별 합계예요. 이번 달과 지난 12달만 남기고 앞선 날을 한 시간마다 지워요.
+    retention: () => counts.purgeCounts(ctx.db, ctx.now()),
     async seed() {
       // 운영 환경에는 개발용 비밀을 가진 클라이언트를 넣지 않아요(모의 로그인을 연 시연 배포만 빼고). 운영자가 보안팀 승인 목록에서 등록해요.
       if (!ctx.config.demo) return;

@@ -1,33 +1,38 @@
 import { randomBytes } from 'node:crypto';
 import {
-  addDays,
-  kstDate,
-  kstToEpoch,
+  MCP_COUNT_KINDS,
   type McpClientCreateRequest,
   type McpClientCreateResponse,
   type McpClientSummary,
+  type McpCountKind,
   type McpReport,
 } from '@one-line-desk/shared';
 import type { AccessRecorder } from '../../core/access-record';
 import type { AuditLog } from '../../core/audit';
 import type { Db, Queryable } from '../../core/db';
 import { DeskError } from '../../core/errors';
+import * as counts from './counts';
 import { checkRegistration } from './policy';
 import * as repo from './repo';
 import { hashClientSecret, randomToken } from './tokens';
 
-// MCP 관리 평면(11/3, MCP 통합 회의 1단계): 허용 앱 등록·보안팀 승인·회수·앱별 강제 끊기·보고.
+// MCP 관리 평면(11/3, MCP 통합 회의 1단계): 허용 앱 등록·보안팀 승인·회수·앱별·사람별 강제 끊기·달 보고.
 // 운영자 API(ops-routes.ts)와 명령 도구(scripts/mcp-clients.ts)가 같은 함수를 써요. 운영자 웹 화면은 없어요(R7).
-// - 감사 로그(channel ops)에는 동작·클라이언트 ID·결과만 남겨요. 앱 이름·리디렉트 주소·비밀은 넣지 않아요.
+// - 감사 로그(channel ops)에는 동작·클라이언트 ID·결과만 남겨요. 앱 이름·리디렉트 주소·비밀·사람은 넣지 않아요.
 // - 연결을 끊는 동작은 접속기록(mcp.disconnect)에 누가(운영자) 누구의 연결(가명 ID)을 끊었는지만 남겨요(ADR-20).
-// - 사람별 강제 끊기는 두지 않아요. 운영자가 가명 ID를 알 길이 없고, 사람 찾기를 열면 가명 ID ↔ 사람이 이어져요.
-//   사람 하나를 끊는 길은 퇴사 처리(IdP 비활성 → 재직 재확인)와 본인의 [끊기]·모든 기기 로그아웃이에요.
+// - 사람별 강제 끊기(11/3 사용자 결정): 운영자가 초대와 같은 직원 검색(POST /api/people/search, people.search 접속기록)으로 고른
+//   사람의 모든 연결을 끊어요. 응답은 끊은 연결 수뿐이고, 그 사람이 쓴 앱·연결한 날은 돌려주지 않아요.
+//   명령 도구에는 두지 않아요: 사람을 고를 안전한 길(직원 검색의 봉인된 ref)이 웹 로그인에 묶여 있고,
+//   명령 줄에서 IdP 주체(메일일 수 있어요)나 가명 ID를 받으면 셸 기록에 사람 식별값이 남아요.
+// - 끊기·회수·사람별 끊기마다 월간 보고용 날마다 셈(disconnect.ops)을 같은 tx에서 더해요(counts.ts).
 
 export interface AdminDeps {
   db: Db;
   audit: AuditLog;
   access: AccessRecorder;
   now: () => number;
+  /** 사람별 끊기 뒤 그 사람의 메모리 상태(아직 바꾸지 않은 인가 코드 등)를 버려요. 웹 API만 넘겨요(McpAuth.forget). */
+  forget?: (pseudonymId: string) => void;
 }
 
 /** 누가 바꿨는지. 웹 API는 운영자 가명 ID·접속지, 명령 도구는 고정 값 'cli'예요(사람 이름은 넣지 않아요). */
@@ -39,7 +44,6 @@ export interface AdminActor {
 
 export const CLI_ACTOR: AdminActor = { pseudonymId: 'cli' };
 
-const RECENT_DAYS = 7;
 const REFS_PER_LINE = 100;
 
 const summary = (c: repo.ClientOverview): McpClientSummary => ({
@@ -126,6 +130,7 @@ export async function disconnectClient(deps: AdminDeps, actor: AdminActor, clien
     const people = await repo.peopleOfClient(q, clientId);
     const removed = await repo.deleteGrantsOfClient(q, clientId);
     await opsAudit(deps, q, actor, 'mcpClient.disconnect', clientId, removed > 0 ? 'done' : 'none');
+    await counts.count(q, deps.now(), 'disconnect.ops', clientId, removed);
     await recordDisconnect(deps, q, actor, people);
     return { removed };
   });
@@ -137,6 +142,8 @@ export async function revokeClient(deps: AdminDeps, actor: AdminActor, clientId:
     if (!(await repo.findClient(q, clientId))) throw notFound();
     const people = await repo.peopleOfClient(q, clientId);
     const devices = (await repo.listClientsOverview(q)).find((c) => c.clientId === clientId)?.devices ?? 0;
+    // 앱 이름은 등록 표에서 찾아 넣어서, 지우기 전에 더해요.
+    await counts.count(q, deps.now(), 'disconnect.ops', clientId, devices);
     await repo.deleteClient(q, clientId);
     await opsAudit(deps, q, actor, 'mcpClient.revoke', clientId, 'done');
     await recordDisconnect(deps, q, actor, people);
@@ -144,30 +151,53 @@ export async function revokeClient(deps: AdminDeps, actor: AdminActor, clientId:
   });
 }
 
-/** 보고(셈만). 감사 로그가 7일 보관이라 결과별 셈은 최근 7일, 접속기록으로 셀 수 있는 것만 이번 달이에요. */
-export async function report(deps: Pick<AdminDeps, 'db' | 'now'>): Promise<McpReport> {
+/**
+ * 사람별 강제 끊기: 그 사람(가명 ID)의 모든 앱·기기 연결을 지워요. 가명 ID는 ops-routes가 직원 검색 ref에서 서버 안에서만 계산해요.
+ * 감사 로그에는 동작·결과만(사람·앱 없음), 접속기록 mcp.disconnect에는 운영자와 `person:<가명 ID>` 하나를 남겨요(끊은 연결이 없어도 남겨요).
+ */
+export async function disconnectPerson(deps: AdminDeps, actor: AdminActor, pseudonymId: string): Promise<{ removed: number }> {
+  const result = await deps.db.tx(async (q) => {
+    const removed = await repo.deleteGrantsFor(q, pseudonymId);
+    await deps.audit.record(
+      { pseudonymId: actor.pseudonymId, channel: 'ops', action: 'mcpPerson.disconnect', result: removed.length > 0 ? 'done' : 'none' },
+      q,
+    );
+    await recordDisconnect(deps, q, actor, [pseudonymId]);
+    await counts.countRemoved(q, deps.now(), 'disconnect.ops', removed);
+    return { removed: removed.length };
+  });
+  deps.forget?.(pseudonymId);
+  return result;
+}
+
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/**
+ * 달 보고(셈만). 종류별·앱별 합계는 날마다 셈 표(13개월 보관)에서, 호출한 사람 수는 접속기록(1년)에서 세요.
+ * month를 빼면 이번 달(한국 시간)이에요. 13개월보다 앞선 달은 셈이 지워져서 0이에요.
+ */
+export async function report(deps: Pick<AdminDeps, 'db' | 'now'>, month?: string): Promise<McpReport> {
   const now = deps.now();
-  const today = kstDate(now);
-  const monthFrom = kstToEpoch(`${today.slice(0, 8)}01`, '00:00');
-  const recentFrom = kstToEpoch(addDays(today, -(RECENT_DAYS - 1)), '00:00');
-  const c = await repo.reportCounts(deps.db, monthFrom, recentFrom);
-  const n = (v: number | undefined) => v ?? 0;
+  const target = month ?? counts.kstMonth(now);
+  if (!MONTH_RE.test(target)) throw new DeskError('bad-request', 400, '달은 YYYY-MM 모양으로 넣어 주세요');
+  const range = counts.monthRange(target);
+  const rows = await repo.sumDailyCounts(deps.db, range.fromDay, range.toDay);
+  const totals = Object.fromEntries(MCP_COUNT_KINDS.map((k) => [k, 0])) as Record<McpCountKind, number>;
+  const byApp = new Map<string, Partial<Record<McpCountKind, number>>>();
+  for (const r of rows) {
+    totals[r.kind] += r.n;
+    const app = byApp.get(r.app) ?? {};
+    app[r.kind] = (app[r.kind] ?? 0) + r.n;
+    byApp.set(r.app, app);
+  }
   return {
     generatedAt: new Date(now).toISOString(),
-    month: { from: new Date(monthFrom).toISOString(), ...c.month },
-    recent7Days: {
-      from: new Date(recentFrom).toISOString(),
-      toolCalls: {
-        found: n(c.recent.toolCalls.found),
-        none: n(c.recent.toolCalls.none),
-        refused: n(c.recent.toolCalls.refused),
-        error: n(c.recent.toolCalls.error),
-      },
-      consents: { allowed: n(c.recent.consents.allowed), denied: n(c.recent.consents.denied) },
-      tokenRefused: c.recent.tokenRefused,
-      blockedApps: c.recent.blockedApps,
-      leaverEnded: c.recent.leaverEnded,
-    },
-    now: c.now,
+    month: target,
+    from: new Date(range.from).toISOString(),
+    to: new Date(range.to).toISOString(),
+    totals,
+    byApp: [...byApp].map(([app, c]) => ({ app, counts: c })),
+    accessLog: await repo.accessCounts(deps.db, range.from, range.to),
+    now: await repo.nowCounts(deps.db),
   };
 }

@@ -7,6 +7,7 @@ import type { AppContext } from '../../context';
 import { accessFrom } from '../../core/access-record';
 import { listMcpTools, type McpToolDef, TOOLS } from '../../core/tool-registry';
 import type { McpAuth, McpPrincipal } from './auth-service';
+import * as counts from './counts';
 import { scopeOf } from './policy';
 import * as repo from './repo';
 import { MCP_TOOL_IMPLS, type ToolEnv } from './tool-impls';
@@ -54,8 +55,11 @@ export function registerMcpRoute(app: FastifyInstance, ctx: AppContext, mcp: Mcp
   const ownOrigin = new URL(urls.issuer).origin;
   const appUrl = `${ownOrigin}/`;
 
-  const auditTool = (principal: McpPrincipal, tool: string, result: 'found' | 'none' | 'refused' | 'error') =>
-    ctx.audit.record({ pseudonymId: principal.pseudonymId, channel: 'mcp', tool, clientId: principal.clientId, result });
+  // 감사 로그(7일)와 같은 자리에서 월간 보고용 날마다 셈(call.<결과>, 앱 이름별)도 더해요(counts.ts).
+  const auditTool = async (principal: McpPrincipal, tool: string, result: 'found' | 'none' | 'refused' | 'error') => {
+    await ctx.audit.record({ pseudonymId: principal.pseudonymId, channel: 'mcp', tool, clientId: principal.clientId, result });
+    await counts.count(ctx.db, ctx.now(), `call.${result}`, principal.clientId);
+  };
 
   /** 토큰이 없거나 맞지 않으면 401 + 보호 자원 메타데이터 주소(RFC 9728 5.1). */
   const challenge = (reply: FastifyReply, error?: 'invalid_token') => {

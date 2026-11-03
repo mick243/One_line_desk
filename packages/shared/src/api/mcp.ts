@@ -121,25 +121,56 @@ export interface McpClientCreateResponse {
 }
 
 /**
- * GET /api/ops/mcp/report. 셈만 있고 사람·검색어·도구 입력은 없어요.
- * 감사 로그는 7일만 남아서(ADR-21) 결과별 셈은 "최근 7일"이에요. 접속기록(1년)으로 셀 수 있는 연결·호출·끊기만 "이번 달"이에요.
+ * MCP 날마다 셈의 종류(11/3, 530_mcp_daily_counts.sql의 check 목록과 같아요). 감사 로그를 남기는 자리에서 그때그때 +1 해요.
+ * - call.*: 도구 호출 결과(감사 로그 결과 found·none·refused·error)
+ * - connect·connect.denied: 동의 시트 [연결 허락]·[허락하지 않기]
+ * - disconnect: 끊긴 연결(기기) 수 — 본인 [끊기]·기기 폐기(RFC 7009)·모든 기기 로그아웃·퇴사 확인
+ * - disconnect.ops: 운영자가 끊은 연결(기기) 수 — 앱별 강제 끊기·회수·사람별 강제 끊기
+ * - token.refused: 갱신 거부, authorize.blocked: 등록 안 됐거나 허락 안 된 앱, employment.ended: MCP 쪽 재직 재확인에서 퇴사로 끊김
+ */
+export const MCP_COUNT_KINDS = [
+  'call.found',
+  'call.none',
+  'call.refused',
+  'call.error',
+  'connect',
+  'connect.denied',
+  'disconnect',
+  'disconnect.ops',
+  'token.refused',
+  'authorize.blocked',
+  'employment.ended',
+] as const;
+export type McpCountKind = (typeof MCP_COUNT_KINDS)[number];
+
+/**
+ * GET /api/ops/mcp/report?month=YYYY-MM. 셈만 있고 사람·검색어·도구 입력·클라이언트 ID는 없어요.
+ * 종류별·앱별 합계는 날마다 셈 표(13개월 보관, ADR-21 예외)에서, 호출한 사람 수는 접속기록(1년)에서만 셀 수 있어요.
  */
 export interface McpReport {
   /** 셈한 시각(ISO) */
   generatedAt: string;
-  /** 이번 달(한국 시간 1일 0시부터), 접속기록에서 */
-  month: { from: string; connects: number; calls: number; callers: number; disconnects: number };
-  /** 최근 7일, 감사 로그에서 */
-  recent7Days: {
-    from: string;
-    toolCalls: { found: number; none: number; refused: number; error: number };
-    consents: { allowed: number; denied: number };
-    tokenRefused: number;
-    /** 등록되지 않았거나 허락되지 않은 앱이 연결하려다 막힌 수 */
-    blockedApps: number;
-    /** 재직 재확인에서 퇴사로 끊긴 수(웹 세션과 MCP 승인을 함께 끊어요) */
-    leaverEnded: number;
-  };
+  /** 보고한 달(YYYY-MM, 한국 시간) */
+  month: string;
+  /** 그 달 1일 0시(한국 시간)와 다음 달 1일 0시(ISO) */
+  from: string;
+  to: string;
+  /** 그 달 종류별 합계(날마다 셈 표). 없는 종류는 0이에요. */
+  totals: Record<McpCountKind, number>;
+  /** 그 달 앱 이름별 종류 합계. 앱을 모르는 셈(등록 안 된 앱이 막힌 것 등)은 '-'예요. */
+  byApp: { app: string; counts: Partial<Record<McpCountKind, number>> }[];
+  /** 그 달 접속기록에서 센 연결 허락·도구 호출·끊기 줄 수와 호출한 사람 수(사람 수는 접속기록에서만 셀 수 있어요) */
+  accessLog: { connects: number; calls: number; callers: number; disconnects: number };
   /** 지금 */
   now: { clients: number; approvedClients: number; people: number; devices: number };
+}
+
+/** POST /api/ops/mcp/people/disconnect. 직원 검색(POST /api/people/search)이 돌려준 ref를 그대로 보내요. */
+export interface McpPersonDisconnectRequest {
+  ref: string;
+}
+
+/** 끊은 연결(기기) 수만 돌려줘요. 그 사람이 어떤 앱을 언제 연결했는지는 돌려주지 않아요. */
+export interface McpPersonDisconnectResponse {
+  removed: number;
 }

@@ -120,12 +120,15 @@ export async function toolNames(t: TestApp, accessToken: string): Promise<string
   return (res.json().result.tools as { name: string }[]).map((x) => x.name).sort();
 }
 
-/** 감사 로그·접속기록·마이그레이션 기록을 뺀 모든 표의 내용(MCP 경로 DB 쓰기 0건 확인용). 접속기록은 11/2부터 MCP 호출마다 한 줄 남아요(ADR-20). */
+/**
+ * 감사 로그·접속기록·날마다 셈·마이그레이션 기록을 뺀 모든 표의 내용(MCP 경로 DB 쓰기 0건 확인용).
+ * 접속기록은 11/2부터 MCP 호출마다 한 줄 남아요(ADR-20). 날마다 셈(mcp_daily_counts)은 11/3부터 감사 로그와 같은 자리에서 +1 해요.
+ */
 export async function dumpTablesExceptAudit(db: Db): Promise<string> {
   const { rows } = await db.query<{ table_name: string }>("select table_name from information_schema.tables where table_schema = 'public' order by table_name");
   const out: Record<string, unknown[]> = {};
   for (const { table_name } of rows) {
-    if (table_name === 'audit_log' || table_name === 'access_log' || table_name === 'schema_migrations') continue;
+    if (['audit_log', 'access_log', 'mcp_daily_counts', 'schema_migrations'].includes(table_name)) continue;
     out[table_name] = (await db.query(`select * from ${table_name}`)).rows;
   }
   return JSON.stringify(out);

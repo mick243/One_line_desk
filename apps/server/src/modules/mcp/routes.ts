@@ -13,6 +13,7 @@ import { accessFrom } from '../../core/access-record';
 import { DeskError } from '../../core/errors';
 import type { LeaveLink, RentLink } from '../../core/services';
 import type { ConsentRequest, McpAuth } from './auth-service';
+import * as counts from './counts';
 import { withParams } from './oauth-routes';
 import { redirectMatches, scopesOf } from './policy';
 import * as repo from './repo';
@@ -76,12 +77,14 @@ export function registerMcpApiRoutes(app: FastifyInstance, ctx: AppContext, mcp:
 
       if (req.body.decision === 'deny') {
         await ctx.audit.record({ pseudonymId: user.pseudonymId, channel: 'mcp', action: 'consent', clientId: client.clientId, result: 'denied' });
+        await counts.count(ctx.db, ctx.now(), 'connect.denied', client.clientId);
         return { result: 'denied', redirectTo: back({ error: 'access_denied' }) };
       }
       const scopes = await consentScopes(request);
       if (scopes.length === 0) throw new DeskError('no-tools', 409, '지금 연결할 수 있는 도구가 없어요');
       const code = mcp.issueCode(request, user, scopes);
       await ctx.audit.record({ pseudonymId: user.pseudonymId, channel: 'mcp', action: 'consent', clientId: client.clientId, result: 'allowed' });
+      await counts.count(ctx.db, ctx.now(), 'connect', client.clientId);
       await ctx.access.record({ pseudonymId: user.pseudonymId, action: 'mcp.connect', ...accessFrom(req) });
       return { result: 'allowed', redirectTo: back({ code }) };
     },
@@ -178,7 +181,11 @@ export function registerMcpApiRoutes(app: FastifyInstance, ctx: AppContext, mcp:
         module: 'mcp',
         action: 'disconnect',
         resultCode: (n: number) => (n > 0 ? 'done' : 'none'),
-        run: (q) => repo.deleteGrant(q, user.pseudonymId, req.params.clientId),
+        run: async (q, now) => {
+          const n = await repo.deleteGrant(q, user.pseudonymId, req.params.clientId);
+          await counts.count(q, now, 'disconnect', req.params.clientId, n);
+          return n;
+        },
       });
       if (removed > 0) await ctx.access.record({ pseudonymId: user.pseudonymId, action: 'mcp.disconnect', ...accessFrom(req) });
       return { ok: true, removed };
