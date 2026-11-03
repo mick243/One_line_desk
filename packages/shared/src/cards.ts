@@ -65,8 +65,13 @@ export type CardAction =
       next: { periodStart: string; remaining: number };
       /** 날짜 없이 양만 말했을 때("이틀 쓰고 싶어") 고를 일수 안내 */
       planned?: number;
-      /** 양식을 열 때 고른 종류. 없으면 연차예요. 공가 카드에서 열면 'official'이에요(11/1). */
-      leaveType?: 'annual' | 'official';
+      /** 양식을 열 때 고른 종류. 없으면 연차예요. 공가 카드에서 열면 'official'(11/1), 병가 카드에서 열면 'sick'(11/3)이에요. */
+      leaveType?: 'annual' | 'official' | 'sick';
+      /**
+       * 병가 양식용(11/3, 본인 것만): 올해 병가 쓴 날·한도(0이면 없음 → null)와 진단서 안내 기준 일수(이 일수를 넘으면 안내).
+       * 서버가 근태 기록으로 계산하고 저장하지 않아요(ADR-18).
+       */
+      sick?: { year: number; used: number; limit: number | null; noteOverDays: number };
     }
   /** 회의 참석자 고르기 양식을 열어요(ADR-17). 보내기는 확인 시트를 거쳐요. */
   | { type: 'invite'; text: string; reservationId: string; roomName: string; when: string };

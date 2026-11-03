@@ -129,10 +129,10 @@ export const LEAVE_REJECT_REASON_MAX = 500;
 /** 한 번에 신청할 수 있는 날 수 */
 export const LEAVE_REQUEST_MAX_DAYS = 30;
 
-/** 휴가 요청 종류(11/1). 공가는 연차에서 빠지지 않아요. 병가는 결정 뒤에 더해요(docs/병가준비_2026-11-01.md). */
-export const LEAVE_TYPES = ['annual', 'official'] as const;
+/** 휴가 요청 종류(11/1 공가, 11/3 병가). 공가·병가는 연차에서 빠지지 않아요(docs/병가준비_2026-11-01.md). */
+export const LEAVE_TYPES = ['annual', 'official', 'sick'] as const;
 export type LeaveType = (typeof LEAVE_TYPES)[number];
-export const LEAVE_TYPE_LABEL: Record<LeaveType, string> = { annual: '연차', official: '공가' };
+export const LEAVE_TYPE_LABEL: Record<LeaveType, string> = { annual: '연차', official: '공가', sick: '병가' };
 
 /** 공가 사유는 정해진 것만 골라요. 자유 글 사유 칸은 따로 있어요. */
 export const OFFICIAL_LEAVE_REASONS = ['reserve', 'vote', 'summons', 'duty'] as const;
@@ -143,6 +143,40 @@ export const OFFICIAL_LEAVE_REASON_LABEL: Record<OfficialLeaveReason, string> = 
   summons: '법원·관공서 출석',
   duty: '그 밖의 공적 의무',
 };
+
+/**
+ * 병가 사유(11/3, 사용자 결정 1: 정해진 선택지만, 자유 글 없음). 건강 정보를 드러내지 않는 일반 표현이고 코드로 저장해요.
+ * 병명·증상은 받지 않아요. 진단서는 앱이 받지 않고 인사팀에 따로 내요(진료확인서 올려 받기는 보류).
+ */
+export const SICK_LEAVE_REASONS = ['unwell', 'clinic', 'family'] as const;
+export type SickLeaveReason = (typeof SICK_LEAVE_REASONS)[number];
+export const SICK_LEAVE_REASON_LABEL: Record<SickLeaveReason, string> = {
+  unwell: '몸이 안 좋아요',
+  clinic: '병원 진료',
+  family: '가족 돌봄',
+};
+/** 병가는 오늘부터 이만큼 지난 날까지 신청할 수 있어요(11/3 사용자 결정 2: 지난 3일까지). 연차·공가는 지난 날을 받지 않아요. */
+export const SICK_LEAVE_PAST_DAYS = 3;
+/** 진단서 안내 문구(11/3 사용자 결정 5). 운영 값 sickNoteOverDays를 넘는 병가 요청에 보여요. */
+export const SICK_NOTE_TEXT = '진단서는 인사팀에 따로 내 주세요';
+
+/**
+ * 올해 병가 쓴 날(서버가 근태 기록으로 계산, 저장 안 함, ADR-18). limit은 운영 값 sickLeaveYearDays이고 0이면 한도 없음(null)이에요.
+ * 본인 카드·양식과, 받은 팀이 그 요청을 처리할 때만 와요.
+ */
+export interface SickLeaveUsage {
+  /** 달력 연도(1월 1일 ~ 12월 31일) */
+  year: number;
+  /** 올해 근태 기록의 병가 일수(예정 포함, 반차 0.5) */
+  used: number;
+  limit: number | null;
+}
+
+/** "올해 병가 N일 중 M일 썼어요" / 한도가 없으면 "올해 병가 M일 썼어요" */
+export function sickUsageText(u: Pick<SickLeaveUsage, 'used' | 'limit'>): string {
+  const d = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}일`;
+  return u.limit ? `올해 병가 ${d(u.limit)} 중 ${d(u.used)} 썼어요` : `올해 병가 ${d(u.used)} 썼어요`;
+}
 
 /** 휴가 하루. 반차는 0.5일이에요. */
 export interface LeaveDay {
@@ -160,13 +194,14 @@ export interface InquiryRequest {
    */
   suggestedRowId?: string | null;
   question: string;
-  reason: string;
+  /** 사유(자유 글). 병가 요청에는 보내지 않아요(오면 400, 병가 사유는 sickReason 코드만). 그 밖에는 꼭 있어야 해요. */
+  reason?: string;
   requestId: string;
   /**
    * 휴가 요청이면 쓸 날(ADR-24). 받는 팀(인사팀)이 승인하면 근태 기록에 들어가요.
-   * type이 없으면 연차예요. 공가(official)는 officialReason이 꼭 있어야 하고 연차에서 빠지지 않아요.
+   * type이 없으면 연차예요. 공가(official)는 officialReason이, 병가(sick)는 sickReason이 꼭 있어야 하고 연차에서 빠지지 않아요.
    */
-  leave?: { days: LeaveDay[]; type?: LeaveType; officialReason?: OfficialLeaveReason };
+  leave?: { days: LeaveDay[]; type?: LeaveType; officialReason?: OfficialLeaveReason; sickReason?: SickLeaveReason };
 }
 
 /** POST /api/navi/inquiries/:id/reply. 받은 팀이 보내는 답장이에요. 7일 보관해요. */
@@ -233,8 +268,20 @@ export interface InquiryItem {
   /** 받은 문의함: [확인했어요]·[처리했어요](휴가 요청은 [확인했어요]만, 승인·반려는 decision으로) */
   actions: CardAction[];
   kind: 'general' | 'leave';
-  /** 휴가 요청이면 종류·날·일수. balance는 받은 문의함에서, 아직 결정 전인 연차 요청일 때만 와요(공가는 연차에서 빠지지 않아요). */
-  leave?: { type: LeaveType; officialReason?: OfficialLeaveReason; days: LeaveDay[]; total: number; balance?: LeaveRequestBalance | null };
+  /**
+   * 휴가 요청이면 종류·날·일수. balance는 받은 문의함에서, 아직 결정 전인 연차 요청일 때만 와요(공가·병가는 연차에서 빠지지 않아요).
+   * sick은 받은 문의함에서 결정 전인 병가 요청일 때만 와요(보낸 사람 올해 병가, 열 때마다 계산). sickNote는 진단서 안내 대상(운영 값 일수를 넘음)이에요.
+   */
+  leave?: {
+    type: LeaveType;
+    officialReason?: OfficialLeaveReason;
+    sickReason?: SickLeaveReason;
+    days: LeaveDay[];
+    total: number;
+    balance?: LeaveRequestBalance | null;
+    sick?: SickLeaveUsage | null;
+    sickNote?: true;
+  };
   /** 반려 사유(반려했을 때만) */
   decisionReason?: string;
   /** 승인했는데 근태 기록에 넣지 못했으면 false(근태 연결 안 함). 그룹웨어 근태에 직접 반영해야 해요. */

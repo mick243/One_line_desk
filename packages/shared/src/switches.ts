@@ -30,6 +30,10 @@ export interface OpsSettings {
      */
     idleTimeoutMinutes: number;
     rateLimitPerMinute: number;
+    /** 연간 병가 한도(일, 11/3). 0이면 한도 없음이라 "올해 병가 M일 썼어요"만 보여요. 표시만 하고 막지 않아요. */
+    sickLeaveYearDays: number;
+    /** 병가 요청이 이 일수를 넘으면 "진단서는 인사팀에 따로 내 주세요"를 보여요(11/3, 기본 3일). */
+    sickNoteOverDays: number;
   };
 }
 
@@ -55,6 +59,9 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     employmentRecheckSeconds: 300,
     idleTimeoutMinutes: 180,
     rateLimitPerMinute: 20,
+    // 회사 병가 규정이 정해지기 전에는 한도 없음(0)이에요.
+    sickLeaveYearDays: 0,
+    sickNoteOverDays: 3,
   },
 };
 

@@ -15,6 +15,7 @@ import {
   LEAVE_REQUEST_MAX_DAYS,
   LEAVE_TYPES,
   OFFICIAL_LEAVE_REASONS,
+  SICK_LEAVE_REASONS,
   KINDS,
   NAVI_ROW_ID_PATTERN,
   type NaviRowCardRequest,
@@ -217,7 +218,8 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
       schema: {
         body: {
           type: 'object',
-          required: ['rowId', 'question', 'reason', 'requestId'],
+          // reason(자유 글 사유)은 병가 요청에는 오지 않아요(11/3). 그 밖에는 서비스가 꼭 있는지 봐요.
+          required: ['rowId', 'question', 'requestId'],
           additionalProperties: false,
           properties: {
             rowId: { anyOf: [{ type: 'string', pattern: NAVI_ROW_ID_PATTERN }, { type: 'null' }] },
@@ -245,6 +247,8 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
                 // 11/1 공가: 종류가 없으면 연차예요. 공가 사유는 정해진 코드만 받아요.
                 type: { enum: [...LEAVE_TYPES] },
                 officialReason: { enum: [...OFFICIAL_LEAVE_REASONS] },
+                // 11/3 병가: 사유는 정해진 코드만 받아요(자유 글 없음).
+                sickReason: { enum: [...SICK_LEAVE_REASONS] },
               },
             },
           },

@@ -8,6 +8,12 @@ import {
   OFFICIAL_LEAVE_REASON_LABEL,
   OFFICIAL_LEAVE_REASONS,
   personNameWords,
+  SICK_LEAVE_PAST_DAYS,
+  SICK_LEAVE_REASON_LABEL,
+  SICK_LEAVE_REASONS,
+  SICK_NOTE_TEXT,
+  type SickLeaveUsage,
+  sickUsageText,
 } from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { LeaveRecord } from '../../adapters/types';
@@ -75,7 +81,7 @@ export function computeLeave(record: LeaveRecord, today: string): LeaveBalance {
   const periodStart = firstYear ? record.hireDate : addMonths(record.hireDate, 12 * years);
   const nextStart = addMonths(record.hireDate, 12 * (years + 1));
   const granted = firstYear ? Math.min(FIRST_YEAR_MAX, completed(record.hireDate, today, 1)) : Math.min(MAX_DAYS, BASE_DAYS + Math.floor((years - 1) / 2));
-  // 공가는 연차가 아니라서 세지 않아요.
+  // 공가·병가는 연차가 아니라서 세지 않아요.
   const inPeriod = record.uses.filter((u) => (u.type ?? 'annual') === 'annual' && u.date >= periodStart && u.date < nextStart);
   const usedFull = inPeriod.filter((u) => u.kind === 'full').length;
   const usedHalf = inPeriod.filter((u) => u.kind === 'half').length;
@@ -89,6 +95,21 @@ export function nextPeriodLeave(record: LeaveRecord, current: LeaveBalance): Lea
 }
 
 const daysOf = (days: readonly LeaveDay[]) => days.reduce((n, d) => n + (d.kind === 'full' ? 1 : HALF_DAY), 0);
+
+/**
+ * 올해(달력 연도) 병가 쓴 날(11/3). 근태 기록의 병가(type 'sick')만 세고 예정도 넣어요. 반차는 0.5일이에요.
+ * limitDays는 운영 값 sickLeaveYearDays이고 0이면 한도 없음(null)이에요. 저장하지 않고 부를 때마다 계산해요(ADR-18).
+ */
+export function sickUsage(record: LeaveRecord, today: string, limitDays: number): SickLeaveUsage {
+  const year = Number(today.slice(0, 4));
+  const used = daysOf(record.uses.filter((u) => u.type === 'sick' && Number(u.date.slice(0, 4)) === year));
+  return { year, used, limit: limitDays > 0 ? limitDays : null };
+}
+
+/** 진단서 안내 대상인지: 병가 요청 일수가 운영 값(sickNoteOverDays, 기본 3일)을 넘으면 참이에요. 같으면 아니에요. */
+export function needsSickNote(days: readonly LeaveDay[], overDays: number): boolean {
+  return daysOf(days) > overDays;
+}
 
 /**
  * 휴가 요청을 연차 기간별로 나눠 계산해요(ADR-24). 이번 기간 날은 이번 기간 남은 연차에서, 다음 기간 날은 다음 기간 연차에서 빠져요.
@@ -357,11 +378,15 @@ export function findLeaveRequestRow(rows: readonly { id: string; task: string; t
  * [휴가 신청하기]: 질문에서 읽은 날(규칙, 양은 AI도)을 양식에 미리 채워요. 사람이 날·하루/반차를 고치고 확인 시트에서 보내요.
  * 날 없이 양만 말했으면("이틀 쓰고 싶어") 고를 일수만 알려 줘요.
  */
+/** 병가 양식용 본인 정보: 올해 병가 쓴 날·한도와 진단서 안내 기준 일수(11/3) */
+export type SickInfo = NonNullable<Extract<CardAction, { type: 'leave-request' }>['sick']>;
+
 function leaveRequestAction(
   target: LeaveRequestTarget,
   q: Pick<LeaveQuestion, 'planDates' | 'planFull' | 'planHalf'>,
   balance: LeaveBalance,
   next: LeaveBalance | null,
+  sick: SickInfo | null = null,
 ): Extract<CardAction, { type: 'leave-request' }> {
   const kind = q.planHalf > 0 && q.planFull === 0 ? ('half' as const) : ('full' as const);
   const planned = q.planFull + q.planHalf * HALF_DAY;
@@ -375,6 +400,8 @@ function leaveRequestAction(
     // 다음 기간 날을 고르면 양식이 그 기간 연차로 따로 계산해요.
     next: next ? { periodStart: next.periodStart, remaining: next.remaining } : { periodStart: addDays(balance.periodEnd, 1), remaining: 0 },
     ...(!q.planDates.length && planned > 0 ? { planned } : {}),
+    // 양식에서 병가로 바꾸면 쓰려고 같이 줘요(본인 것만).
+    ...(sick ? { sick } : {}),
   };
 }
 
@@ -399,6 +426,7 @@ export function officialLeaveCard(
   request: LeaveRequestTarget | null,
   balance: LeaveBalance | null,
   next: LeaveBalance | null,
+  sick: SickInfo | null = null,
 ): Card {
   const { dates } = readPlanDates(text, today);
   const canRequest = request && balance;
@@ -418,7 +446,7 @@ export function officialLeaveCard(
       ? {
           secondary: [
             {
-              ...leaveRequestAction(request, { planDates: dates, planFull: 0, planHalf: 0 }, balance, next),
+              ...leaveRequestAction(request, { planDates: dates, planFull: 0, planHalf: 0 }, balance, next, sick),
               text: '공가 신청하기',
               days: dates.map((date) => ({ date, kind: 'full' as const })),
               leaveType: 'official' as const,
@@ -430,6 +458,86 @@ export function officialLeaveCard(
   });
 }
 
+// ── 병가(11/3) ────────────────────────────────────────────────────────────
+// 아파서 쉬는 날이에요. 연차에서 빠지지 않아요. 질문은 공가처럼 규칙으로만 알아봐요(AI 안 불러요).
+// 사유는 정해진 선택지만 받아요(건강 정보를 받지 않아요). 올해 병가 쓴 날은 서버가 근태 기록으로 계산하고 저장하지 않아요(ADR-18).
+// 유급·무급은 회사마다 달라서 앱이 계산하지 않아요(인사팀이 처리해요).
+
+const SICK_WORDS = /병가|병결/;
+const SICK_UNWELL = /아파서|아파요|아프|아픈|몸살|몸이\s*안\s*좋|컨디션이\s*안\s*좋/;
+const SICK_ASK = /휴가|쉬|빠지|빠져|결근|출근\s*못|신청/;
+// "팀장님 병가"처럼 남의 병가를 물으면 숫자를 보여 주지 않고 근태 기록도 읽지 않아요(연차와 같은 호칭 규칙).
+const OTHER_SICK = new RegExp(OTHER_PERSON.source.replace('(?:연차|반차|휴가|연가)', '(?:병가|병결)'));
+
+export function isSickLeaveQuestion(text: string): boolean {
+  return SICK_WORDS.test(text) || (SICK_UNWELL.test(text) && SICK_ASK.test(text));
+}
+
+export const SICK_TAIL = '나에게만 보여요. 병가 기록은 저장하지 않고 AI로 보내지 않아요';
+
+/** 병가는 지난 날도 받아서(지난 3일까지) "오늘·어제·그제"를 읽어요. 그 밖의 날은 연차와 같은 규칙(오늘부터)이에요. 주말은 빼요. */
+export function readSickDates(text: string, today: string): string[] {
+  const past: string[] = [];
+  if (/그제|그저께/.test(text)) past.push(addDays(today, -2));
+  if (/어제/.test(text)) past.push(addDays(today, -1));
+  if (/오늘/.test(text)) past.push(today);
+  const earliest = addDays(today, -SICK_LEAVE_PAST_DAYS);
+  return [...new Set([...past, ...readPlanDates(text, today).dates])].filter((d) => d >= earliest && weekdayOf(d) !== 0 && weekdayOf(d) !== 6).sort();
+}
+
+/** 병가 카드. [병가 신청하기]는 휴가 신청 양식을 병가로 열어요. 근태 기록이 없으면 신청은 그룹웨어 근태 메뉴로 안내해요. */
+export function sickLeaveCard(
+  today: string,
+  text: string,
+  request: LeaveRequestTarget | null,
+  balance: LeaveBalance | null,
+  next: LeaveBalance | null,
+  sick: SickInfo | null,
+): Card {
+  if (OTHER_SICK.test(text)) {
+    return makeCard({
+      id: 'navi-sick-leave',
+      kind: 'navi',
+      label: '안내',
+      headline: '남의 병가는 볼 수 없어요',
+      fields: [{ name: '내 병가', value: '"병가 쓰고 싶어요"처럼 물어보세요' }],
+      evidence: { text: '인사 근태 기록은 본인 것만 봐요', aiSummarized: false },
+      tail: SICK_TAIL,
+    });
+  }
+  const dates = readSickDates(text, today);
+  const canRequest = request && balance && sick;
+  return makeCard({
+    id: 'navi-sick-leave',
+    kind: 'navi',
+    label: '안내',
+    headline: '병가는 연차에서 빠지지 않아요',
+    fields: [
+      ...(sick ? [{ name: '올해 병가', value: sickUsageText(sick) }] : []),
+      { name: '병가 사유', value: `${SICK_LEAVE_REASONS.map((r) => SICK_LEAVE_REASON_LABEL[r]).join(' · ')} 중에서 골라요` },
+      ...(dates.length ? [{ name: '읽은 날', value: dates.map(dayLabel).join(' · ') }] : []),
+      { name: '지난 날', value: `오늘부터 ${SICK_LEAVE_PAST_DAYS}일 전까지 신청할 수 있어요` },
+      ...(sick ? [{ name: '진단서', value: `${days(sick.noteOverDays)}을 넘게 쉬면 ${SICK_NOTE_TEXT}` }] : []),
+      { name: '유급·무급', value: '회사 규정에 따라 인사팀이 처리해요' },
+      ...(canRequest ? [{ name: '받는 곳', value: `${request.team}(${request.task})` }] : [{ name: '신청하는 곳', value: LEAVE_DESK }]),
+    ],
+    evidence: { text: sick ? `인사 근태 기록으로 서버가 계산 · ${today} 기준` : '회사 병가 규정은 인사팀에 확인해 주세요', aiSummarized: false },
+    ...(canRequest
+      ? {
+          secondary: [
+            {
+              ...leaveRequestAction(request, { planDates: dates, planFull: 0, planHalf: 0 }, balance, next, sick),
+              text: '병가 신청하기',
+              days: dates.map((date) => ({ date, kind: 'full' as const })),
+              leaveType: 'sick' as const,
+            },
+          ],
+        }
+      : {}),
+    tail: SICK_TAIL,
+  });
+}
+
 /** 본인 연차 카드. 숫자는 모두 서버 계산이고, "AI 정리"는 모델이 질문(더 쓰려는 양)을 해석했을 때만 붙여요. */
 export function leaveCard(
   balance: LeaveBalance | null,
@@ -437,6 +545,7 @@ export function leaveCard(
   today: string,
   request?: LeaveRequestTarget | null,
   next: LeaveBalance | null = null,
+  sick: SickInfo | null = null,
 ): Card {
   if (q.aboutOther) return otherPersonCard();
   if (!balance) {
@@ -485,7 +594,7 @@ export function leaveCard(
       ...(q.otherPeriod ? [{ name: '작년·내년', value: '이번 연차 기간만 보여요. 지난 기간은 그룹웨어 근태 메뉴에서 봐요' }] : []),
     ],
     evidence: { text: `인사 근태 기록으로 서버가 계산 · 근로기준법(개근 가정) · ${today} 기준`, aiSummarized: q.viaAi && plan > 0 },
-    ...(request ? { secondary: [leaveRequestAction(request, q, balance, next)] } : {}),
+    ...(request ? { secondary: [leaveRequestAction(request, q, balance, next, sick)] } : {}),
     tail: LEAVE_TAIL,
   });
 }
@@ -511,11 +620,23 @@ export async function myLeaveCard(
 ): Promise<Card | null> {
   const today = kstDate(ctx.now());
   const person = { idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) };
+  const sickOf = (record: LeaveRecord | null): SickInfo | null => {
+    if (!record) return null;
+    const v = ctx.ops.get().values;
+    return { ...sickUsage(record, today, v.sickLeaveYearDays), noteOverDays: v.sickNoteOverDays };
+  };
   if (isOfficialLeaveQuestion(text)) {
     // 공가 카드는 숫자를 보여 주지 않아요. 남은 연차는 양식에서 연차로 바꿀 때만 쓰려고 본인 것만 읽어요.
     const record = request ? await ctx.adapters.leave.leaveOf(person).catch(() => null) : null;
     const balance = record ? computeLeave(record, today) : null;
-    return officialLeaveCard(today, text, request ?? null, balance, record && balance ? nextPeriodLeave(record, balance) : null);
+    return officialLeaveCard(today, text, request ?? null, balance, record && balance ? nextPeriodLeave(record, balance) : null, sickOf(record));
+  }
+  if (isSickLeaveQuestion(text)) {
+    // 병가 카드: 올해 병가 쓴 날(본인 것만, 서버 계산). 남의 병가를 물으면 근태 기록을 읽지 않아요.
+    if (OTHER_SICK.test(text)) return sickLeaveCard(today, text, null, null, null, null);
+    const record = await ctx.adapters.leave.leaveOf(person).catch(() => null);
+    const balance = record ? computeLeave(record, today) : null;
+    return sickLeaveCard(today, text, request ?? null, balance, record && balance ? nextPeriodLeave(record, balance) : null, sickOf(record));
   }
   const q = await readLeaveQuestion(ctx.gateway, text, today);
   if (!q.about) return null;
@@ -525,5 +646,5 @@ export async function myLeaveCard(
   if (namesOtherPerson(text, names, personNameWords(user.displayName))) return otherPersonCard();
   const record = await ctx.adapters.leave.leaveOf(person).catch(() => null);
   const balance = record ? computeLeave(record, today) : null;
-  return leaveCard(balance, q, today, request, record && balance ? nextPeriodLeave(record, balance) : null);
+  return leaveCard(balance, q, today, request, record && balance ? nextPeriodLeave(record, balance) : null, sickOf(record));
 }
