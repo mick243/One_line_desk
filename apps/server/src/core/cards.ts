@@ -1,4 +1,4 @@
-import type { Card, CardAction, CardLabel, ModuleKind } from '@one-line-desk/shared';
+import type { Card, CardAction, CardLabel } from '@one-line-desk/shared';
 
 /** 카드 다섯 칸을 빠짐없이 채워요(화면설계 카드 문법). */
 export function makeCard(input: {
@@ -28,16 +28,4 @@ export function makeCard(input: {
     ...(input.overview ? { overview: input.overview } : {}),
     tail: input.tail,
   };
-}
-
-/** 아직 만들지 않은 모듈이 돌려주는 안내 카드. 모듈을 만들면 쓰지 않아요. */
-export function notReadyCard(kind: ModuleKind, what: string): Card {
-  return makeCard({
-    id: `not-ready-${kind}`,
-    kind,
-    label: '안내',
-    headline: `${what}은 아직 만들고 있어요`,
-    evidence: { text: '개발 중', aiSummarized: false },
-    tail: '저장되는 것이 없어요',
-  });
 }

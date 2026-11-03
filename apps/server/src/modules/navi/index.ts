@@ -26,6 +26,8 @@ export function createNaviModule(ctx: AppContext): DeskModule {
     async seed() {
       await navi.seed();
       await itHelp.seed();
+      // FAQ가 분장표 행을 가리켜서, 둘 다 넣은 뒤 메모리 분장표를 새로 읽어요.
+      await navi.refreshSource();
     },
     async init() {
       await navi.refreshSource();

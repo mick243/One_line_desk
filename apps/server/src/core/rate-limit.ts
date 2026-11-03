@@ -13,6 +13,8 @@ export type LimitedAction =
   | 'people.search'
   | 'invite';
 
+const WINDOW_MS = 60_000;
+
 export class RateLimiter {
   private readonly windows = new Map<string, { start: number; count: number }>();
 
@@ -21,16 +23,33 @@ export class RateLimiter {
     private readonly perMinute: () => number,
   ) {}
 
+  /** 지금 메모리에 든 횟수 창 수(시험·정리 확인용) */
+  get size(): number {
+    return this.windows.size;
+  }
+
   /** 상한 안이면 true. 넘으면 429와 "요청이 많아요. 잠시 뒤에 다시 해 주세요"예요. */
   hit(pseudonymId: string, action: LimitedAction): boolean {
     const key = `${pseudonymId}:${action}`;
     const at = this.now();
     const w = this.windows.get(key);
-    if (!w || at - w.start >= 60_000) {
+    if (!w || at - w.start >= WINDOW_MS) {
       this.windows.set(key, { start: at, count: 1 });
       return true;
     }
     w.count += 1;
     return w.count <= this.perMinute();
+  }
+
+  /** 1분 창이 지난 횟수를 지워요(보관 회차가 한 시간마다 불러요). 지운 개수를 돌려줘요. */
+  sweep(now: number): number {
+    let removed = 0;
+    for (const [key, w] of this.windows) {
+      if (now - w.start >= WINDOW_MS) {
+        this.windows.delete(key);
+        removed += 1;
+      }
+    }
+    return removed;
   }
 }

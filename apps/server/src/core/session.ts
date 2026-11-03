@@ -35,6 +35,11 @@ export class SessionStore {
 
   constructor(private readonly now: () => number) {}
 
+  /** 지금 메모리에 든 세션 수(시험·정리 확인용) */
+  get size(): number {
+    return this.sessions.size;
+  }
+
   /** 이 세션 ID가 지금 프로세스보다 앞선 기동에서 만든 것인지 */
   fromEarlierBoot(id: string): boolean {
     return !id.startsWith(this.boot);
@@ -66,6 +71,22 @@ export class SessionStore {
       return undefined;
     }
     return session;
+  }
+
+  /**
+   * 8시간 최대 수명이 지난 세션을 한꺼번에 지워요(보관 회차가 한 시간마다 불러요). 같은 쿠키로 다시 와야만 지워지던 세션이 쌓이지 않아요.
+   * 쉬는 시간이 지난 세션은 여기서 지우지 않아요. 그 브라우저가 돌아왔을 때 쉬는 시간 확인(guard.ts endIfIdle)이
+   * "오래 쉬어서 끊겼어요"와 다시 인증을 지금처럼 알려 주게 남겨 둬요(그래도 늦어도 8시간 안에 지워져요). 지운 수를 돌려줘요.
+   */
+  sweep(now: number): number {
+    let expired = 0;
+    for (const [id, s] of this.sessions) {
+      if (now - s.createdAt > SESSION_MAX_AGE_MS) {
+        this.sessions.delete(id);
+        expired += 1;
+      }
+    }
+    return expired;
   }
 
   destroy(id: string): void {
