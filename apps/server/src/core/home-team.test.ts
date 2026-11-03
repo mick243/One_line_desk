@@ -505,7 +505,7 @@ describe('[팀 일정] 자리비움(11/3)', () => {
     expect((await setAway(seojun, 'outside', '2026-10-26T18:00:00+09:00', '2026-10-26T14:00:00+09:00')).status).toBe(400);
     expect((await setAway(seojun, 'remote', '2026-11-01T09:00:00+09:00', '2026-11-01T18:00:00+09:00')).status).toBe(200);
     const { rows } = await t.db.query<{ column_name: string }>(
-      "select column_name from information_schema.columns where table_name = 'navi_away' order by ordinal_position",
+      "select column_name from information_schema.columns where table_schema = current_schema() and table_name = 'navi_away' order by ordinal_position",
     );
     expect(rows.map((r) => r.column_name)).toEqual(['id', 'pseudonym_id', 'kind', 'starts_at', 'ends_at', 'created_at']);
     expect(JSON.stringify((await t.db.query('select * from navi_away')).rows)).not.toMatch(/병원|서준|개발팀/);
