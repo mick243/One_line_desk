@@ -13,6 +13,21 @@ import {
   shapeNotices,
   shapeRooms,
 } from './tools';
+import {
+  EMPTY_INPUT,
+  FAQ_INPUT,
+  FAQ_OUTPUT,
+  type FaqInput,
+  MINE_OUTPUT,
+  ONBOARDING_OUTPUT,
+  shapeFaq,
+  shapeMine,
+  shapeOnboarding,
+  shapeTeams,
+  TEAM_INPUT,
+  TEAM_OUTPUT,
+  type TeamInput,
+} from './tools-navi';
 
 // MCP 도구 구현(11/2 정리). 도구 선언(이름·범위·제목·뺀 칸)은 core/tool-registry.ts, 여기는 입력·출력·실행만이에요.
 // /mcp 경로(mcp-route.ts)가 이 표 하나로 범위 검사·입력 검사·횟수 제한·감사·접속기록을 똑같이 해요.
@@ -25,6 +40,8 @@ export interface ToolEnv {
   issuer: string;
   /** 실제(모의가 아닌) 자료를 이 클라이언트에 보내도 되는지(보안팀 승인, ADR-15 계약 전 잠금) */
   realDataAllowed: () => Promise<boolean>;
+  /** 모의 자료로만 도는 시연인지(내 요청 상태처럼 우리 DB 자료의 모의 판정에 써요) */
+  allMockData: () => boolean;
 }
 
 export type ToolOutcome = { result: 'found' | 'none'; out: Record<string, unknown> } | { result: 'refused' | 'error'; message: string };
@@ -79,8 +96,62 @@ async function searchNotices(env: ToolEnv, raw: unknown): Promise<ToolOutcome> {
   return { result: out.hits.length > 0 ? 'found' : 'none', out };
 }
 
+// ── 2단계 읽기 도구(11/3, ADR-14 개정). navi 읽기는 ctx.services.navi.mcp로만 불러요(모듈 경계). ──
+
+function naviRead(env: ToolEnv) {
+  const read = env.ctx.services.navi?.mcp;
+  if (!read) throw new Error('navi service missing');
+  return read;
+}
+
+const REAL_DATA_REFUSED = '회사가 허락하지 않은 앱이라 실제 사내 자료는 보낼 수 없어요';
+
+/** 문의 양식 앱 링크: 봉인한 짧은 수명의 제안 토큰에 받을 행만 담아요. 질문 글은 담지 않아요. */
+const inquiryLink = (env: ToolEnv, rowId: string | null) =>
+  `${env.issuer}/r/${naviRead(env).proposeInquiry({ pseudonymId: env.principal.pseudonymId }, rowId)}`;
+
+async function findTeam(env: ToolEnv, raw: unknown): Promise<ToolOutcome> {
+  const found = await naviRead(env).findTeam((raw as TeamInput).query);
+  if (found.locked) return { result: 'refused', message: `보낼 수 없는 글자가 있어요: ${found.locked}. 그 부분을 빼고 다시 물어봐 주세요` };
+  if (!found.mock && !(await env.realDataAllowed())) return { result: 'refused', message: REAL_DATA_REFUSED };
+  const out = shapeTeams(found, (rowId) => inquiryLink(env, rowId));
+  return { result: out.candidates.length > 0 ? 'found' : 'none', out };
+}
+
+async function itFaq(env: ToolEnv, raw: unknown): Promise<ToolOutcome> {
+  const found = await naviRead(env).itFaq((raw as FaqInput).text);
+  if (found.locked) return { result: 'refused', message: `보낼 수 없는 글자가 있어요: ${found.locked}. 그 부분을 빼고 다시 붙여 넣어 주세요` };
+  if (!found.mock && !(await env.realDataAllowed())) return { result: 'refused', message: REAL_DATA_REFUSED };
+  const out = shapeFaq(found, inquiryLink(env, found.inquiry.rowId));
+  return { result: out.faq ? 'found' : 'none', out };
+}
+
+async function onboarding(env: ToolEnv): Promise<ToolOutcome> {
+  const found = await naviRead(env).onboarding();
+  if (!found.mock && !(await env.realDataAllowed())) return { result: 'refused', message: REAL_DATA_REFUSED };
+  const out = shapeOnboarding(found, `${env.issuer}/`);
+  return { result: out.weeks.length > 0 ? 'found' : 'none', out };
+}
+
+/** 본인 것만: 토큰의 가명 ID로만 찾아요. 입력으로 사람을 고를 수 없어요. */
+async function myStatus(env: ToolEnv): Promise<ToolOutcome> {
+  const { ctx, principal } = env;
+  const mock = env.allMockData();
+  if (!mock && !(await env.realDataAllowed())) return { result: 'refused', message: REAL_DATA_REFUSED };
+  const requests = await naviRead(env).myRequests(principal.pseudonymId);
+  const rooms = ctx.services.rooms;
+  const mine = ctx.ops.get().modules.rooms === 'on' && rooms?.myReservations ? await rooms.myReservations({ pseudonymId: principal.pseudonymId }) : null;
+  const reservations = (mine?.items ?? []).map((r) => ({ roomName: r.roomName, floor: r.floor, when: r.when }));
+  const out = shapeMine({ mock, requests, reservations }, `${env.issuer}/`);
+  return { result: out.requests.length + out.reservations.length > 0 ? 'found' : 'none', out };
+}
+
 /** 이름은 레지스트리의 MCP 도구 이름과 하나씩 맞아야 해요(시험이 봐요). */
 export const MCP_TOOL_IMPLS: Record<string, McpToolImpl> = {
   rooms_find_free: { input: ROOMS_INPUT, output: ROOMS_OUTPUT, run: findFreeRooms, errorMessage: '지금 빈 회의실을 찾지 못했어요' },
   notices_search: { input: NOTICES_INPUT, output: NOTICES_OUTPUT, run: searchNotices, errorMessage: '지금 공지를 찾지 못했어요' },
+  navi_find_team: { input: TEAM_INPUT, output: TEAM_OUTPUT, run: findTeam, errorMessage: '지금 받을 팀을 찾지 못했어요' },
+  navi_it_faq: { input: FAQ_INPUT, output: FAQ_OUTPUT, run: itFaq, errorMessage: '지금 IT FAQ를 찾지 못했어요' },
+  navi_onboarding: { input: EMPTY_INPUT, output: ONBOARDING_OUTPUT, run: onboarding, errorMessage: '지금 첫 2주 할 일을 불러오지 못했어요' },
+  my_requests_status: { input: EMPTY_INPUT, output: MINE_OUTPUT, run: myStatus, errorMessage: '지금 내 요청 상태를 불러오지 못했어요' },
 };

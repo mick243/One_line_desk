@@ -66,14 +66,21 @@ describe('도구별 운영 스위치', () => {
     const off = await op.call('PUT', '/api/ops/mcp-tool', { tool: 'notices_search', value: false });
     expect(off.status).toBe(200);
     expect(off.body.mcpToolsOff).toEqual(['notices_search']);
-    expect(await toolNames(t, tokens.access_token)).toEqual(['rooms_find_free']);
+    expect(await toolNames(t, tokens.access_token)).toEqual(['my_requests_status', 'navi_find_team', 'navi_it_faq', 'navi_onboarding', 'rooms_find_free']);
     const refused = await callTool(t, tokens.access_token, 'notices_search', { query: '공지' });
     expect(refused.json().result?.isError ?? refused.json().error).toBeTruthy();
     const audit = (await t.db.query("select tool, result from audit_log where action = 'mcpTool.set'")).rows;
     expect(audit).toEqual([{ tool: 'notices_search', result: 'false' }]);
 
     await op.call('PUT', '/api/ops/mcp-tool', { tool: 'notices_search', value: true });
-    expect(await toolNames(t, tokens.access_token)).toEqual(['notices_search', 'rooms_find_free']);
+    expect(await toolNames(t, tokens.access_token)).toEqual([
+      'my_requests_status',
+      'navi_find_team',
+      'navi_it_faq',
+      'navi_onboarding',
+      'notices_search',
+      'rooms_find_free',
+    ]);
   });
 
   it('도구별 스위치는 서버를 다시 켜도 남고, 동의 시트·S6 범위에도 반영돼요', async () => {
@@ -82,7 +89,7 @@ describe('도구별 운영 스위치', () => {
     await t.ctx.ops.load();
     expect(t.ctx.ops.get().mcpToolsOff).toEqual(['rooms_find_free']);
     const user = await t.loginAs(MOCK.staff);
-    expect((await user.call('GET', '/api/mcp/connections')).body.tools).toEqual(['notices.read']);
+    expect((await user.call('GET', '/api/mcp/connections')).body.tools).toEqual(['notices.read', 'navi.read', 'mine.read']);
   });
 
   it('레지스트리에 없는 이름이나 MCP가 아닌 도구는 받지 않고, 운영자만 바꿀 수 있어요', async () => {

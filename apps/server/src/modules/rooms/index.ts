@@ -22,6 +22,7 @@ export function createRoomsModule(ctx: AppContext): DeskModule {
   ctx.services.rooms = {
     findFree: (query) => desk.findFree(query),
     proposeReservation: (user, candidate) => desk.proposeReservation(user, candidate),
+    myReservations: (user) => desk.myReservations(user),
   };
 
   return {

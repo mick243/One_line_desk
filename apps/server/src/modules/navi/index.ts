@@ -1,8 +1,9 @@
 import { recordCutoff } from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
-import type { DeskModule } from '../../core/module';
+import type { DeskModule, PlanHandler } from '../../core/module';
 import { createInquiryService } from './inquiries';
 import { createItHelpService } from './it-help';
+import { createNaviMcpRead, inquireLinkHandler } from './mcp-read';
 import * as repo from './repo';
 import { registerNaviRoutes } from './routes';
 import { createNaviService } from './service';
@@ -17,11 +18,14 @@ export function createNaviModule(ctx: AppContext): DeskModule {
   const inquiries = createInquiryService(ctx);
   const itHelp = createItHelpService(ctx);
   // 분장표 주인 역할 계산(core/guard.ts)이 이걸 써요.
-  ctx.services.navi = { ownerDepartments: () => navi.ownerDepartments() };
+  // MCP 읽기 도구(11/3, ADR-14 개정)는 mcp로만 불러요.
+  ctx.services.navi = { ownerDepartments: () => navi.ownerDepartments(), mcp: createNaviMcpRead(ctx, navi, itHelp) };
 
   return {
     kind: 'navi',
     ask: (input) => navi.ask(input),
+    // MCP 문의 양식 앱 링크 토큰(열어 보기만, 실행 없음)
+    planHandlers: [inquireLinkHandler as PlanHandler<unknown>],
     register: (app) => registerNaviRoutes(app, ctx, navi, inquiries, itHelp),
     async seed() {
       await navi.seed();

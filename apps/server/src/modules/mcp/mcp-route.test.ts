@@ -34,10 +34,17 @@ async function listed(t: TestApp, at: string): Promise<ToolListItem[]> {
 }
 
 describe('도구 목록', () => {
-  it('[MCP-1] 도구 목록 스냅샷에 쓰기 도구가 0개예요(읽기 둘뿐, 모두 readOnly)', async () => {
+  it('[MCP-1] 도구 목록 스냅샷에 쓰기 도구가 0개예요(읽기 여섯, 모두 readOnly)', async () => {
     const { t, at } = await setup();
     const tools = await listed(t, at);
-    expect(tools.map((x) => x.name).sort()).toEqual(['notices_search', 'rooms_find_free']);
+    expect(tools.map((x) => x.name).sort()).toEqual([
+      'my_requests_status',
+      'navi_find_team',
+      'navi_it_faq',
+      'navi_onboarding',
+      'notices_search',
+      'rooms_find_free',
+    ]);
     for (const tool of tools) expect(tool.annotations, tool.name).toMatchObject({ readOnlyHint: true, destructiveHint: false });
     expect(TOOLS.filter((x) => x.mcpExposed && x.access !== 'read')).toEqual([]);
     expect(tools.map((x) => x.name).filter((n) => /book|reserve|cancel|post|write|create|delete|vote/i.test(n))).toEqual([]);
@@ -296,6 +303,8 @@ describe('MCP 경로의 경계', () => {
 
   it('[MCP-7] rooms·notices를 링크만·끔으로 하면 그 도구가 목록에서 빠지고 부를 수 없어요', async () => {
     const { t, at, rooms } = await setup();
+    // 담당 찾기 도구는 navi 모듈 스위치를 따로 봐요(read-tools.test.ts). 여기서는 회의실·공지만 봐요.
+    await t.ctx.ops.setModule('p_op', 'navi', 'link');
     await t.ctx.ops.setModule('p_op', 'rooms', 'link');
     expect(await toolNames(t, at)).toEqual(['notices_search']);
     const res = await callTool(t, at, 'rooms_find_free', ROOMS_ARGS);

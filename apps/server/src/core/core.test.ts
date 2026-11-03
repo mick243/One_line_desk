@@ -52,8 +52,8 @@ describe('도구 레지스트리', () => {
       listMcpTools(on)
         .map((t) => t.name)
         .sort(),
-    ).toEqual(['notices_search', 'rooms_find_free']);
-    const roomsLinkOnly = settings({ mcp: true, modules: { ...DEFAULT_OPS_SETTINGS.modules, rooms: 'link' } });
+    ).toEqual(['my_requests_status', 'navi_find_team', 'navi_it_faq', 'navi_onboarding', 'notices_search', 'rooms_find_free']);
+    const roomsLinkOnly = settings({ mcp: true, modules: { ...DEFAULT_OPS_SETTINGS.modules, rooms: 'link', navi: 'link' } });
     expect(listMcpTools(roomsLinkOnly).map((t) => t.name)).toEqual(['notices_search']);
   });
 

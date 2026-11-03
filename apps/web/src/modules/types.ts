@@ -75,6 +75,6 @@ export interface WebModules {
   ConnectedApps: ComponentType;
   /** /oauth/consent: 사내 로그인 뒤 S6 위에 뜨는 MCP 연결 동의 시트(M4) */
   ConsentScreen: ComponentType<ScreenProps>;
-  /** /r/<토큰>: MCP 결과의 앱 확인 링크로 들어온 S2(M3) */
-  LinkEntry: ComponentType<ScreenProps & { token: string }>;
+  /** /r/<토큰>: MCP 결과의 앱 확인 링크로 들어온 S2(M3). 담당 팀 문의 링크면 문의 양식(InquirySheet)을 열어요(11/3). */
+  LinkEntry: ComponentType<ScreenProps & { token: string; InquirySheet: WebModules['InquirySheet'] }>;
 }
