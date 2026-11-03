@@ -73,7 +73,7 @@ export function loginErrorReason(error: string): 'denied' | 'mfa-required' | 'id
 }
 
 /** ID 토큰 근거가 설정한 MFA 값 중 하나를 가졌는지(ADR-20) */
-export function hasMfa(evidence: LoginEvidence, config: Pick<ServerConfig, 'mfaAmr' | 'mfaAcr'>): boolean {
+function hasMfa(evidence: LoginEvidence, config: Pick<ServerConfig, 'mfaAmr' | 'mfaAcr'>): boolean {
   return evidence.amr.some((a) => config.mfaAmr.includes(a)) || (evidence.acr !== undefined && config.mfaAcr.includes(evidence.acr));
 }
 

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createTestApp, MOCK } from '../../testing';
 
 // 휴가 요청·승인·반려·답장(10/30, ADR-24). 시험 시계는 2026-10-26(월) 09:00이에요.
-// 하늘(재무팀)이 담당 찾기에서 휴가를 물으면 연차 카드에 [휴가 신청하기]가 붙고, 인사팀(지후)이 그 요청 안에서만 하늘의 남은 연차를 봐요.
+// 하늘(재무팀)이 문의하기에서 휴가를 물으면 연차 카드에 [휴가 신청하기]가 붙고, 인사팀(지후)이 그 요청 안에서만 하늘의 남은 연차를 봐요.
 
 type TestApp = Awaited<ReturnType<typeof createTestApp>>;
 const opened: TestApp[] = [];

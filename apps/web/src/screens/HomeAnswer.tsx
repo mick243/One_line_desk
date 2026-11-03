@@ -5,12 +5,13 @@
 import {
   ABSENCE_PART_LABEL,
   AWAY_KIND_LABEL,
+  dayLabel,
   type HomeAskResponse,
   type HomeItem,
   type HomeOpen,
   type HomeTeamSchedule,
-  type TeamEntry,
   TEAM_SCHEDULE_TEXT,
+  type TeamEntry,
 } from '@one-line-desk/shared';
 import type { ReactNode } from 'react';
 
@@ -35,12 +36,6 @@ export function HomeItemList({ items, onOpen, label }: { items: HomeItem[]; onOp
   );
 }
 
-const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
-function dayLabel(date: string): string {
-  const [, m, d] = date.split('-').map(Number);
-  return `${m}월 ${d}일(${WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]})`;
-}
-
 const entryText = (e: TeamEntry) =>
   e.what === 'leave'
     ? `${ABSENCE_PART_LABEL[e.part]} 부재`
@@ -51,7 +46,7 @@ const entryText = (e: TeamEntry) =>
         : `${e.start}–${e.end} ${AWAY_KIND_LABEL[e.away]}`;
 
 /** 같은 팀 일정 목록. 하루만 물었으면 머리 줄에 이미 다 있어서 여러 날일 때만 날짜별로 그려요. */
-export function TeamScheduleList({ team, oneDay }: { team: HomeTeamSchedule; oneDay: boolean }) {
+function TeamScheduleList({ team, oneDay }: { team: HomeTeamSchedule; oneDay: boolean }) {
   if (!team.shown) return null;
   return (
     <div className='home-team'>

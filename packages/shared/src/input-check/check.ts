@@ -12,7 +12,7 @@ import {
   type MaskKind,
 } from './rules';
 
-export interface InputCheckResult {
+interface InputCheckResult {
   rulesVersion: number;
   /** 하나라도 있으면 보내지 않아요. */
   locks: { kind: LockKind; message: string }[];
@@ -25,7 +25,7 @@ export interface InputCheckResult {
  * 저장·표시할 글: 화면에 안 보이는 0폭·글 방향 문자를 지워요.
  * NFKC는 검사에만 써요. 저장 글까지 바꾸면 "ㅋㅋ" 같은 한글 낱자가 다른 글자로 바뀌어요.
  */
-export function normalizeInput(raw: string): string {
+function normalizeInput(raw: string): string {
   return raw.replace(INVISIBLE_CHARS, '');
 }
 

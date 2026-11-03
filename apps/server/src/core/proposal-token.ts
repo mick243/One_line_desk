@@ -17,7 +17,7 @@ export interface ProposalPayload {
   exp: number;
 }
 
-export type VerifyResult = { ok: true; payload: ProposalPayload } | { ok: false; reason: 'bad' | 'owner' | 'expired'; payload?: ProposalPayload };
+type VerifyResult = { ok: true; payload: ProposalPayload } | { ok: false; reason: 'bad' | 'owner' | 'expired'; payload?: ProposalPayload };
 
 const AAD = 'proposal-token';
 

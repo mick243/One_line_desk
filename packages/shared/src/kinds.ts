@@ -7,7 +7,7 @@ export const MODULES = ['navi', 'notices', 'rooms', 'pantry'] as const;
 export type ModuleKind = (typeof MODULES)[number];
 
 // 역할(R7). 세션에는 누구인지만 담고, 역할은 요청마다 다시 계산해요(ADR-13).
-export const ROLES = ['employee', 'facilities', 'chart-owner', 'operator'] as const;
+const ROLES = ['employee', 'facilities', 'chart-owner', 'operator'] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABEL: Record<Role, string> = {

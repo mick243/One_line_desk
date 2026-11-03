@@ -8,7 +8,7 @@ import type { OrderReasonCode } from './pantry';
 export type OrderPlanStatus = 'draft' | 'confirmed' | 'replaced';
 
 /** 확정을 잠그는 경고(locks)와 경고만 띄우는 층 경고 */
-export type OrderWarningKind = 'budget-below-min-sum' | 'over-budget' | 'floor-request-short' | 'floor-short';
+type OrderWarningKind = 'budget-below-min-sum' | 'over-budget' | 'floor-request-short' | 'floor-short';
 
 /** 화면설계 S4 주문안 문구(R1·R16). 서버 경고와 화면이 같이 써요. */
 export const ORDER_MESSAGES = {

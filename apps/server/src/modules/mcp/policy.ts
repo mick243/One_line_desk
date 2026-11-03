@@ -4,7 +4,7 @@ import { listMcpTools, type ToolDef } from '../../core/tool-registry';
 
 // 허용 클라이언트 정책과 MCP 켜기 규칙(ADR-12·15, M2·M5).
 
-export interface ClientPolicy {
+interface ClientPolicy {
   securityApproved: boolean;
   demoOnly: boolean;
 }
@@ -34,7 +34,7 @@ function loopbackUrl(uri: string): URL | null {
 }
 
 /** 루프백(localhost·127.0.0.1·[::1]) http 주소인지. 공개 클라이언트는 이런 주소로만 돌아가요. */
-export function isLoopbackRedirect(uri: string): boolean {
+function isLoopbackRedirect(uri: string): boolean {
   return loopbackUrl(uri) !== null;
 }
 

@@ -132,7 +132,7 @@ export async function bundleRootsOf(q: Queryable, cardIds: number[], floor?: str
   return new Map(rows.map((r) => [Number(r.card_id), Number(r.root)]));
 }
 
-export interface MyOpenVotes {
+interface MyOpenVotes {
   /** 이 사람이 표를 준 열린 카드(열린 묶음 안). 화면에는 "내 표 있음"으로만 나가요. */
   cardIds: Set<number>;
   /** 열린 묶음 중 이 사람 표가 있는 묶음 수(R14 상한). 모든 층이에요. */

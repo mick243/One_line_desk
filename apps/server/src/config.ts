@@ -76,7 +76,7 @@ export interface ServerConfig {
 const BUILD_ID = /^[A-Za-z0-9._-]{1,64}$/;
 
 /** 실행 환경(시험에서 바꿔 넣어요) */
-export interface Runtime {
+interface Runtime {
   node: string;
   execArgv: string[];
 }
@@ -92,13 +92,13 @@ const list = (value: string | undefined) =>
     .filter(Boolean);
 
 /** AI 공급자(11/3): Anthropic·Gemini 둘 다 쓸 수 있고, 기본은 Anthropic이에요. 비우면 모델을 부르지 않는 fake예요. */
-export type AiProviderName = 'fake' | 'anthropic' | 'gemini';
+type AiProviderName = 'fake' | 'anthropic' | 'gemini';
 const AI_PROVIDERS: readonly AiProviderName[] = ['fake', 'anthropic', 'gemini'];
 
 /** 운영에서 받는 Anthropic 모델(BE-3). 목록 밖 값으로는 뜨지 않아요. */
-export const ALLOWED_AI_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'];
+const ALLOWED_AI_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'];
 /** Gemini 모델 이름은 판마다 바뀌어서 목록을 박지 않고, 운영자가 계약한 모델을 DESK_AI_MODEL로 꼭 적게 해요. 모양만 검사해요. */
-export const GEMINI_MODEL_RE = /^gemini-[a-z0-9.-]{1,60}$/;
+const GEMINI_MODEL_RE = /^gemini-[a-z0-9.-]{1,60}$/;
 
 /** 공급자마다 기본 모델. Gemini는 기본값이 없어요(계약한 모델을 직접 적어요). */
 function defaultModel(provider: AiProviderName): string {

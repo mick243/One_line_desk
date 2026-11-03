@@ -21,7 +21,7 @@ export interface ClientRecord {
   demoOnly: boolean;
 }
 
-export interface GrantRecord {
+interface GrantRecord {
   pseudonymId: string;
   clientId: string;
   scopes: McpScope[];

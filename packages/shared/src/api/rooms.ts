@@ -28,7 +28,7 @@ export interface RoomCandidate {
 }
 
 /** 후보가 하나도 없을 때 까닭. 지난 시간 · 형식 · 정원 넘음 · 장비 없음 · 그 층에 없음 · 모두 예약됨 */
-export type RoomEmptyCode = 'past' | 'bad-time' | 'too-many-people' | 'no-equipment' | 'no-floor' | 'all-booked';
+type RoomEmptyCode = 'past' | 'bad-time' | 'too-many-people' | 'no-equipment' | 'no-floor' | 'all-booked';
 
 export interface RoomSearchResult {
   /** 현황 조회 시각(ISO). 화면에 "현황 HH:MM 기준"으로 보여 줘요(D6). */
@@ -40,11 +40,6 @@ export interface RoomSearchResult {
   alternatives: RoomCandidate[];
   /** 후보가 없을 때만: 왜 없는지 한 줄(MCP가 사람에게 그대로 설명해요) */
   emptyReason?: { code: RoomEmptyCode; message: string };
-}
-
-/** POST /api/rooms/search 본문. 조건 칩을 고친 뒤 다시 찾아요. 아무것도 쓰지 않아요. */
-export interface RoomSearchRequest {
-  query: Partial<RoomQuery>;
 }
 
 /** POST /api/rooms/recheck 본문(M3 앱 확인 링크). 링크를 연 것만으로는 아무것도 쓰지 않아요. */
@@ -97,7 +92,7 @@ export interface RoomCancelResponse {
 export const ROOM_CONDITIONS_VARIANT = 'rooms-conditions';
 /** 대화의 회의실 현황 카드: 회의실마다 누를 수 있는 한 줄(10/30 QA·디자인 회의) */
 export const ROOM_OVERVIEW_VARIANT = 'rooms-overview';
-export const ROOM_CONDITION_MISSING = '알려 주세요';
+const ROOM_CONDITION_MISSING = '알려 주세요';
 const ANY_EQUIPMENT = '없어도 돼요';
 const ANY_FLOOR = '상관없어요';
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -141,7 +136,7 @@ export function parseRoomConditionFields(fields: { name: string; value: string }
 // ── 회의실 둘러보기(10/26): 회의실 카드 목록 → 회의실 자세히(설비·지금 상태·하루 일정·이 시간 예약) ──
 
 /** 회의실 한 칸. 예약자·회의 제목 칸은 타입에 아예 없어요(ADR-06). */
-export interface RoomInfo {
+interface RoomInfo {
   id: string;
   name: string;
   floor: string;
@@ -172,14 +167,6 @@ export function roomStatusText(status: RoomStatus): string {
   if (status.kind === 'busy-now') return `사용 중 · ${status.freeAt}부터 비어요`;
   if (status.kind === 'free-now') return status.nextBusyAt ? `지금 비어 있어요 · ${status.nextBusyAt}부터 예약` : '지금 비어 있어요 · 오늘 남은 예약 없음';
   return status.bookings ? `예약 ${status.bookings}건` : '예약 없음';
-}
-
-const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
-
-/** "10월 27일(화)". 날짜(YYYY-MM-DD)만 보고 만들어요. */
-export function roomDateLabel(date: string): string {
-  const d = new Date(`${date}T00:00:00Z`);
-  return `${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일(${WEEKDAY_LABELS[d.getUTCDay()]})`;
 }
 
 /** 대화 현황 카드의 회의실 한 줄(10/30 QA·디자인 회의). 누르면 회의실 자세히가 열려요. 누가 잡았는지는 없어요(ADR-06). */
@@ -224,7 +211,7 @@ export interface RoomListResponse {
 }
 
 /** 하루 일정 한 칸. 남의 예약은 "예약됨"으로만 보여요. 취소는 내 예약에만 붙어요. */
-export interface RoomDayBlock {
+interface RoomDayBlock {
   /** HH:MM */
   start: string;
   /** HH:MM(자정이면 24:00) */
@@ -264,7 +251,7 @@ export const AUTO_DAILY_LIMIT = 5;
 export type FacilityStatus = 'ok' | 'repair';
 
 /** 내 장비 대여 한 줄. 내 대여만 와요. */
-export interface MyLoan {
+interface MyLoan {
   id: string;
   kind: LoanKind;
   /** "빔프로젝터 1" */

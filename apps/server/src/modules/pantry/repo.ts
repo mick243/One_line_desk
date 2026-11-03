@@ -149,7 +149,7 @@ export async function insertMerge(
   return Number(rows[0]!.id);
 }
 
-export interface MergeRow {
+interface MergeRow {
   id: number;
   mergedCardId: number;
   representativeCardId: number;
@@ -201,7 +201,7 @@ export async function activeMerges(
   }));
 }
 
-export interface FlagRow {
+interface FlagRow {
   cardA: number;
   cardB: number;
   source: 'ai' | 'rule';
@@ -231,7 +231,7 @@ export async function setFlagState(q: Queryable, pairs: [number, number][], stat
   }
 }
 
-export interface CatalogRow {
+interface CatalogRow {
   id: string;
   name: string;
   unitPrice: number;
@@ -256,7 +256,7 @@ export async function insertCatalogItem(q: Queryable, c: CatalogRow): Promise<vo
   ]);
 }
 
-export interface FloorSettingRow {
+interface FloorSettingRow {
   floor: string;
   minShareWon: number;
   perPersonLimit: number;

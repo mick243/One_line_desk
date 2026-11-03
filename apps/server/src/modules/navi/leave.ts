@@ -1,6 +1,8 @@
 import {
+  addDays,
   type Card,
   type CardAction,
+  dayLabel,
   GRADE,
   type HalfPart,
   kstDate,
@@ -35,7 +37,7 @@ const FIRST_YEAR_MAX = 11;
 const BASE_DAYS = 15;
 const MAX_DAYS = 25;
 
-export interface LeaveBalance {
+interface LeaveBalance {
   /** 이번 연차 기간(입사일 기준). end는 마지막 날이에요. */
   periodStart: string;
   periodEnd: string;
@@ -53,19 +55,13 @@ export interface LeaveBalance {
 const pad = (n: number) => String(n).padStart(2, '0');
 
 /** 날짜에 달을 더해요. 그 달에 없는 날(2월 30일 등)은 그 달 마지막 날이에요. */
-export function addMonths(date: string, months: number): string {
+function addMonths(date: string, months: number): string {
   const [y, m, d] = date.split('-').map(Number) as [number, number, number];
   const total = y * 12 + (m - 1) + months;
   const ny = Math.floor(total / 12);
   const nm = (total % 12) + 1;
   const last = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
   return `${ny}-${pad(nm)}-${pad(Math.min(d, last))}`;
-}
-
-function addDays(date: string, days: number): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  const t = new Date(Date.UTC(y, m - 1, d + days));
-  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
 }
 
 /** 시작일에서 step만큼씩 더해 today를 넘지 않는 횟수(다 채운 달·해 수) */
@@ -91,7 +87,7 @@ export function computeLeave(record: LeaveRecord, today: string): LeaveBalance {
 }
 
 /** 다음 연차 기간(입사일 기준) 계산. 그 기간에 생기는 연차에서 그 기간에 이미 잡힌 날을 빼요. */
-export function nextPeriodLeave(record: LeaveRecord, current: LeaveBalance): LeaveBalance {
+function nextPeriodLeave(record: LeaveRecord, current: LeaveBalance): LeaveBalance {
   return computeLeave(record, addDays(current.periodEnd, 1));
 }
 
@@ -129,7 +125,7 @@ export function leaveRequestBalance(record: LeaveRecord, today: string, days: re
 
 // ── 질문 해석(AI는 질문 글만 봐요) ──────────────────────────────────────────
 
-export interface LeaveQuestion {
+interface LeaveQuestion {
   /** 본인 연차·반차·월차에 관한 질문인지. 육아휴직·출산휴가·병가·경조휴가·특별휴가는 아니에요. */
   about: boolean;
   /** 앞으로 더 쓰려는 하루 연차 일수(반 포함, "이틀 반" = 2.5)와 반차 횟수("반차 3번 쓰면?"). 없으면 0이에요. */
@@ -221,7 +217,7 @@ const RUN_DAYS = '월화수목금';
  * 말로 한 쓰려는 날을 날짜 목록으로 바꿔요. 읽은 말은 글에서 지워서, "11월 3일"의 3일을 일수로 세지 않게 해요.
  * 달·일 범위("11월 3일부터 5일까지"), 달·일, "다음 주 내내", 주+요일·요일 묶음("이번 주 목금", "월화수"), 요일들("월요일이랑 금요일"), 달만("12월에", "다음 달에").
  */
-export function readPlanDates(text: string, today: string): { dates: string[]; weekendSkipped: number; monthStart: string | null; rest: string } {
+function readPlanDates(text: string, today: string): { dates: string[]; weekendSkipped: number; monthStart: string | null; rest: string } {
   let rest = text;
   const raw: string[] = [];
   const take = (re: RegExp, fn: (m: RegExpMatchArray) => void) => {
@@ -345,7 +341,7 @@ const QUESTION_SYSTEM = `직원이 사내 안내 데스크에 쓴 질문 한 줄
  * 계획을 묻지 않았거나, 남·다른 기간을 물었으면 모델을 부르지 않아요. 규칙이 쓰려는 양을 못 읽었을 때만 불러요.
  * 모델에는 질문 글(공통 검사·가림을 지난 글, 등급 1)만 보내요. 연차 자료는 보내지 않아요.
  */
-export async function readLeaveQuestion(gateway: AppContext['gateway'], text: string, today: string): Promise<LeaveQuestion> {
+async function readLeaveQuestion(gateway: AppContext['gateway'], text: string, today: string): Promise<LeaveQuestion> {
   const rule = ruleLeaveQuestion(text, today);
   const ruleRead = rule.planFull > 0 || rule.planHalf > 0 || rule.planMonthStart !== null;
   if (!rule.about || rule.aboutOther || rule.otherPeriod || ruleRead || !USE_VERB.test(text)) return { ...rule, viaAi: false };
@@ -370,11 +366,10 @@ export async function readLeaveQuestion(gateway: AppContext['gateway'], text: st
 
 // ── 카드 ──────────────────────────────────────────────────────────────────
 
-export const LEAVE_TAIL = '나에게만 보여요. 연차 기록은 저장하지 않고 AI로 보내지 않아요';
+const LEAVE_TAIL = '나에게만 보여요. 연차 기록은 저장하지 않고 AI로 보내지 않아요';
 const LEAVE_DESK = '그룹웨어 근태 메뉴';
 
 const days = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}일`;
-export const dayLabel = (d: string) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일(${WEEKDAYS[weekdayOf(d)]})`;
 
 function planLabel(full: number, half: number): string {
   const parts = [full ? `연차 ${days(full)}` : '', half ? `반차 ${half}번` : ''].filter(Boolean);
@@ -395,7 +390,7 @@ function otherPersonCard(): Card {
 }
 
 /** 분장표에서 휴가를 신청하는 행(휴가 신청·연차 신청). 휴가 요청은 이 행의 주인 부서(인사팀)로 가요(ADR-24). */
-export interface LeaveRequestTarget {
+interface LeaveRequestTarget {
   rowId: string;
   team: string;
   task: string;
@@ -413,7 +408,7 @@ export function findLeaveRequestRow(rows: readonly { id: string; task: string; t
  * 날 없이 양만 말했으면("이틀 쓰고 싶어") 고를 일수만 알려 줘요.
  */
 /** 병가 양식용 본인 정보: 올해 병가 쓴 날·한도와 진단서 안내 기준 일수(11/3) */
-export type SickInfo = NonNullable<Extract<CardAction, { type: 'leave-request' }>['sick']>;
+type SickInfo = NonNullable<Extract<CardAction, { type: 'leave-request' }>['sick']>;
 
 function leaveRequestAction(
   target: LeaveRequestTarget,
@@ -461,7 +456,7 @@ export function isOfficialLeaveQuestion(text: string): boolean {
 const OFFICIAL_TAIL = '공가는 연차에서 빠지지 않아요. 증빙 파일은 앱이 받지 않아요';
 
 /** 공가 카드. [공가 신청하기]는 휴가 신청 양식을 공가로 열어요. 근태 기록이 없으면 신청은 그룹웨어 근태 메뉴로 안내해요. */
-export function officialLeaveCard(
+function officialLeaveCard(
   today: string,
   text: string,
   request: LeaveRequestTarget | null,
@@ -514,7 +509,7 @@ export function isSickLeaveQuestion(text: string): boolean {
   return SICK_WORDS.test(text) || (SICK_UNWELL.test(text) && SICK_ASK.test(text));
 }
 
-export const SICK_TAIL = '나에게만 보여요. 병가 기록은 저장하지 않고 AI로 보내지 않아요';
+const SICK_TAIL = '나에게만 보여요. 병가 기록은 저장하지 않고 AI로 보내지 않아요';
 
 /** 병가는 지난 날도 받아서(지난 3일까지) "오늘·어제·그제"를 읽어요. 그 밖의 날은 연차와 같은 규칙(오늘부터)이에요. 주말은 빼요. */
 export function readSickDates(text: string, today: string): string[] {
@@ -527,7 +522,7 @@ export function readSickDates(text: string, today: string): string[] {
 }
 
 /** 병가 카드. [병가 신청하기]는 휴가 신청 양식을 병가로 열어요. 근태 기록이 없으면 신청은 그룹웨어 근태 메뉴로 안내해요. */
-export function sickLeaveCard(
+function sickLeaveCard(
   today: string,
   text: string,
   request: LeaveRequestTarget | null,
@@ -645,7 +640,7 @@ export function leaveCard(
  * 직원 명단 이름이 연차 말 바로 앞에 있으면 남의 연차 질문이에요("도윤 연차", "서연이 연차", "민준의 휴가").
  * 내 이름은 빼요. 이름이 다른 낱말 안에 든 것("하늘보리")과 연차 말과 떨어진 것("도윤이랑 같이 연차 쓰면")은 보지 않아요.
  */
-export function namesOtherPerson(text: string, roster: readonly string[], mine: readonly string[]): boolean {
+function namesOtherPerson(text: string, roster: readonly string[], mine: readonly string[]): boolean {
   const others = [...new Set(roster)].filter((n) => /^[가-힣]{2,}$/.test(n) && !mine.includes(n));
   if (!others.length) return false;
   const names = others.sort((a, b) => b.length - a.length).join('|');

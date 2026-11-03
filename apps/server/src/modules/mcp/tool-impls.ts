@@ -1,4 +1,4 @@
-import { kstDate, kstTime, kstToEpoch, type RoomQuery } from '@one-line-desk/shared';
+import { dayLabel, kstDate, kstTime, kstToEpoch, type RoomQuery } from '@one-line-desk/shared';
 import type { z } from 'zod';
 import type { AppContext } from '../../context';
 import type { McpPrincipal } from './auth-service';
@@ -59,9 +59,9 @@ export interface ToolEnv {
   allMockData: () => boolean;
 }
 
-export type ToolOutcome = { result: 'found' | 'none'; out: Record<string, unknown> } | { result: 'refused' | 'error'; message: string };
+type ToolOutcome = { result: 'found' | 'none'; out: Record<string, unknown> } | { result: 'refused' | 'error'; message: string };
 
-export interface McpToolImpl {
+interface McpToolImpl {
   input: z.ZodObject;
   output: z.ZodObject;
   /** 입력은 이미 input으로 검사한 값이에요. 던지면 'error'로 남고 errorMessage를 돌려줘요. */
@@ -194,9 +194,7 @@ async function findPantry(env: ToolEnv, raw: unknown): Promise<ToolOutcome> {
   return { result: out.items.length > 0 ? 'found' : 'none', out };
 }
 
-const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
-const whenLabel = (date: string, from: number, to: number) =>
-  `${Number(date.slice(5, 7))}월 ${Number(date.slice(8, 10))}일(${WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]}) ${kstTime(from)}~${kstTime(to)}`;
+const whenLabel = (date: string, from: number, to: number) => `${dayLabel(date)} ${kstTime(from)}~${kstTime(to)}`;
 
 /** 장비 대여 확인: 남은 수와 링크. 링크 토큰에는 장비 종류와 구간만 있어요. 자동 실행 허용 목록은 MCP로 넓히지 않아요. */
 async function findEquipment(env: ToolEnv, raw: unknown): Promise<ToolOutcome> {

@@ -1,9 +1,9 @@
-import { addDays, roomDateLabel, roomStatusText } from '@one-line-desk/shared';
+import { addDays, dayLabel, roomStatusText } from '@one-line-desk/shared';
 
 // 회의실 둘러보기 화면 글자 도우미. 시각은 서버가 준 한국 시각(HH:MM)만 써요.
 
 /** "10월 27일(화)" */
-export const dateLabel = roomDateLabel;
+export const dateLabel = dayLabel;
 
 /** 오늘·내일·모레 칩. 기준 날짜는 서버가 준 오늘이에요. */
 export function dayChips(today: string): { date: string; label: string }[] {

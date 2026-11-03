@@ -36,7 +36,7 @@ export const CHAT_INTENTS = ['reserve', 'rent', 'my', 'overview', 'equipment', '
 type Intent = (typeof CHAT_INTENTS)[number];
 
 /** 채팅으로 바로 잡는 회의·대여는 4시간까지예요(ADR-19). */
-export const AUTO_MAX_MINUTES = 240;
+const AUTO_MAX_MINUTES = 240;
 const MAX_KINDS = 3;
 const MAX_LISTED = 5;
 

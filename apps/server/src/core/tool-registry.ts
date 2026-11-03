@@ -4,7 +4,7 @@ import type { McpScope, ModuleKind, OpsSettings } from '@one-line-desk/shared';
 // 이름은 모듈 접두어 + 동작이에요. LLM과 MCP 어디에도 쓰기 도구는 없어요.
 // MCP 도구를 더할 때(11/2 정리): 여기에 mcp 칸을 적고, modules/mcp/tools.ts의 MCP_TOOL_IMPLS에 입력·출력·실행을 하나 더해요.
 // 범위 이름은 shared MCP_SCOPES에 먼저 적어요. 그 밖에 고칠 곳은 없어요(시험이 둘이 맞는지 봐요).
-export interface ToolField {
+interface ToolField {
   type: 'string' | 'integer' | 'string[]' | 'object[]';
   description: string;
   optional?: boolean;
@@ -12,7 +12,7 @@ export interface ToolField {
 }
 
 /** MCP로 내보내는 도구만 가져요. */
-export interface McpToolMeta {
+interface McpToolMeta {
   /** 이 도구를 부르려면 연결에 있어야 하는 범위 */
   scope: McpScope;
   /** AI 앱이 보여 주는 이름 */

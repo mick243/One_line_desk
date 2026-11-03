@@ -2,7 +2,7 @@ import pg from 'pg';
 import type { Db, Queryable } from './types';
 
 /** schema는 시험용이에요: 그 스키마를 먼저 찾고(search_path), 확장(btree_gist)은 public에서 찾아요. 운영은 넣지 않아요. */
-export interface PgDbOptions {
+interface PgDbOptions {
   schema?: string;
 }
 

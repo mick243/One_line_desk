@@ -93,7 +93,7 @@ export const ROOMS_OUTPUT = z
     emptyReason: EMPTY_REASON.optional(),
   })
   .strict();
-export type RoomsOutput = z.infer<typeof ROOMS_OUTPUT>;
+type RoomsOutput = z.infer<typeof ROOMS_OUTPUT>;
 
 // 공지는 제목·게시일·원문 링크만이에요. 본문·발췌·요약 칸은 없어요(ADR-14).
 export const NOTICES_OUTPUT = z
@@ -103,7 +103,7 @@ export const NOTICES_OUTPUT = z
     emptyReason: EMPTY_REASON.optional(),
   })
   .strict();
-export type NoticesOutput = z.infer<typeof NOTICES_OUTPUT>;
+type NoticesOutput = z.infer<typeof NOTICES_OUTPUT>;
 
 /** 제어 문자·방향 바꾸기 같은 보이지 않는 문자를 지우고 길이를 잘라요. */
 export function cleanText(value: unknown, max: number): string {

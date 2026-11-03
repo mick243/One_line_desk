@@ -8,7 +8,7 @@ import type { DeskUser } from './user';
 // AI 앱 연결 끊기·모든 기기 로그아웃). plan 없이 이 함수 하나를 거쳐요(ADR-03, R2).
 // 권한·상태 재검사는 run 안에서, 멱등 키·스위치·감사 로그는 여기서 해요.
 
-export interface FixedAction<T> {
+interface FixedAction<T> {
   module: ModuleKind | 'core' | 'mcp';
   action: string;
   /** 같은 키가 다시 오면 저장한 결과만 돌려줘요(버튼 연타). 없으면 멱등 처리를 안 해요. */

@@ -19,7 +19,7 @@ const DATE_OK = /^\d{4}-\d{2}-\d{2}$/;
 // 제어 문자는 내보내지 않아요(ADR-14).
 const CONTROL = /[\u0000-\u001F\u007F]/g;
 
-export function isAllowedBoard(board: string): boolean {
+function isAllowedBoard(board: string): boolean {
   return (ALLOWED_BOARDS as readonly string[]).includes(board);
 }
 
@@ -34,7 +34,7 @@ function cleanTitle(title: string): string {
   return title.replace(CONTROL, ' ').trim().slice(0, NOTICE_TITLE_MAX_LENGTH);
 }
 
-export function noticeCard(hit: NoticeHit): Card {
+function noticeCard(hit: NoticeHit): Card {
   return makeCard({
     id: `notice-${hit.id}`,
     kind: 'notices',
@@ -52,14 +52,14 @@ export function noticeCard(hit: NoticeHit): Card {
   });
 }
 
-export function notFoundCard(): Card {
+function notFoundCard(): Card {
   return makeCard({
     id: 'notices-not-found',
     kind: 'notices',
     label: '안내',
     headline: '공지에서 찾지 못했어요',
     evidence: { text: `찾아본 범위: ${ALLOWED_BOARDS.join(' · ')}`, aiSummarized: false },
-    primary: { type: 'reask', text: '담당 찾기에서 찾기', kind: 'navi' },
+    primary: { type: 'reask', text: '문의하기에서 찾기', kind: 'navi' },
     tail: ASK_TAIL,
   });
 }

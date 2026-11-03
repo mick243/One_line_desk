@@ -37,7 +37,7 @@ const APP_IS_FOR_PEOPLE = '앱은 사람이 회사 계정으로 로그인해서 
 
 /** 운영자가 MCP를 껐을 때 안내. 인증 문제가 아니라는 걸 분명히 해요(U4). */
 function offMessage(appUrl: string): string {
-  return `운영자가 한 줄 데스크 MCP를 잠시 껐어요. 인증이나 연결 문제는 아니에요. 그동안 회의실·공지·담당 찾기는 사람이 한 줄 데스크 앱(${appUrl})을 직접 열어 찾도록 안내해 주세요. ${APP_IS_FOR_PEOPLE}`;
+  return `운영자가 한 줄 데스크 MCP를 잠시 껐어요. 인증이나 연결 문제는 아니에요. 그동안 회의실·공지·문의하기는 사람이 한 줄 데스크 앱(${appUrl})을 직접 열어 찾도록 안내해 주세요. ${APP_IS_FOR_PEOPLE}`;
 }
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;

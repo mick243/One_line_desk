@@ -15,7 +15,7 @@ interface Confirming {
 }
 
 /** 버튼을 누른 카드를 결과 카드로 바꿔 끼울 때 받는 함수(QA D-B01). 끝난 카드가 실행 전 모양으로 남지 않게 해요. */
-export type ResultHandler = (cards: Card[]) => void;
+type ResultHandler = (cards: Card[]) => void;
 
 interface Shown {
   title: string;

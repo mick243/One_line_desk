@@ -17,7 +17,7 @@ declare module 'fastify' {
 
 const LOGIN_REQUIRED = { error: 'login-required', message: '보안을 위해 다시 로그인해 주세요' };
 /** 쉬는 시간이 지나 끊겼을 때. 다음 회사 로그인은 IdP에 다시 인증을 요청해요(prompt=login). */
-export const IDLE_ENDED = { error: 'login-required', reason: 'idle', message: '오래 쉬어서 보안을 위해 다시 로그인해 주세요' };
+const IDLE_ENDED = { error: 'login-required', reason: 'idle', message: '오래 쉬어서 보안을 위해 다시 로그인해 주세요' };
 
 /** 서버가 다시 떠서(배포) 세션이 사라졌을 때(10/29 배포 준비 회의 B3). 세션은 메모리에만 있어서 쓰던 글도 사라져요. */
 export const RESTARTED = {
@@ -50,7 +50,7 @@ const reauthCookieOptions = (ctx: GuardCtx) => ({ path: '/', httpOnly: true, sam
 type ReauthReason = 'idle' | 'logout';
 
 /** 이 브라우저에 남은 다시 인증 표시의 이유. 없거나 서명이 틀리면 undefined예요. */
-export function reauthReason(ctx: GuardCtx, req: FastifyRequest): ReauthReason | undefined {
+function reauthReason(ctx: GuardCtx, req: FastifyRequest): ReauthReason | undefined {
   const raw = req.cookies[reauthCookie(ctx)];
   const unsigned = raw ? req.unsignCookie(raw) : undefined;
   if (!unsigned?.valid) return undefined;
@@ -86,7 +86,7 @@ export function sessionOf(ctx: GuardCtx, req: FastifyRequest): DeskSession | und
  * 세션이 없을 때 돌려줄 401 본문. 쉬어서 끊겼으면 그 이유를, 서명은 맞는데 앞선 기동의 세션이면(배포·재시작) 재시작 문구를 줘요.
  * 재시작 뒤 다시 로그인할 때 쉼 판정을 건너뛰지 않는 건 로그인마다 붙이는 max_age가 맡아요(routes/auth.ts).
  */
-export function signedOutBody(ctx: GuardCtx, req: FastifyRequest) {
+function signedOutBody(ctx: GuardCtx, req: FastifyRequest) {
   const reason = reauthReason(ctx, req);
   if (reason === 'idle') return IDLE_ENDED;
   const id = signedSessionId(ctx, req);

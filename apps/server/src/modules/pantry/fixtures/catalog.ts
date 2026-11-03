@@ -1,7 +1,7 @@
 // 가상 구매 카탈로그(등급 0). 실제 업체·가격이 아니에요. 단가는 원, 묶음 단위는 한 번에 사는 개수예요(ADR-05·08).
 // aliases는 "다른 말"이에요. 이름 규칙 매칭(정규화 비교)과 AI 카탈로그 매칭이 같이 써요.
 
-export interface CatalogFixture {
+interface CatalogFixture {
   id: string;
   name: string;
   unitPrice: number;

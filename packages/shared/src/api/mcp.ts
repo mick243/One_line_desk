@@ -44,7 +44,7 @@ export interface ConnectedApp {
 }
 
 /** S6 "연결하는 법": 회사가 허락한 CLI 앱(공개 클라이언트). 클라이언트 ID는 비밀이 아니에요. */
-export interface CliApp {
+interface CliApp {
   clientId: string;
   appName: string;
 }

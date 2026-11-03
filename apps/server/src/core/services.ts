@@ -42,7 +42,7 @@ export interface TeamMeeting {
   roomName: string;
 }
 
-export interface RoomsTeamRead {
+interface RoomsTeamRead {
   /**
    * 그 사람들이 앱에서 예약한 회의와 초대받아 "참석할게요"로 답한 회의 중 [from, to)와 겹치는 것.
    * 부르는 쪽(core/home-team.ts)이 묻는 사람과 같은 부서 사람의 가명 ID만 넘겨요. 모의 장부(남의 바깥 예약)는 넣지 않아요.
@@ -51,7 +51,7 @@ export interface RoomsTeamRead {
 }
 
 /** 홈이 모으는 회의실 쪽 내 일. 회의실 쓰기가 꺼져 있으면 enabled가 거짓이고 비어 있어요. */
-export interface RoomsHomeRead {
+interface RoomsHomeRead {
   /** 본인 장비 대여(지금 쓰는 것·다가오는 것) */
   myLoans(user: Pick<DeskUser, 'pseudonymId'>): Promise<MyLoansResponse>;
   /** 나를 부른 회의(다가오는 것). 부른 사람 이름은 초대받은 본인에게만 보여요(ADR-17). */
@@ -106,7 +106,7 @@ export interface NaviAwayRead {
 }
 
 /** 홈에 보이는 내 문의·휴가 요청 한 줄. 글(질문·사유·답장·반려 사유)·답한 사람은 없어요. 휴가 날은 본인 것이라 본인 홈에만 가요(ADR-18). */
-export interface NaviHomeRequest {
+interface NaviHomeRequest {
   kind: 'inquiry' | 'leave';
   /** 휴가 요청 종류. 일반 문의는 null이에요. */
   leaveType: LeaveType | null;
@@ -178,7 +178,7 @@ export interface LeaveLink {
   type: LeaveType;
 }
 
-export interface PantryService {
+interface PantryService {
   /** MCP 탕비실 요청 찾기(11/3 확인 링크 넓히기). pantry 모듈이 채워요. */
   mcp?: PantryMcpRead;
   /** 홈 "나에게 해당하는 일"(ADR-27): 내가 올리거나 +1한 품목 상태(투표자 없음). 같이 채워요가 켬일 때만 불러요. */
@@ -194,7 +194,7 @@ export interface PantryMcpRead {
   linkCards(user: DeskUser, cardId: number): Promise<Card[] | null>;
 }
 
-export interface McpService {
+interface McpService {
   /** 모든 기기 로그아웃·퇴사 확인 때 그 사람의 MCP 승인(갱신 토큰)을 모두 지워요(ADR-13·15). 지운 수를 돌려줘요. */
   revokeAll(pseudonymId: string): Promise<number>;
   /** 지금 MCP를 켤 수 있는지. 실제 데이터인데 보안팀이 승인한 앱이 없으면 거짓이에요(ADR-12·15). */

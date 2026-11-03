@@ -139,7 +139,7 @@ export const TEAM_SCHEDULE_TEXT = {
 } as const;
 
 /** GET /api/navi/away: 내 자리비움(본인 것만). enabled가 거짓이면 양식을 숨겨요(팀 일정이나 담당 찾기가 꺼짐). */
-export interface AwayItem {
+interface AwayItem {
   id: string;
   kind: AwayKind;
   /** ISO 시각 */

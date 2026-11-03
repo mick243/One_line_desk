@@ -131,7 +131,7 @@ export async function onboardingRows(q: Queryable): Promise<StoredRow[]> {
   return rows.map(toRow);
 }
 
-export interface FeedbackRecord {
+interface FeedbackRecord {
   predictedKind: Kind;
   correctedKind: Kind | null;
   predictedRow: string | null;
@@ -264,7 +264,7 @@ export async function purgeInquiries(q: Queryable, before: number, now: number):
   );
 }
 
-export interface InquiryWeekRow {
+interface InquiryWeekRow {
   week: string;
   sent: number;
   handled: number;
@@ -463,7 +463,7 @@ export async function upsertUploadedItFaq(q: Queryable, f: ItFaqRow): Promise<vo
 
 // ── 자리비움(11/3, 140) ───────────────────────────────────────────────
 
-export interface AwayRow {
+interface AwayRow {
   id: string;
   pseudonymId: string;
   kind: AwayKind;

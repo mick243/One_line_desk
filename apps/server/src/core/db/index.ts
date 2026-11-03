@@ -7,7 +7,7 @@ import type { Db } from './types';
 export type { Db, Queryable } from './types';
 export { applyMigrations, pendingMigrations } from './migrate';
 
-export const DEV_DATA_DIR = fileURLToPath(new URL('../../../../../.data/pglite', import.meta.url));
+const DEV_DATA_DIR = fileURLToPath(new URL('../../../../../.data/pglite', import.meta.url));
 
 /** DATABASE_URL이 있으면 PostgreSQL, 없으면 저장소 안 .data/pglite에 PGlite로 열어요. */
 export async function openDb(databaseUrl: string | undefined): Promise<Db> {

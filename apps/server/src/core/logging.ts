@@ -17,7 +17,7 @@ export function logPath(url: string | undefined): string {
   return pathOnly(url).replace(/^\/r\/[^/]+/, '/r/:token');
 }
 
-export const LOG_SERIALIZERS = {
+const LOG_SERIALIZERS = {
   req: (req: { method?: string; url?: string; id?: string }) => ({ id: req.id, method: req.method, path: logPath(req.url) }),
   res: (res: { statusCode?: number }) => ({ statusCode: res.statusCode }),
   // 프레임워크가 남기는 오류도 글(message) 대신 코드·위치만 남겨요.

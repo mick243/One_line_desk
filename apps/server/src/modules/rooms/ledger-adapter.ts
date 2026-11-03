@@ -5,7 +5,7 @@ import { LEDGER_BOOKINGS, LEDGER_ROOMS, type LedgerSourceBooking, type LedgerSou
 // 회의실 장부 어댑터(ADR-05·06). 바깥 장부를 감추고, 예약자 이름·회의 제목은 여기서 멈춰요.
 // 나가는 타입(LedgerRoom·LedgerBooking)에는 그 칸이 아예 없어요.
 
-export interface RoomLedgerCapabilities extends AdapterCapabilities {
+interface RoomLedgerCapabilities extends AdapterCapabilities {
   /** 빈 시간을 장부가 직접 주는지, 예약 목록으로 계산하는지 */
   freeTime: 'direct' | 'computed' | 'none';
   write: boolean;
