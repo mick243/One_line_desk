@@ -1,6 +1,6 @@
 import { type CardAction, INVITE_MAX, type PeopleSearchResponse, type PersonHit } from '@one-line-desk/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, apiRequest } from '../../api';
+import { apiRequest, type PublicConfig } from '../../api';
 import { useActions } from '../../components/ActionHost';
 import { Sheet } from '../../components/Sheet';
 import { newRequestId } from '../../net';
@@ -10,38 +10,42 @@ import { newRequestId } from '../../net';
 
 type Invite = Extract<CardAction, { type: 'invite' }>;
 
-export function InviteSheet({ action, onClose }: { action: Invite; onClose: () => void }) {
+/** channels: 알릴 길. App이 이미 받은 공개 설정에서 와요(열 때마다 다시 부르지 않아요). */
+export function InviteSheet({ action, channels, onClose }: { action: Invite; channels: PublicConfig['inviteChannels']; onClose: () => void }) {
   const actions = useActions();
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<PersonHit[]>([]);
   const [chosen, setChosen] = useState<PersonHit[]>([]);
-  const [channels, setChannels] = useState<{ calendar: string | null; slack: string | null }>({ calendar: null, slack: null });
   const [calendar, setCalendar] = useState(true);
   const [slack, setSlack] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 같은 양식에서 두 번 눌러도 한 번만 보내요(서버 멱등 키).
   const requestId = useMemo(() => newRequestId(), []);
 
-  useEffect(() => {
-    void api.publicConfig().then((c) => setChannels(c.inviteChannels));
-  }, []);
-
   // 글자를 멈추고 잠깐 뒤에 찾아요. 검색어는 주소가 아니라 본문으로 보내요.
+  // 검색어를 바꾼 뒤 늦게 온 앞 검색 결과는 버려요(alive).
   useEffect(() => {
     const q = query.trim();
     if (!q) {
       setHits([]);
       return;
     }
+    let alive = true;
     const id = window.setTimeout(() => {
       apiRequest<PeopleSearchResponse>('POST', '/api/people/search', { query: q })
         .then((res) => {
+          if (!alive) return;
           setHits(res.items);
           setError(null);
         })
-        .catch(() => setError('지금 직원을 찾지 못했어요'));
+        .catch(() => {
+          if (alive) setError('지금 직원을 찾지 못했어요');
+        });
     }, 250);
-    return () => window.clearTimeout(id);
+    return () => {
+      alive = false;
+      window.clearTimeout(id);
+    };
   }, [query]);
 
   // 보내기가 끝나면(내 쓰기 횟수가 오르면) 양식을 닫아요. 새 알림이 와도 고른 사람은 그대로예요.

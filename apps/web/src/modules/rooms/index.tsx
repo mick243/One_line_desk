@@ -1,7 +1,7 @@
 import { INVITE_RESPONSE_LABEL, type MyReservationsResponse, ROOM_CONDITIONS_VARIANT, ROOM_OVERVIEW_VARIANT } from '@one-line-desk/shared';
 import { type ComponentType, useEffect, useState } from 'react';
 import { apiRequest } from '../../api';
-import { useActions } from '../../components/ActionHost';
+import { useActions, useListVersion } from '../../components/ActionHost';
 import type { CardViewProps } from '../../components/CardView';
 import { RoomConditionsCard } from './RoomConditionsCard';
 import { RoomOverviewCard } from './RoomOverviewCard';
@@ -21,7 +21,8 @@ const COMPACT_LIMIT = 2;
 
 /** S1·S6 "내 예약" 칸. 회의실이 꺼졌거나 회의실 쓰기가 꺼지면 칸을 숨겨요(R4). */
 export function MyReservations({ compact }: { compact?: boolean }) {
-  const { run, version } = useActions();
+  const { run } = useActions();
+  const { version, background } = useListVersion();
   const [data, setData] = useState<MyReservationsResponse | null>(null);
   const [failed, setFailed] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -29,7 +30,7 @@ export function MyReservations({ compact }: { compact?: boolean }) {
   // 쓰기(예약·취소)가 끝나 version이 오르면 다시 불러요.
   useEffect(() => {
     let alive = true;
-    apiRequest<MyReservationsResponse>('GET', '/api/rooms/my-reservations')
+    apiRequest<MyReservationsResponse>('GET', '/api/rooms/my-reservations', undefined, { background: background() })
       .then((d) => {
         if (!alive) return;
         setData(d);

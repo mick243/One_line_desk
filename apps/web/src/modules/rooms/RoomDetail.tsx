@@ -1,7 +1,7 @@
 import type { Card, Equipment, RoomCardsResponse, RoomDayResponse } from '@one-line-desk/shared';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
-import { replaceCard, useActions } from '../../components/ActionHost';
+import { replaceCard, useActions, useListVersion } from '../../components/ActionHost';
 import { CardView } from '../../components/CardView';
 import { Sheet } from '../../components/Sheet';
 import { dateLabel, dayChips, fromMinutes, splitCheckedAt, statusText, toMinutes } from './roomText';
@@ -35,19 +35,24 @@ export function RoomDetail({
   const [cards, setCards] = useState<Card[] | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      setDay(await apiRequest<RoomDayResponse>('GET', `/api/rooms/${roomId}/day?date=${date}`));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof ApiFailure ? e.message : '일정을 불러오지 못했어요');
-    }
-  }, [roomId, date]);
+  const { version, background } = useListVersion();
 
-  // 예약·취소가 끝나면(version) 일정을 다시 불러요.
+  // 예약·취소가 끝나면(version) 일정을 다시 불러요. 날짜를 바꾼 뒤 늦게 온 앞 날짜 일정은 버려요(alive).
   useEffect(() => {
-    void load();
-  }, [load, actions.version]);
+    let alive = true;
+    apiRequest<RoomDayResponse>('GET', `/api/rooms/${roomId}/day?date=${date}`, undefined, { background: background() })
+      .then((d) => {
+        if (!alive) return;
+        setDay(d);
+        setError(null);
+      })
+      .catch((e: unknown) => {
+        if (alive) setError(e instanceof ApiFailure ? e.message : '일정을 불러오지 못했어요');
+      });
+    return () => {
+      alive = false;
+    };
+  }, [roomId, date, version]);
 
   // 날짜를 바꾸거나 내 예약·취소가 끝나면 고른 시간과 확인 카드를 비워요. 새 알림으로 일정만 다시 불러올 때는 그대로 둬요(10/29 개선 회의 A2).
   useEffect(() => {

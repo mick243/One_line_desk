@@ -1,7 +1,7 @@
 import { type BoardItem, type BoardResponse, type Card, type CardAction, PANTRY_TEXT } from '@one-line-desk/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiFailure } from '../../api';
-import { useActions } from '../../components/ActionHost';
+import { useActions, useListVersion } from '../../components/ActionHost';
 import { CardView } from '../../components/CardView';
 import { CheckedInput } from '../../components/CheckedInput';
 import { Sheet } from '../../components/Sheet';
@@ -37,28 +37,41 @@ export function BoardScreen({
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
 
+  const { version, background } = useListVersion();
+
+  // alive: 층을 바꾼 뒤 늦게 온 앞 층 응답이 새 판을 덮지 않게 해요.
   const load = useCallback(
-    async (background = false) => {
+    async (bg: boolean, alive: () => boolean) => {
       try {
-        setData(await pantryApi.board(floor === me.floor ? undefined : floor, background));
+        const next = await pantryApi.board(floor === me.floor ? undefined : floor, bg);
+        if (!alive()) return;
+        setData(next);
         setError(null);
       } catch (e) {
-        setError(e instanceof ApiFailure ? e.message : '판을 불러오지 못했어요');
+        if (alive()) setError(e instanceof ApiFailure ? e.message : '판을 불러오지 못했어요');
       }
     },
     [floor, me.floor],
   );
 
   useEffect(() => {
-    void load();
-  }, [load, actions.version]);
+    let alive = true;
+    void load(background(), () => alive);
+    return () => {
+      alive = false;
+    };
+  }, [load, version]);
 
   useEffect(() => {
+    let alive = true;
     // 탭이 가려져 있으면 새로 고치지 않아요. 자동 새로 고침은 배경 요청이에요(쉬는 시간, ADR-20).
     const id = window.setInterval(() => {
-      if (!document.hidden) void load(true);
+      if (!document.hidden) void load(true, () => alive);
     }, REFRESH_MS);
-    return () => window.clearInterval(id);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
   }, [load]);
 
   async function submit(masked: string) {

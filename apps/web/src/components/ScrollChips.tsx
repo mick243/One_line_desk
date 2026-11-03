@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { Children, isValidElement, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 // 옆으로 넘치는 칩 한 줄(10/28). 휴대폰은 손가락으로 밀고, PC는 마우스 휠로도 옆으로 넘겨요.
 // 넘칠 때만 가장자리를 흐리게 해서 "옆에 더 있어요"를 보여 주고, PC에서는 얇은 막대도 보여요(styles.css .scroll-x).
@@ -46,8 +46,11 @@ export function ScrollChips({ label, children }: { label: string; children: Reac
     };
   }, [measure]);
 
-  // 칩이 바뀌면(최근 쓴 문장이 늘거나 지워지면) 넘치는지 다시 재요.
-  useEffect(measure, [children, measure]);
+  // 칩이 바뀌면(최근 쓴 문장이 늘거나 지워지면) 넘치는지 다시 재요. 렌더마다 재지 않고 칩 key 목록이 바뀔 때만요.
+  const chipKeys = Children.toArray(children)
+    .map((c) => (isValidElement(c) ? String(c.key) : ''))
+    .join('\n');
+  useEffect(measure, [chipKeys, measure]);
 
   return (
     <div ref={ref} className='chips scroll scroll-x' aria-label={label} data-overflow={edges.overflow} data-start={edges.start} data-end={edges.end}>

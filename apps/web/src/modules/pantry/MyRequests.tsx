@@ -1,7 +1,7 @@
 import type { MyRequestItem } from '@one-line-desk/shared';
 import { useEffect, useState } from 'react';
 import { ApiFailure } from '../../api';
-import { useActions } from '../../components/ActionHost';
+import { useActions, useListVersion } from '../../components/ActionHost';
 import { pantryApi } from './pantry-api';
 
 // S1·S6 "내 요청" 칸(F3-15). 상태: 표 받는 중 · 주문에 들어감 · 다음 주기로 넘어감. 누르면 S3 판으로 가요.
@@ -9,6 +9,7 @@ import { pantryApi } from './pantry-api';
 
 export function MyRequests({ compact }: { compact?: boolean }) {
   const actions = useActions();
+  const { version, background } = useListVersion();
   const [items, setItems] = useState<MyRequestItem[] | null>(null);
   const [off, setOff] = useState(false);
   const [busy, setBusy] = useState<number | null>(null);
@@ -16,7 +17,7 @@ export function MyRequests({ compact }: { compact?: boolean }) {
   useEffect(() => {
     let alive = true;
     pantryApi
-      .myRequests()
+      .myRequests(background())
       .then((r) => alive && setItems(r.items))
       .catch((e: unknown) => {
         if (!alive) return;
@@ -27,7 +28,7 @@ export function MyRequests({ compact }: { compact?: boolean }) {
     return () => {
       alive = false;
     };
-  }, [actions.version]);
+  }, [version]);
 
   if (off) return null;
   const shown = compact ? items?.slice(0, 3) : items;
