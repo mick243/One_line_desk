@@ -57,7 +57,8 @@ export type CardAction =
       rowId: string;
       team: string;
       task: string;
-      days: { date: string; kind: 'full' | 'half' }[];
+      /** 반차는 half(오전 am · 오후 pm)가 같이 와요(11/3). 질문에서 반차라고만 했으면 half 없이 와서 양식이 오전·오후를 고르게 해요. */
+      days: { date: string; kind: 'full' | 'half'; half?: 'am' | 'pm' }[];
       remaining: number;
       /** 이번 연차 기간 마지막 날. 이 뒤의 날은 다음 기간 연차에서 빠져요. */
       periodEnd: string;

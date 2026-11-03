@@ -5,12 +5,18 @@ import {
   INQUIRY_KEEP_DAYS,
   INQUIRY_REASON_MAX,
   kstDate,
+  LEAVE_DAY_CHOICE_LABEL,
+  LEAVE_DAY_CHOICES,
   LEAVE_REQUEST_MAX_DAYS,
   LEAVE_TYPE_LABEL,
   LEAVE_TYPES,
   type LeaveDay,
+  leaveDayChoice,
+  leaveDayOf,
+  leaveDayWord,
   type LeaveType,
   maskLine,
+  mergeLeaveHalves,
   OFFICIAL_LEAVE_REASON_LABEL,
   OFFICIAL_LEAVE_REASONS,
   type OfficialLeaveReason,
@@ -28,7 +34,9 @@ import { Sheet } from '../../components/Sheet';
 import { newRequestId } from '../../net';
 
 // 휴가 신청 양식(10/30, ADR-24). 연차 카드의 [휴가 신청하기]로 열려요.
-// 질문에서 읽은 날(규칙, 양은 AI도)이 미리 채워져 있고, 사람이 날·하루/반차를 고치고 사유를 적어요.
+// 질문에서 읽은 날(규칙, 양은 AI도)이 미리 채워져 있고, 사람이 날·하루/오전 반차/오후 반차를 고치고 사유를 적어요.
+// 11/3: 반차는 오전·오후 중 하나를 꼭 골라요. 질문에서 "반차"라고만 했으면 셋 다 안 눌린 채로 열려요.
+//   같은 날 오전 반차와 오후 반차를 고르면 하루로 합쳐 보내요(서버도 같아요).
 // [보내기] → 확인 시트(받는 곳·쓸 날·인사팀이 이 요청 안에서 내 남은 연차를 봐요·보관 기간) → 인사팀 받은 문의함으로 가요.
 // 남은 연차는 서버가 계산해 카드로 준 내 숫자예요. 이 화면 메모리에만 있어요.
 // 11/1 공가: 맨 위에서 연차·공가를 골라요. 공가는 정해진 사유를 하나 고르고, 연차에서 빠지지 않아 남은 연차 계산을 보여 주지 않아요.
@@ -73,9 +81,14 @@ export function LeaveRequestSheet({ action, onClose, filledNote }: { action: Lea
     if (actions.writes !== startWrites.current) onClose();
   }, [actions.writes, onClose]);
 
-  const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
+  const picked = [...days].sort((a, b) => a.date.localeCompare(b.date));
+  // 같은 날 오전 반차 + 오후 반차는 하루로 합쳐요. 보내는 값·합계·확인 시트 모두 합친 값이에요.
+  const sorted = mergeLeaveHalves(picked);
+  const mergedHalves =
+    sorted.length < picked.length && sorted.some((d) => d.kind === 'full' && picked.filter((x) => x.date === d.date && x.kind === 'half').length === 2);
   const problems = [
     ...sorted.filter((d) => !d.date).map(() => '날짜를 골라 주세요'),
+    ...sorted.filter((d) => d.date && d.kind === 'half' && !d.half).map((d) => `${dayLabel(d.date)} 반차는 오전·오후 중 하나를 골라 주세요`),
     ...sorted
       .filter((d) => d.date && d.date < earliest)
       .map((d) => `${dayLabel(d.date)}은 지난 날이에요${sick ? `. 병가는 ${SICK_LEAVE_PAST_DAYS}일 전까지만 신청할 수 있어요` : ''}`),
@@ -95,9 +108,10 @@ export function LeaveRequestSheet({ action, onClose, filledNote }: { action: Lea
   const sickNote = sick && sum > noteOver;
   const sickAfter = action.sick ? action.sick.used + sum : null;
   const blocked = problems.length > 0 || !sorted.length || (sick ? !sickReason : !r.text || r.locks.length > 0) || (official && !officialReason);
-  const summary = sorted.map((d) => `${dayLabel(d.date)} ${d.kind === 'full' ? '하루' : '반차'}`).join(' · ');
+  const summary = sorted.map((d) => `${dayLabel(d.date)} ${leaveDayWord(d)}`).join(' · ');
 
   const update = (i: number, patch: Partial<LeaveDay>) => setDays((list) => list.map((d, j) => (j === i ? { ...d, ...patch } : d)));
+  const setDay = (i: number, day: LeaveDay) => setDays((list) => list.map((d, j) => (j === i ? day : d)));
 
   function send() {
     if (blocked) return;
@@ -221,10 +235,10 @@ export function LeaveRequestSheet({ action, onClose, filledNote }: { action: Lea
               max={addDays(today, 365)}
               onChange={(e) => update(i, { date: e.target.value })}
             />
-            <div className='segmented' role='group' aria-label='하루 또는 반차'>
-              {(['full', 'half'] as const).map((k) => (
-                <button key={k} type='button' aria-pressed={d.kind === k} onClick={() => update(i, { kind: k })}>
-                  {k === 'full' ? '하루' : '반차'}
+            <div className='segmented' role='group' aria-label='하루 또는 오전·오후 반차'>
+              {LEAVE_DAY_CHOICES.map((k) => (
+                <button key={k} type='button' aria-pressed={leaveDayChoice(d) === k} onClick={() => setDay(i, leaveDayOf(d.date, k))}>
+                  {LEAVE_DAY_CHOICE_LABEL[k]}
                 </button>
               ))}
             </div>
@@ -262,6 +276,7 @@ export function LeaveRequestSheet({ action, onClose, filledNote }: { action: Lea
           날 더하기
         </button>
       )}
+      {mergedHalves && <p className='hint'>같은 날 오전 반차와 오후 반차는 하루로 합쳐 보내요.</p>}
       {problems.map((p) => (
         <p key={p} className='lock-line' role='alert'>
           {p}

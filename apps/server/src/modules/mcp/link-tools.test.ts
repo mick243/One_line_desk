@@ -107,14 +107,14 @@ describe('leave_prepare 휴가 신청 준비', () => {
     const spy = vi.spyOn(t.ctx.gateway, 'structured');
     const { out, body } = await structured(t, tokens.access_token, 'leave_prepare', {
       days: [
-        { date: '2026-11-02', kind: 'half' },
+        { date: '2026-11-02', kind: 'am' },
         { date: '2026-10-30', kind: 'full' },
       ],
       type: 'annual',
     });
     expect(out.days).toEqual([
       { date: '2026-10-30', kind: 'full', label: '10월 30일(금) 하루' },
-      { date: '2026-11-02', kind: 'half', label: '11월 2일(월) 반차' },
+      { date: '2026-11-02', kind: 'am', label: '11월 2일(월) 오전 반차' },
     ]);
     expect(out).toMatchObject({ type: 'annual', typeLabel: '연차', linkText: '한 줄 데스크에서 연차 신청 열기' });
     expect(out.confirm).toContain('확정은 앱에서 한 번');
@@ -140,7 +140,7 @@ describe('leave_prepare 휴가 신청 준비', () => {
       (
         await reasonOf([
           { date: '2026-10-28', kind: 'full' },
-          { date: '2026-10-28', kind: 'half' },
+          { date: '2026-10-28', kind: 'pm' },
         ])
       ).code,
     ).toBe('duplicate');
@@ -153,12 +153,39 @@ describe('leave_prepare 휴가 신청 준비', () => {
     expect(bad.json().result?.isError ?? bad.json().error).toBeTruthy();
   });
 
+  it('[반차-MCP] 반차는 오전(am)·오후(pm)로만 받고 구분 없는 반차(half)는 입력에서 막아요. 링크로 연 양식에 오전·오후가 그대로 채워져요', async () => {
+    const t = await setup();
+    const { tokens, user } = await connect(t, MOCK.staff);
+    const half = await callTool(t, tokens.access_token, 'leave_prepare', { days: [{ date: '2026-10-28', kind: 'half' }], type: 'annual' });
+    expect(half.json().result?.isError ?? half.json().error).toBeTruthy();
+    expect(TOOLS.find((x) => x.name === 'leave_prepare')!.input.days!.description).toContain('am 오전 반차 · pm 오후 반차');
+
+    const { out } = await structured(t, tokens.access_token, 'leave_prepare', {
+      days: [
+        { date: '2026-10-29', kind: 'pm' },
+        { date: '2026-10-28', kind: 'am' },
+        { date: '2026-10-29', kind: 'am' },
+      ],
+      type: 'annual',
+    });
+    // 같은 날 오전·오후는 하루로 합쳐요.
+    expect(out.days).toEqual([
+      { date: '2026-10-28', kind: 'am', label: '10월 28일(수) 오전 반차' },
+      { date: '2026-10-29', kind: 'full', label: '10월 29일(목) 하루' },
+    ]);
+    const res = await user.call('POST', '/api/mcp/link', { proposalToken: tokenOf(out.link) });
+    expect(res.body.action.days).toEqual([
+      { date: '2026-10-28', kind: 'half', half: 'am' },
+      { date: '2026-10-29', kind: 'full' },
+    ]);
+  });
+
   it('[ADR-14 개정·R13] 링크를 열면 그 날짜·종류로 채운 휴가 양식이 열리고(남은 연차는 내 화면에만), 열기만 해서는 휴가 요청·plan 0건이에요', async () => {
     const t = await setup();
     const { tokens, user } = await connect(t, MOCK.staff);
     const days = [
       { date: '2026-10-28', kind: 'full' },
-      { date: '2026-10-29', kind: 'half' },
+      { date: '2026-10-29', kind: 'pm' },
     ];
     const { out } = await structured(t, tokens.access_token, 'leave_prepare', { days, type: 'sick' });
     const token = tokenOf(out.link);
@@ -173,7 +200,18 @@ describe('leave_prepare 휴가 신청 준비', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       kind: 'leave',
-      action: { type: 'leave-request', text: '병가 신청하기', rowId: 'HR-02', team: '인사팀', task: '휴가 신청', days, leaveType: 'sick' },
+      action: {
+        type: 'leave-request',
+        text: '병가 신청하기',
+        rowId: 'HR-02',
+        team: '인사팀',
+        task: '휴가 신청',
+        days: [
+          { date: '2026-10-28', kind: 'full' },
+          { date: '2026-10-29', kind: 'half', half: 'pm' },
+        ],
+        leaveType: 'sick',
+      },
     });
     // 남은 연차·올해 병가는 본인이 앱에서 열 때만 이 화면으로 와요(서버가 지금 계산).
     expect(typeof res.body.action.remaining).toBe('number');

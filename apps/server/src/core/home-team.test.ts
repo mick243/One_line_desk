@@ -343,6 +343,39 @@ describe('[팀 일정] 홈 채팅 같은 팀 일정(11/3)', () => {
     expect(res.headline).toBe('오늘 개발팀 일정: 가상 직원 서준 오전 부재 / 가상 직원 주원 하루 부재 / 가상 직원 하은 반나절 부재');
   });
 
+  it('[반차-팀 일정] 앱에서 보낸 오전 반차·오후 반차를 인사팀이 승인하면 같은 팀 일정에 "오전 부재"·"오후 부재"로 보여요(반나절 아님)', async () => {
+    const t = await setup();
+    const doyun = await t.loginAs(MOCK.dev);
+    const jihu = await t.loginAs(MOCK.hr);
+    const send = async (subject: string, half: 'am' | 'pm') => {
+      const res = await (
+        await t.loginAs(subject)
+      ).call('POST', '/api/navi/inquiries', {
+        rowId: 'HR-02',
+        question: '휴가 신청',
+        reason: '개인 사정',
+        requestId: randomUUID(),
+        leave: { days: [{ date: '2026-10-27', kind: 'half', half }] },
+      });
+      expect(res.status).toBe(200);
+    };
+    await send(HAEUN, 'am');
+    await send(SEOJUN, 'pm');
+    for (const item of ((await jihu.call('GET', '/api/navi/inquiries/inbox')).body as InquiryListResponse).items) {
+      expect((await jihu.call('POST', `/api/navi/inquiries/${item.id}/decision`, { decision: 'approved' })).status).toBe(200);
+    }
+    const res = await home(doyun, '내일 우리 팀 부재');
+    expect(res.team!.entries).toEqual(
+      expect.arrayContaining([
+        { name: '가상 직원 하은', date: '2026-10-27', what: 'leave', part: 'am' },
+        { name: '가상 직원 서준', date: '2026-10-27', what: 'leave', part: 'pm' },
+      ]),
+    );
+    expect(res.headline).toContain('가상 직원 하은 오전 부재');
+    expect(res.headline).toContain('가상 직원 서준 오후 부재');
+    expect(res.headline).not.toContain('반나절');
+  });
+
   it('[팀 일정·ADR-20 시험] 접속기록 team.schedule 한 줄에 보여 준 사람 가명 ID만 남고, 이름·날짜·종류는 없어요. 0명이어도 조회 한 줄이에요', async () => {
     const t = await setup();
     const doyun = await t.loginAs(MOCK.dev);

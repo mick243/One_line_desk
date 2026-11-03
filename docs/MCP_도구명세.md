@@ -244,9 +244,9 @@ IT 오류 창의 글로 사내 IT FAQ를 찾아 원문 단계를 그대로 돌�
 
 | 칸 | 모양 | 꼭 | 설명 |
 |---|---|---|---|
-| `days` | 목록(최대 30) | 예 | 쓸 날 목록. 날마다 date(YYYY-MM-DD)와 kind(full 하루 · half 반차) |
+| `days` | 목록(최대 30) | 예 | 쓸 날 목록. 날마다 date(YYYY-MM-DD)와 kind(full 하루 · am 오전 반차 · pm 오후 반차). 반차인데 오전·오후를 모르면 먼저 사람에게 물어요 |
 | `days[].date` | string | 예 | YYYY-MM-DD |
-| `days[].kind` | 정해진 값(2개) | 예 | full: 하루 · half: 반차 |
+| `days[].kind` | 정해진 값(3개) | 예 | full: 하루 · am: 오전 반차 · pm: 오후 반차. 반차인데 오전·오후를 모르면 사람에게 먼저 물어요 |
 | `type` | 정해진 값(3개) | 예 | 종류: annual(연차) · official(공가) · sick(병가) |
 
 ### 출력
@@ -257,8 +257,8 @@ IT 오류 창의 글로 사내 IT FAQ를 찾아 원문 단계를 그대로 돌�
 | `typeLabel` | string | 예 | 연차 · 공가 · 병가 |
 | `days` | 목록(최대 30) | 예 | 양식에 채울 날(날짜 순). 형식·주말·기간을 확인한 날만이에요 |
 | `days[].date` | string | 예 | YYYY-MM-DD |
-| `days[].kind` | 정해진 값(2개) | 예 |  |
-| `days[].label` | string | 예 | 예: 11월 6일(금) 하루 |
+| `days[].kind` | 정해진 값(3개) | 예 |  |
+| `days[].label` | string | 예 | 예: 11월 6일(금) 하루 · 11월 5일(목) 오전 반차 |
 | `link` | string |  | 앱 확인 링크. 본인만 열 수 있고 짧은 시간만 유효해요 |
 | `linkText` | string |  |  |
 | `emptyReason` | object |  | 결과가 없을 때만: 왜 없는지(message를 그대로 전해요) |

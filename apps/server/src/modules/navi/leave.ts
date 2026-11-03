@@ -2,6 +2,7 @@ import {
   type Card,
   type CardAction,
   GRADE,
+  type HalfPart,
   kstDate,
   type LeaveDay,
   type LeaveRequestBalance,
@@ -136,6 +137,8 @@ export interface LeaveQuestion {
   planHalf: number;
   /** 날짜·요일로 말한 쓰려는 날(YYYY-MM-DD, 지난 날·주말은 뺌). 날짜로 물었을 때만 있어요. */
   planDates: string[];
+  /** 날짜로 말한 반차의 오전·오후("오전 반차", "점심 먹고", 11/3). 못 읽었거나 둘 다 말했으면 없어요. 양식을 미리 채울 때만 써요. */
+  planPart?: HalfPart | null;
   /** 주말이라 뺀 날 수 */
   weekendSkipped: number;
   /** "12월에", "다음 달에"처럼 달만 말했을 때 그 달 1일. 다음 연차 기간인지 볼 때 써요. */
@@ -193,6 +196,25 @@ const FULL_PLAN = new RegExp(
 const BARE_FULL = new RegExp(`${COUNT}\\s*(?:일|개)\\s*(반)?`);
 
 const countOf = (word: string | undefined): number => (word ? (KOREAN_COUNT[word] ?? Number(word)) : 0);
+
+// 반차의 오전·오후(11/3). "오전부터"·"아침부터"는 하루를 뜻할 때가 많아서 오전으로 읽지 않아요.
+const AM_WORDS = /오전(?!\s*부터)|아침(?!\s*부터)|점심\s*(?:전|까지)/;
+const PM_WORDS = /오후|점심\s*(?:먹고|이후|후|부터|지나)/;
+// 병가·공가는 "오전 반차"·"오후만"처럼 반나절을 분명히 말했을 때만 읽어요("아침부터 아파서"는 하루예요).
+const PART_EXPLICIT = /(오전|오후)\s*(?:반차|반나절|만)/;
+
+/** 질문에서 반차의 오전·오후를 읽어요. 둘 다 말했거나 못 읽었으면 null이에요(양식에서 사람이 골라요). */
+export function readHalfPart(text: string): HalfPart | null {
+  const am = AM_WORDS.test(text);
+  const pm = PM_WORDS.test(text);
+  return am === pm ? null : am ? 'am' : 'pm';
+}
+
+/** 병가·공가 질문에서 분명히 말한 반나절만 읽어요("오늘 오후 반차로 병가", "예비군 오전만"). */
+export function readExplicitHalfPart(text: string): HalfPart | null {
+  const parts = new Set([...text.matchAll(new RegExp(PART_EXPLICIT.source, 'g'))].map((m) => (m[1] === '오전' ? 'am' : 'pm')));
+  return parts.size === 1 ? [...parts][0]! : null;
+}
 const RUN_DAYS = '월화수목금';
 
 /**
@@ -287,12 +309,24 @@ export function ruleLeaveQuestion(text: string, today: string): Omit<LeaveQuesti
   else if (/(?:연차|휴가)\s*반\s*(?:개|일)/.test(t)) planFull = HALF_DAY;
 
   // 날짜로 말했으면 그 날 수가 계획이에요. 반차만 말했으면 그 날들은 반차예요("금요일 반차" = 반차 1번).
+  // 11/3: 오전·오후를 말했으면("11월 5일 오후에 쉬고 싶어", "금요일 점심 먹고") 그 날들도 반차예요.
+  const told = text.slice(last ? last.index! : 0);
+  const part = dates.length ? readHalfPart(told) : null;
   if (dates.length && !full && !bare) {
-    if (/반차|반나절/.test(text.slice(last ? last.index! : 0)) && !/연차|휴가|연가|쉬/.test(rest.replace(/반차|반나절/g, ''))) {
+    if ((/반차|반나절/.test(told) && !/연차|휴가|연가|쉬/.test(rest.replace(/반차|반나절/g, ''))) || part) {
       if (!half) planHalf = dates.length;
+      planFull = 0;
     } else planFull = dates.length;
   }
-  return { ...base, planFull: Math.min(planFull, 30), planHalf: Math.min(planHalf, 60), planDates: dates, weekendSkipped, planMonthStart: monthStart };
+  return {
+    ...base,
+    planFull: Math.min(planFull, 30),
+    planHalf: Math.min(planHalf, 60),
+    planDates: dates,
+    ...(part && planHalf > 0 && planFull === 0 ? { planPart: part } : {}),
+    weekendSkipped,
+    planMonthStart: monthStart,
+  };
 }
 
 const QuestionSchema = z.object({
@@ -383,18 +417,19 @@ export type SickInfo = NonNullable<Extract<CardAction, { type: 'leave-request' }
 
 function leaveRequestAction(
   target: LeaveRequestTarget,
-  q: Pick<LeaveQuestion, 'planDates' | 'planFull' | 'planHalf'>,
+  q: Pick<LeaveQuestion, 'planDates' | 'planFull' | 'planHalf' | 'planPart'>,
   balance: LeaveBalance,
   next: LeaveBalance | null,
   sick: SickInfo | null = null,
 ): Extract<CardAction, { type: 'leave-request' }> {
-  const kind = q.planHalf > 0 && q.planFull === 0 ? ('half' as const) : ('full' as const);
+  const half = q.planHalf > 0 && q.planFull === 0;
   const planned = q.planFull + q.planHalf * HALF_DAY;
   return {
     type: 'leave-request',
     text: '휴가 신청하기',
     ...target,
-    days: q.planDates.map((date) => ({ date, kind })),
+    // 반차는 읽은 오전·오후로 채워요. "반차"라고만 했으면 half 없이 보내서 양식이 오전·오후를 고르게 해요(11/3).
+    days: q.planDates.map((date) => (half ? { date, kind: 'half' as const, ...(q.planPart ? { half: q.planPart } : {}) } : { date, kind: 'full' as const })),
     remaining: balance.remaining,
     periodEnd: balance.periodEnd,
     // 다음 기간 날을 고르면 양식이 그 기간 연차로 따로 계산해요.
@@ -403,6 +438,12 @@ function leaveRequestAction(
     // 양식에서 병가로 바꾸면 쓰려고 같이 줘요(본인 것만).
     ...(sick ? { sick } : {}),
   };
+}
+
+/** 병가·공가 양식에 채울 날: 분명히 말한 반나절("오후 반차", "오전만")이 있으면 그 반차, 아니면 하루예요(11/3). */
+function explicitDays(dates: readonly string[], text: string): LeaveDay[] {
+  const part = readExplicitHalfPart(text);
+  return dates.map((date) => (part ? { date, kind: 'half' as const, half: part } : { date, kind: 'full' as const }));
 }
 
 // ── 공가(11/1) ────────────────────────────────────────────────────────────
@@ -448,7 +489,7 @@ export function officialLeaveCard(
             {
               ...leaveRequestAction(request, { planDates: dates, planFull: 0, planHalf: 0 }, balance, next, sick),
               text: '공가 신청하기',
-              days: dates.map((date) => ({ date, kind: 'full' as const })),
+              days: explicitDays(dates, text),
               leaveType: 'official' as const,
             },
           ],
@@ -528,7 +569,7 @@ export function sickLeaveCard(
             {
               ...leaveRequestAction(request, { planDates: dates, planFull: 0, planHalf: 0 }, balance, next, sick),
               text: '병가 신청하기',
-              days: dates.map((date) => ({ date, kind: 'full' as const })),
+              days: explicitDays(dates, text),
               leaveType: 'sick' as const,
             },
           ],
@@ -671,7 +712,8 @@ export async function leaveLinkAction(
   return {
     ...base,
     text: type === 'official' ? '공가 신청하기' : type === 'sick' ? '병가 신청하기' : '휴가 신청하기',
-    days: days.map((d) => ({ date: d.date, kind: d.kind })),
+    // 링크 검사를 지난 날이라 반차는 오전·오후가 있어요(11/3).
+    days: days.map((d) => ({ date: d.date, kind: d.kind, ...(d.kind === 'half' && d.half ? { half: d.half } : {}) })),
     ...(type === 'annual' ? {} : { leaveType: type }),
   };
 }

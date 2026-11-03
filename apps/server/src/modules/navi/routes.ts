@@ -237,7 +237,7 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
             question: { type: 'string', minLength: 1, maxLength: INQUIRY_QUESTION_MAX },
             reason: { type: 'string', minLength: 1, maxLength: INQUIRY_REASON_MAX },
             requestId: { type: 'string', pattern: '^[A-Za-z0-9-]{8,64}$' },
-            // 휴가 요청(ADR-24): 쓸 날과 하루·반차
+            // 휴가 요청(ADR-24): 쓸 날과 하루·반차. 11/3: 반차는 half(오전 am · 오후 pm)가 꼭 있어야 해요(서비스가 검사해요).
             leave: {
               type: 'object',
               required: ['days'],
@@ -251,7 +251,7 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
                     type: 'object',
                     required: ['date', 'kind'],
                     additionalProperties: false,
-                    properties: { date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }, kind: { enum: ['full', 'half'] } },
+                    properties: { date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }, kind: { enum: ['full', 'half'] }, half: { enum: ['am', 'pm'] } },
                   },
                 },
                 // 11/1 공가: 종류가 없으면 연차예요. 공가 사유는 정해진 코드만 받아요.

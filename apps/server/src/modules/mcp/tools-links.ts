@@ -1,4 +1,15 @@
-import { LEAVE_REQUEST_MAX_DAYS, LEAVE_TYPE_LABEL, LEAVE_TYPES, type LeaveDay, type LeaveType, LOAN_KINDS } from '@one-line-desk/shared';
+import {
+  LEAVE_REQUEST_MAX_DAYS,
+  LEAVE_TYPE_LABEL,
+  LEAVE_TYPES,
+  type LeaveDay,
+  leaveDayChoice,
+  type LeaveDayChoice,
+  leaveDayOf,
+  leaveDayWord,
+  type LeaveType,
+  LOAN_KINDS,
+} from '@one-line-desk/shared';
 import { z } from 'zod';
 import { TOOLS, type ToolDef } from '../../core/tool-registry';
 import { cleanText } from './tools';
@@ -27,10 +38,24 @@ const DATE = z
     return !Number.isNaN(ms) && new Date(ms).toISOString().startsWith(v);
   });
 
+/** MCP 휴가 준비의 날 종류: 하루 · 오전 반차 · 오후 반차(11/3). 앱 안의 LeaveDay(kind + half)로 바꿔 검사해요. */
+const DAY_KINDS = ['full', 'am', 'pm'] as const satisfies readonly LeaveDayChoice[];
+
+/** MCP 입력의 날 → 앱 휴가 하루 */
+export const leaveDaysOfInput = (days: readonly { date: string; kind: LeaveDayChoice }[]): LeaveDay[] => days.map((d) => leaveDayOf(d.date, d.kind));
+
 export const LEAVE_INPUT = z
   .object({
     days: z
-      .array(z.object({ date: DATE.describe('YYYY-MM-DD'), kind: z.enum(['full', 'half']).describe('full: 하루 · half: 반차') }).strict())
+      .array(
+        z
+          .object({
+            date: DATE.describe('YYYY-MM-DD'),
+            // 11/3: 구분 없는 반차는 받지 않아요. 오전·오후를 사람이 말하지 않았으면 링크를 만들기 전에 사람에게 물어요.
+            kind: z.enum(DAY_KINDS).describe('full: 하루 · am: 오전 반차 · pm: 오후 반차. 반차인데 오전·오후를 모르면 사람에게 먼저 물어요'),
+          })
+          .strict(),
+      )
       .min(1)
       .max(LEAVE_REQUEST_MAX_DAYS)
       .describe(describe(LEAVE_DEF, 'days')),
@@ -74,7 +99,13 @@ export const LEAVE_OUTPUT = z
     typeLabel: z.string().describe('연차 · 공가 · 병가'),
     days: z
       .array(
-        z.object({ date: z.string().describe('YYYY-MM-DD'), kind: z.enum(['full', 'half']), label: z.string().describe('예: 11월 6일(금) 하루') }).strict(),
+        z
+          .object({
+            date: z.string().describe('YYYY-MM-DD'),
+            kind: z.enum(DAY_KINDS),
+            label: z.string().describe('예: 11월 6일(금) 하루 · 11월 5일(목) 오전 반차'),
+          })
+          .strict(),
       )
       .max(LEAVE_REQUEST_MAX_DAYS)
       .describe('양식에 채울 날(날짜 순). 형식·주말·기간을 확인한 날만이에요'),
@@ -127,7 +158,11 @@ export function shapeLeave(
   return {
     type,
     typeLabel,
-    days: result.days.map((d) => ({ date: d.date, kind: d.kind, label: `${dayText(d.date)} ${d.kind === 'full' ? '하루' : '반차'}` })),
+    // 검사를 지난 날이라 반차는 오전·오후가 있어요. 없으면(있을 수 없지만) 하루로 내보내지 않게 걸러요.
+    days: result.days.flatMap((d) => {
+      const kind = leaveDayChoice(d);
+      return kind ? [{ date: d.date, kind, label: `${dayText(d.date)} ${leaveDayWord(d)}` }] : [];
+    }),
     link: result.link,
     linkText: `한 줄 데스크에서 ${typeLabel} 신청 열기`,
     confirm: `${CONFIRM_LINE}. ${reason}. 남은 연차는 앱에서 봐요`,

@@ -171,11 +171,58 @@ export function sickUsageText(u: Pick<SickLeaveUsage, 'used' | 'limit'>): string
   return u.limit ? `올해 병가 ${d(u.limit)} 중 ${d(u.used)} 썼어요` : `올해 병가 ${d(u.used)} 썼어요`;
 }
 
-/** 휴가 하루. 반차는 0.5일이에요. */
+/** 반차의 오전·오후(11/3 사용자 결정). */
+export type HalfPart = 'am' | 'pm';
+
+/**
+ * 휴가 하루. 반차는 0.5일이에요.
+ * 11/3: 반차는 오전·오후 중 하나(half)가 꼭 있어야 해요. 근태 기록(LeaveUse)과 같은 모양이라 승인하면 그대로 넘어가요.
+ * half가 없는 반차는 그 전에 보낸 요청(7일 보관)에만 남아 있고 "반차(구분 없음)"로 보여요. 새로 보내는 요청은 받지 않아요.
+ */
 export interface LeaveDay {
   /** YYYY-MM-DD(한국 날짜) */
   date: string;
   kind: 'full' | 'half';
+  /** 반차의 오전·오후. 하루(full)에는 없어요. */
+  half?: HalfPart;
+}
+
+/** 휴가 신청 양식에서 날마다 고르는 값: 하루 · 오전 반차 · 오후 반차 */
+export type LeaveDayChoice = 'full' | HalfPart;
+export const LEAVE_DAY_CHOICES: readonly LeaveDayChoice[] = ['full', 'am', 'pm'];
+export const LEAVE_DAY_CHOICE_LABEL: Record<LeaveDayChoice, string> = { full: '하루', am: '오전 반차', pm: '오후 반차' };
+/** 오전·오후 구분 없이 남아 있는 옛 반차(11/3 전 요청) */
+export const LEAVE_HALF_UNKNOWN_LABEL = '반차(구분 없음)';
+
+/** 고른 값 → 휴가 하루 */
+export const leaveDayOf = (date: string, choice: LeaveDayChoice): LeaveDay =>
+  choice === 'full' ? { date, kind: 'full' } : { date, kind: 'half', half: choice };
+
+/** 휴가 하루 → 고른 값. 구분 없는 옛 반차는 null이에요(양식에서 다시 골라요). */
+export const leaveDayChoice = (d: Pick<LeaveDay, 'kind' | 'half'>): LeaveDayChoice | null =>
+  d.kind === 'full' ? 'full' : d.half === 'am' || d.half === 'pm' ? d.half : null;
+
+/** "하루" · "오전 반차" · "오후 반차" · "반차(구분 없음)" */
+export function leaveDayWord(d: Pick<LeaveDay, 'kind' | 'half'>): string {
+  const choice = leaveDayChoice(d);
+  return choice ? LEAVE_DAY_CHOICE_LABEL[choice] : LEAVE_HALF_UNKNOWN_LABEL;
+}
+
+/** 그 날 차지하는 반나절. 하루와 구분 없는 반차는 어느 쪽인지 몰라서 둘 다로 봐요(겹침 검사). */
+export function leaveDayHalves(d: Pick<LeaveDay, 'kind' | 'half'>): HalfPart[] {
+  const choice = leaveDayChoice(d);
+  return choice === 'am' || choice === 'pm' ? [choice] : ['am', 'pm'];
+}
+
+/** 같은 날 오전 반차와 오후 반차를 같이 고르면 하루로 합쳐요(일수는 그대로 1일). 그 밖의 같은 날 두 번은 그대로 둬서 검사가 막아요. */
+export function mergeLeaveHalves<T extends LeaveDay>(days: readonly T[]): LeaveDay[] {
+  const out: LeaveDay[] = [];
+  for (const d of days) {
+    const pair = d.kind === 'half' && d.half ? out.findIndex((o) => o.date === d.date && o.kind === 'half' && o.half && o.half !== d.half) : -1;
+    if (pair >= 0) out[pair] = { date: d.date, kind: 'full' };
+    else out.push(d.kind === 'full' ? { date: d.date, kind: 'full' } : { date: d.date, kind: 'half', ...(d.half ? { half: d.half } : {}) });
+  }
+  return out;
 }
 
 /** POST /api/navi/inquiries. requestId는 같은 문의를 두 번 보내지 않게 하는 값이에요(화면이 만들어요). */
