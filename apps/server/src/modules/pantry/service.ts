@@ -26,7 +26,7 @@ import { DeskError, notFound } from '../../core/errors';
 import type { AskInput, AskOutcome, ExecContext, ExecOutcome, PlanHandler } from '../../core/module';
 import { extractItemName } from '../../core/slots';
 import type { DeskUser } from '../../core/user';
-import { type Bundle, bundleMemberIds, cardRoots, countVotedOpenBundles, findBundleRoot, listOpenBundles } from './bundles';
+import { type Bundle, bundleMemberIds, bundleRootsOf, countVotedOpenBundles, findBundleRoot, listOpenBundles, myOpenVotes } from './bundles';
 import * as cards from './cards';
 import { CATALOG_FIXTURES, DEFAULT_FLOOR_SETTING, DEMO_FLOORS } from './fixtures/catalog';
 import * as repo from './repo';
@@ -416,9 +416,11 @@ export function createBoardService(ctx: AppContext) {
     const floor = floorParam ?? user.floor;
     if (floor !== user.floor && !isFacilities(user)) throw new DeskError('forbidden', 403, '내 층 판만 볼 수 있어요');
     return readOnly(async (q) => {
+      // 판 한 번에 SQL 9개(총무 10개). 묶음은 이 층 뿌리에서만, 내 표·상한 셈은 내 표에서만, 뿌리는 지난 주기 카드만 구해요.
       const open = await openBundlesOn(q, floor);
       const allIds = open.bundles.flatMap((b) => b.cardIds);
-      const mine = new Set(await repo.myVotedCardIds(q, user.pseudonymId, allIds));
+      const votes = await myOpenVotes(q, user.pseudonymId);
+      const mine = votes.cardIds;
       const catalogNames = new Map((await repo.catalog(q)).map((c) => [c.id, c.name]));
       const nameOf = new Map(open.bundles.map((b) => [b.bundleId, b.name]));
       const similar = new Map<number, Set<number>>();
@@ -432,7 +434,7 @@ export function createBoardService(ctx: AppContext) {
         // 'ai' 표시 행은 실제 모델이 고른 것만이에요(게시 초안·제안함 모으기가 viaAi일 때만 만들어요).
         if (f.source === 'ai') similarByAi.add(a).add(b);
       }
-      const cycleNo = await repo.openCycleNo(q, floor);
+      const { setting, openCycleNo: cycleNo } = await repo.boardFloorState(q, floor);
       const items: BoardItem[] = open.bundles.map((b) => {
         const members = b.cardIds.map((id) => open.byId.get(id)).filter((m): m is repo.CardRow => m !== undefined);
         return {
@@ -449,9 +451,12 @@ export function createBoardService(ctx: AppContext) {
         };
       });
       const ordered = await repo.latestOrderedBatch(q, floor);
-      const roots = await cardRoots(q, floor);
+      const roots = await bundleRootsOf(
+        q,
+        ordered.map((c) => c.id),
+        floor,
+      );
       const orderedRoots = new Set(ordered.map((c) => roots.get(c.id) ?? c.id));
-      const setting = await repo.floorSetting(q, floor);
       const floors = isFacilities(user) ? unique([...(await repo.floorSettings(q)).map((s) => s.floor), user.floor, floor]) : [user.floor];
       return {
         floor,
@@ -459,7 +464,7 @@ export function createBoardService(ctx: AppContext) {
         canVote: floor === user.floor,
         cycleNote: setting?.cycleNote ?? '',
         limit: setting?.perPersonLimit ?? DEFAULT_FLOOR_SETTING.perPersonLimit,
-        myBundleCount: await countVotedOpenBundles(q, user.pseudonymId),
+        myBundleCount: votes.bundleCount,
         items,
         lastCycle: { ordered: ordered.filter((c) => orderedRoots.has(c.id)).map((c) => c.itemName), carriedOver: items.filter((i) => i.carriedOver).length },
       };
@@ -471,7 +476,10 @@ export function createBoardService(ctx: AppContext) {
     return readOnly(async (q) => {
       const voted = await repo.myVoteCards(q, user.pseudonymId);
       if (voted.length === 0) return { items: [] };
-      const roots = await cardRoots(q);
+      const roots = await bundleRootsOf(
+        q,
+        voted.map((v) => v.cardId),
+      );
       const rootCards = await repo.cardsByIds(q, unique(voted.map((v) => roots.get(v.cardId) ?? v.cardId)));
       const batchAt = await repo.cardBatchAt(
         q,
@@ -652,8 +660,13 @@ export function createBoardService(ctx: AppContext) {
         await repo.revertMerge(q, mergeId, iso(now));
         await repo.bumpVersions(q, [root, m.representativeCardId, m.mergedCardId]);
         // 갈라진 쌍의 표시 행은 다시 "같은 상품 같아요"예요. 총무가 [따로 두기]로 끝낼 수 있어요.
-        const roots = await cardRoots(q, rootRow.floor);
-        const split = (await repo.flagsTouching(q, before, ['merged'])).filter((f) => roots.get(f.cardA) !== roots.get(f.cardB));
+        const merged = await repo.flagsTouching(q, before, ['merged']);
+        const roots = await bundleRootsOf(
+          q,
+          merged.flatMap((f) => [f.cardA, f.cardB]),
+          rootRow.floor,
+        );
+        const split = merged.filter((f) => roots.get(f.cardA) !== roots.get(f.cardB));
         await repo.setFlagState(
           q,
           split.map((f) => [f.cardA, f.cardB]),
@@ -691,7 +704,11 @@ export function createBoardService(ctx: AppContext) {
     assertOn();
     return readOnly(async (q) => {
       const rows = await repo.activeMerges(q, floor);
-      const roots = await cardRoots(q, floor);
+      const roots = await bundleRootsOf(
+        q,
+        rows.map((r) => r.representativeCardId),
+        floor,
+      );
       const rootOf = (id: number) => roots.get(id) ?? id;
       const rootCards = new Map((await repo.cardsByIds(q, unique(rows.map((r) => rootOf(r.representativeCardId))))).map((c) => [c.id, c]));
       return {

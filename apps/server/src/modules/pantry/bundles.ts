@@ -24,6 +24,7 @@ export interface Bundle {
 /**
  * 열린 카드를 묶음으로 모아 표를 세요. floor가 없으면 모든 층이에요.
  * 합치기 연결은 merged_card_id → representative_card_id 방향이고 순환이 없어요(I5).
+ * 층은 재귀 시작 행(뿌리 = 대표 카드)에서 걸러요. 묶음의 층은 대표 카드의 층이라 맨 끝에서 거른 것과 같고, 다른 층은 재귀를 돌지 않아요.
  */
 export async function listOpenBundles(q: Queryable, floor?: string): Promise<Bundle[]> {
   const { rows } = await q.query<{
@@ -44,7 +45,7 @@ export async function listOpenBundles(q: Queryable, floor?: string): Promise<Bun
      ),
      roots as (
        select c.id as card_id, c.id as root from pantry_cards c
-        where c.state = 'open' and not exists (select 1 from edges e where e.card_id = c.id)
+        where c.state = 'open' and ($1::text is null or c.floor = $1) and not exists (select 1 from edges e where e.card_id = c.id)
        union all
        select e.card_id, r.root from edges e join roots r on e.parent = r.card_id
      )
@@ -57,7 +58,6 @@ export async function listOpenBundles(q: Queryable, floor?: string): Promise<Bun
        join pantry_cards member on member.id = r.card_id and member.state = 'open'
        left join pantry_votes v on v.card_id = r.card_id
        left join pantry_catalog cat on cat.id = rep.catalog_item_id
-      where ($1::text is null or rep.floor = $1)
       group by rep.id, rep.floor, rep.item_name, rep.catalog_item_id, cat.unit_price, cat.pack_unit, rep.bundle_version, rep.created_at
       order by votes desc, rep.created_at desc, rep.id desc`,
     [floor ?? null],
@@ -108,42 +108,60 @@ export async function bundleMemberIds(q: Queryable, rootId: number): Promise<num
   return rows.map((r) => Number(r.id));
 }
 
-/** 카드 → 묶음 뿌리. 열림·주문됨 카드 모두예요. floor가 있으면 그 층 뿌리만이에요. */
-export async function cardRoots(q: Queryable, floor?: string): Promise<Map<number, number>> {
+/**
+ * 주어진 카드들의 묶음 뿌리만 구해요(판의 지난 주기 결과처럼 카드 몇 개만 필요할 때). 열림·주문됨 카드 모두예요.
+ * 카드에서 되돌리지 않은 합치기를 따라 위로 올라가요. 합치기 연결은 나무라서 카드마다 부모가 하나뿐이에요(I5).
+ * floor가 있으면 뿌리가 그 층인 카드만 돌려줘요. 예전 cardRoots(q, floor)(층 전체 뿌리)에서 같은 카드를 고른 값과 같아요.
+ */
+export async function bundleRootsOf(q: Queryable, cardIds: number[], floor?: string): Promise<Map<number, number>> {
+  if (cardIds.length === 0) return new Map();
   const { rows } = await q.query<{ card_id: number; root: number }>(
-    `with recursive edges as (
-       select merged_card_id as card_id, representative_card_id as parent from pantry_merges where reverted_at is null
-     ),
-     roots as (
-       select c.id as card_id, c.id as root from pantry_cards c
-        where not exists (select 1 from edges e where e.card_id = c.id) and ($1::text is null or c.floor = $1)
+    `with recursive up(card_id, id, depth) as (
+       select c.id, c.id, 0 from pantry_cards c where c.id = any($1::bigint[])
        union all
-       select e.card_id, r.root from edges e join roots r on e.parent = r.card_id
+       select up.card_id, m.representative_card_id, up.depth + 1
+         from up join pantry_merges m on m.merged_card_id = up.id and m.reverted_at is null
+        where up.depth < 1000
      )
-     select card_id, root from roots`,
-    [floor ?? null],
+     select up.card_id, up.id as root
+       from up join pantry_cards top on top.id = up.id
+      where not exists (select 1 from pantry_merges m where m.merged_card_id = up.id and m.reverted_at is null)
+        and ($2::text is null or top.floor = $2)`,
+    [cardIds, floor ?? null],
   );
   return new Map(rows.map((r) => [Number(r.card_id), Number(r.root)]));
 }
 
-/** 열린 묶음 중 이 사람 표가 있는 묶음 수(R14 상한). 넘어온 표·작성자 표도 들어가요. 모든 층을 세요. */
-export async function countVotedOpenBundles(q: Queryable, pseudonymId: string): Promise<number> {
-  const { rows } = await q.query<{ n: number }>(
-    `with recursive edges as (
-       select merged_card_id as card_id, representative_card_id as parent from pantry_merges where reverted_at is null
-     ),
-     roots as (
-       select c.id as card_id, c.id as root from pantry_cards c
-        where c.state = 'open' and not exists (select 1 from edges e where e.card_id = c.id)
+export interface MyOpenVotes {
+  /** 이 사람이 표를 준 열린 카드(열린 묶음 안). 화면에는 "내 표 있음"으로만 나가요. */
+  cardIds: Set<number>;
+  /** 열린 묶음 중 이 사람 표가 있는 묶음 수(R14 상한). 모든 층이에요. */
+  bundleCount: number;
+}
+
+/**
+ * 이 사람 표에서 위로 올라가 묶음 뿌리를 찾아요. 층 전체 묶음을 다시 세지 않고 그 사람 표만 봐요.
+ * 열린 카드에 준 표만, 뿌리(대표)도 열린 묶음일 때만 세요. 넘어온 표·작성자 표도 들어가요.
+ */
+export async function myOpenVotes(q: Queryable, pseudonymId: string): Promise<MyOpenVotes> {
+  const { rows } = await q.query<{ card_id: number; root: number }>(
+    `with recursive up(card_id, id, depth) as (
+       select c.id, c.id, 0 from pantry_votes v join pantry_cards c on c.id = v.card_id
+        where v.pseudonym_id = $1 and c.state = 'open'
        union all
-       select e.card_id, r.root from edges e join roots r on e.parent = r.card_id
+       select up.card_id, m.representative_card_id, up.depth + 1
+         from up join pantry_merges m on m.merged_card_id = up.id and m.reverted_at is null
+        where up.depth < 1000
      )
-     select count(distinct r.root)::int as n
-       from roots r
-       join pantry_cards member on member.id = r.card_id and member.state = 'open'
-       join pantry_votes v on v.card_id = r.card_id
-      where v.pseudonym_id = $1`,
+     select up.card_id, up.id as root
+       from up join pantry_cards top on top.id = up.id and top.state = 'open'
+      where not exists (select 1 from pantry_merges m where m.merged_card_id = up.id and m.reverted_at is null)`,
     [pseudonymId],
   );
-  return rows[0]?.n ?? 0;
+  return { cardIds: new Set(rows.map((r) => Number(r.card_id))), bundleCount: new Set(rows.map((r) => Number(r.root))).size };
+}
+
+/** 열린 묶음 중 이 사람 표가 있는 묶음 수(R14 상한). 넘어온 표·작성자 표도 들어가요. 모든 층을 세요. */
+export async function countVotedOpenBundles(q: Queryable, pseudonymId: string): Promise<number> {
+  return (await myOpenVotes(q, pseudonymId)).bundleCount;
 }
