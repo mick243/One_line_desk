@@ -1671,10 +1671,6 @@ select {
   border-color: var(--accent);
   color: var(--accent);
 }
-.page-mode {
-  margin-top: 12px;
-  align-self: flex-start;
-}
 .leave-remaining {
   margin: 0;
   font-size: 0.9375rem;

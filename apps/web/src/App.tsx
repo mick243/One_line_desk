@@ -33,7 +33,7 @@ function entryFromPath(): { kind: 'consent' } | { kind: 'link'; token: string } 
   return link ? { kind: 'link', token: link[1]! } : null;
 }
 
-/** 운영(S4)은 같이 채워요 탭, 분장표 수정 제안함(S5)은 담당 찾기 탭 아래에 있어요. */
+/** 운영(S4)은 같이 채워요 탭, 분장표 수정 제안함(S5)은 문의하기 탭 아래에 있어요. */
 function tabOf(view: View): Tab {
   if (view === 'ops') return 'board';
   if (view === 'chart' || view === 'it-help' || view === 'onboarding') return 'navi';

@@ -1,4 +1,4 @@
-// 기능 페이지(담당 찾기·회의실·공지). 페이지마다 자기 입력 칸이 있고, 결과는 시트 대신 페이지 안에 보여요.
+// 기능 페이지(문의하기·회의실·공지). 페이지마다 자기 입력 칸이 있고, 결과는 시트 대신 페이지 안에 보여요.
 import { type Card, type CardAction, checkInput, type Kind } from '@one-line-desk/shared';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
@@ -9,6 +9,7 @@ import { useSlow } from '../components/useSlow';
 import { webModules } from '../modules/registry';
 import { OFFLINE_MESSAGE, SLOW_MESSAGE } from '../net';
 import type { Feature } from './features';
+import { inquireFirst } from './inquire-first';
 
 // 보낸 문장은 이 페이지 메모리에만 있어요. 저장소·주소에는 두지 않아요(R13).
 export function FeaturePage({
@@ -23,7 +24,7 @@ export function FeaturePage({
   initialText?: string;
   /** 다른 기능에서 옮겨 온 문장이면 열리자마자 찾아요. */
   autoRun?: boolean;
-  /** "종류가 달라요"·"담당 찾기에서 찾기": 같은 문장을 다른 기능 페이지로 옮겨요. */
+  /** "종류가 달라요"·"○○에서 찾기": 같은 문장을 다른 기능 페이지로 옮겨요. */
   onMove: (kind: Kind, text: string) => void;
   /** 기능이 자기 입력 칸을 쓰면(회의실 통합 입력 칸, 10/28) 공통 입력·결과 대신 이걸 그려요. 옮겨 온 문장도 넘겨요. */
   input?: (p: { initialText: string; autoRun: boolean; onMove: (kind: Kind, text: string) => void }) => ReactNode;
@@ -41,11 +42,9 @@ export function FeaturePage({
   const [inquiry, setInquiry] = useState<Extract<CardAction, { type: 'inquire' }> | null>(null);
   const [leaveRequest, setLeaveRequest] = useState<Extract<CardAction, { type: 'leave-request' }> | null>(null);
   const { InquirySheet, LeaveRequestSheet } = webModules;
-  // 문의하기 페이지(11/2, ADR-26): 기본은 "문의하기"(받을 팀을 고르면 양식을 바로 열어요), 보조로 "담당만 찾기"(카드만 보여요).
-  // 다른 기능에서 "담당 찾기에서 찾기"로 옮겨 온 문장은 담당만 찾기로 열어요(찾으러 온 거라 양식을 띄우지 않아요).
-  const [mode, setMode] = useState<'inquire' | 'find'>(autoRun ? 'find' : 'inquire');
-  const find = feature.findMode && mode === 'find' ? feature.findMode : null;
-  const view = { ...feature, ...(find ?? {}) };
+  // 문의하기 페이지(11/3 사용자 결정, ADR-26 개정): 모드 전환 없이 한 흐름이에요. 질문하면 늘 담당 카드(답)를 먼저 보여 주고,
+  // 카드의 [○○에 문의하기]를 눌러야 받을 팀이 채워진 문의 양식이 열려요. 다른 기능에서 옮겨 온 문장도 같아요.
+  // 휴가·공가 질문은 연차·공가 카드의 [휴가 신청하기]로 신청 양식을 열어요.
 
   async function ask(masked: string) {
     setSent(masked);
@@ -57,7 +56,6 @@ export function FeaturePage({
       const result = await api.ask(masked, feature.module);
       if (result.status === 'ok') {
         setCards(result.response.cards);
-        if (feature.findMode && mode === 'inquire') openRouted(result.response.cards);
       } else if (result.status === 'locked') setLines(result.locks.map((l) => l.message));
       else {
         setLines([result.message]);
@@ -69,17 +67,6 @@ export function FeaturePage({
     } finally {
       setLoading(false);
     }
-  }
-
-  /**
-   * 문의하기 모드: 서버가 고른 받는 곳이 든 [문의하기]를 바로 열어요. 휴가·공가 질문이면 신청 양식이 따로 있어서 열지 않고 카드만 보여요.
-   * 양식에서 사람이 받는 곳을 보고(바꿀 수 있어요) [보내기]를 눌러야 보내져요.
-   */
-  function openRouted(list: Card[]) {
-    const all = list.flatMap((c) => [...(c.actions.primary ? [c.actions.primary] : []), ...c.actions.secondary]);
-    if (all.some((a) => a.type === 'leave-request')) return;
-    const routed = all.find((a): a is Extract<CardAction, { type: 'inquire' }> => a.type === 'inquire' && Boolean(a.routed));
-    if (routed) setInquiry(routed);
   }
 
   // 옮겨 온 문장은 이미 공통 검사를 지난 글이지만, 한 번 더 보고 걸리면 보내지 않아요(ADR-11).
@@ -95,27 +82,9 @@ export function FeaturePage({
 
   const pageHead = (
     <header className='page-head'>
-      <p className='eyebrow'>{view.title}</p>
-      <h1>{view.question}</h1>
-      <p className='lead'>{view.summary}</p>
-      {feature.findMode && (
-        <div className='segmented page-mode' role='group' aria-label='문의하기 또는 담당만 찾기'>
-          {(['inquire', 'find'] as const).map((m) => (
-            <button
-              key={m}
-              type='button'
-              aria-pressed={mode === m}
-              onClick={() => {
-                setMode(m);
-                setCards(null);
-                setLines(null);
-              }}
-            >
-              {m === 'inquire' ? feature.title : feature.findMode!.title}
-            </button>
-          ))}
-        </div>
-      )}
+      <p className='eyebrow'>{feature.title}</p>
+      <h1>{feature.question}</h1>
+      <p className='lead'>{feature.summary}</p>
     </header>
   );
 
@@ -135,9 +104,9 @@ export function FeaturePage({
 
       <CheckedInput
         scope='나만 보여요'
-        label={view.question}
-        placeholder={view.placeholder}
-        submitLabel={view.submit}
+        label={feature.question}
+        placeholder={feature.placeholder}
+        submitLabel={feature.submit}
         value={text}
         onValueChange={setText}
         onSubmit={(masked) => ask(masked)}
@@ -171,7 +140,7 @@ export function FeaturePage({
         {cards?.map((card) => (
           <CardView
             key={card.id}
-            card={card}
+            card={inquireFirst(card)}
             onResults={setCards}
             onAction={(action) => {
               if (action.type === 'reask') return onMove(action.kind, sent ?? text);
