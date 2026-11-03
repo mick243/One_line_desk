@@ -8,10 +8,11 @@ import { Sheet } from '../../components/Sheet';
 import type { ScreenProps } from '../types';
 import { pantryApi } from './pantry-api';
 
-// S3 같이 채워요 판(F3). 층별 공개 요청판이에요. 몇 초마다 새로고침해요(실시간 밀어 주기는 다음 2주, M6).
+// S3 같이 채워요 판(F3). 층별 공개 요청판이에요. 15초마다 새로고침해요(실시간 밀어 주기는 다음 2주, M6).
 // 누가 표를 줬는지는 서버 응답에도 없어서 화면 어디에도 안 보여요.
 
-const REFRESH_MS = 5000;
+/** 자동 새로 고침 간격. 11/03 사용자 결정으로 5초 → 15초예요. 탭이 다시 보이면 기다리지 않고 바로 한 번 불러요. */
+const REFRESH_MS = 15_000;
 
 export function BoardScreen({
   me,
@@ -68,9 +69,15 @@ export function BoardScreen({
     const id = window.setInterval(() => {
       if (!document.hidden) void load(true, () => alive);
     }, REFRESH_MS);
+    // 가려 둔 사이 바뀐 판을 15초 기다리지 않고 받아요. 사람이 누른 요청이 아니라서 이것도 배경 요청이에요.
+    const onVisible = () => {
+      if (!document.hidden) void load(true, () => alive);
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       alive = false;
       window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [load]);
 
