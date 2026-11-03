@@ -219,9 +219,10 @@ export class PlanService {
 
   /** 이 요청 ID로 이미 자동 실행한 결과(실행 순서대로). 같은 요청이 다시 오면 다시 해석하지 않고 이걸 돌려줘요. */
   async autoReceipts(user: Pick<DeskUser, 'pseudonymId'>, requestId: string): Promise<StoredOutcome[]> {
+    // 멱등 키 앞부분으로는 기본 키 인덱스를 못 써서, 가명 ID로 먼저 좁혀요(인덱스 action_receipts_person, 020).
     const { rows } = await this.db.query<{ result: StoredOutcome }>(
-      'select result from action_receipts where starts_with(idempotency_key, $1) order by created_at, idempotency_key',
-      [`auto:${user.pseudonymId}:${requestId}:`],
+      'select result from action_receipts where pseudonym_id = $1 and starts_with(idempotency_key, $2) order by created_at, idempotency_key',
+      [user.pseudonymId, `auto:${user.pseudonymId}:${requestId}:`],
     );
     return rows.map((r) => r.result);
   }
@@ -232,8 +233,8 @@ export class PlanService {
     const { rows } = await q.query<{ n: number }>(
       `select count(distinct split_part(idempotency_key, ':', 3))::int as n
          from action_receipts
-        where starts_with(idempotency_key, $1) and created_at >= $2 and split_part(idempotency_key, ':', 3) <> $3`,
-      [`auto:${user.pseudonymId}:`, new Date(since).toISOString(), exceptRequestId],
+        where pseudonym_id = $4 and starts_with(idempotency_key, $1) and created_at >= $2 and split_part(idempotency_key, ':', 3) <> $3`,
+      [`auto:${user.pseudonymId}:`, new Date(since).toISOString(), exceptRequestId, user.pseudonymId],
     );
     return rows[0]?.n ?? 0;
   }

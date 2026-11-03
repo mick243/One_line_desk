@@ -1,32 +1,25 @@
 import type { CardAction } from '../cards';
-import type { Kind } from '../kinds';
 import { RECORD_KEEP_DAYS } from '../retention';
 
-// "틀렸어요" 선택지(R8). 세 문서가 같은 넷을 써요.
-export const WRONG_REASONS = ['other-owner', 'not-listed', 'content-changed', 'wrong-kind'] as const;
-export type WrongReason = (typeof WRONG_REASONS)[number];
+// 받는 곳을 바꿔 보낸 기록의 이유(11/2 ADR-26, 옛 "틀렸어요" 자리). 수정 제안함 기록 묶음은 이 둘만 세요.
+// DB check 제약(110_navi.sql)에는 옛 값 둘(content-changed·wrong-kind)이 남아 있지만 이제 쓰지 않아요(11/3).
+export const REROUTE_REASONS = ['other-owner', 'not-listed'] as const;
+export type RerouteReason = (typeof REROUTE_REASONS)[number];
 
-export const WRONG_REASON_LABEL: Record<WrongReason, string> = {
+export const REROUTE_REASON_LABEL: Record<RerouteReason, string> = {
   'other-owner': '다른 팀으로 바꿔 보냄',
   'not-listed': '대표 창구로 바꿔 보냄',
-  'content-changed': '안내 내용이 바뀌었어요',
-  'wrong-kind': '종류가 달라요',
 };
 
-/** 분장표 행 ID 모양(예: FIN-01). 파일 가져오기·피드백·행 카드가 같이 써요. */
+/** 분장표 행 ID 모양(예: FIN-01). 파일 가져오기·문의·행 카드가 같이 써요. */
 export const NAVI_ROW_ID_PATTERN = '^[A-Z]{2,5}-[0-9]{2,3}$';
 
-/** 기록은 이 여섯 칸뿐이에요. 사용자 ID·가명 ID·질문 원문은 없어요(R8). 시각은 서버가 붙여요. */
-export interface WrongFeedbackRequest {
-  predictedKind: Kind;
-  correctedKind?: Kind;
-  predictedRowId?: string;
-  chosenRowId?: string;
-  reason: WrongReason;
-}
-
-export interface WrongFeedbackResponse {
-  saved: true;
+/**
+ * 분장표 창구 링크 버튼 이름(11/3). mailto:면 메일 앱이 열려서 [메일 보내기], 아니면(https) [창구 열기]예요.
+ * 담당 카드(서버)·첫 2주 할 일(화면)이 같이 써요.
+ */
+export function deskLinkText(url: string): '메일 보내기' | '창구 열기' {
+  return /^mailto:/i.test(url.trim()) ? '메일 보내기' : '창구 열기';
 }
 
 /** POST /api/navi/rows/card 본문. 행 ID가 URL·접근 기록에 남지 않게 POST 본문으로 보내요(R11). */
@@ -65,7 +58,7 @@ export interface ChartRowSummary {
   aliases: string[];
   /** YYYY-MM-DD */
   revisedOn: string;
-  feedback: Record<WrongReason, number>;
+  feedback: Record<RerouteReason, number>;
   total: number;
 }
 
@@ -129,10 +122,10 @@ export const LEAVE_REJECT_REASON_MAX = 500;
 /** 한 번에 신청할 수 있는 날 수 */
 export const LEAVE_REQUEST_MAX_DAYS = 30;
 
-/** 휴가 요청 종류(11/1). 공가는 연차에서 빠지지 않아요. 병가는 결정 뒤에 더해요(docs/병가준비_2026-11-01.md). */
-export const LEAVE_TYPES = ['annual', 'official'] as const;
+/** 휴가 요청 종류(11/1 공가, 11/3 병가). 공가·병가는 연차에서 빠지지 않아요(docs/병가준비_2026-11-01.md). */
+export const LEAVE_TYPES = ['annual', 'official', 'sick'] as const;
 export type LeaveType = (typeof LEAVE_TYPES)[number];
-export const LEAVE_TYPE_LABEL: Record<LeaveType, string> = { annual: '연차', official: '공가' };
+export const LEAVE_TYPE_LABEL: Record<LeaveType, string> = { annual: '연차', official: '공가', sick: '병가' };
 
 /** 공가 사유는 정해진 것만 골라요. 자유 글 사유 칸은 따로 있어요. */
 export const OFFICIAL_LEAVE_REASONS = ['reserve', 'vote', 'summons', 'duty'] as const;
@@ -143,6 +136,40 @@ export const OFFICIAL_LEAVE_REASON_LABEL: Record<OfficialLeaveReason, string> = 
   summons: '법원·관공서 출석',
   duty: '그 밖의 공적 의무',
 };
+
+/**
+ * 병가 사유(11/3, 사용자 결정 1: 정해진 선택지만, 자유 글 없음). 건강 정보를 드러내지 않는 일반 표현이고 코드로 저장해요.
+ * 병명·증상은 받지 않아요. 진단서는 앱이 받지 않고 인사팀에 따로 내요(진료확인서 올려 받기는 보류).
+ */
+export const SICK_LEAVE_REASONS = ['unwell', 'clinic', 'family'] as const;
+export type SickLeaveReason = (typeof SICK_LEAVE_REASONS)[number];
+export const SICK_LEAVE_REASON_LABEL: Record<SickLeaveReason, string> = {
+  unwell: '몸이 안 좋아요',
+  clinic: '병원 진료',
+  family: '가족 돌봄',
+};
+/** 병가는 오늘부터 이만큼 지난 날까지 신청할 수 있어요(11/3 사용자 결정 2: 지난 3일까지). 연차·공가는 지난 날을 받지 않아요. */
+export const SICK_LEAVE_PAST_DAYS = 3;
+/** 진단서 안내 문구(11/3 사용자 결정 5). 운영 값 sickNoteOverDays를 넘는 병가 요청에 보여요. */
+export const SICK_NOTE_TEXT = '진단서는 인사팀에 따로 내 주세요';
+
+/**
+ * 올해 병가 쓴 날(서버가 근태 기록으로 계산, 저장 안 함, ADR-18). limit은 운영 값 sickLeaveYearDays이고 0이면 한도 없음(null)이에요.
+ * 본인 카드·양식과, 받은 팀이 그 요청을 처리할 때만 와요.
+ */
+export interface SickLeaveUsage {
+  /** 달력 연도(1월 1일 ~ 12월 31일) */
+  year: number;
+  /** 올해 근태 기록의 병가 일수(예정 포함, 반차 0.5) */
+  used: number;
+  limit: number | null;
+}
+
+/** "올해 병가 N일 중 M일 썼어요" / 한도가 없으면 "올해 병가 M일 썼어요" */
+export function sickUsageText(u: Pick<SickLeaveUsage, 'used' | 'limit'>): string {
+  const d = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}일`;
+  return u.limit ? `올해 병가 ${d(u.limit)} 중 ${d(u.used)} 썼어요` : `올해 병가 ${d(u.used)} 썼어요`;
+}
 
 /** 휴가 하루. 반차는 0.5일이에요. */
 export interface LeaveDay {
@@ -160,13 +187,14 @@ export interface InquiryRequest {
    */
   suggestedRowId?: string | null;
   question: string;
-  reason: string;
+  /** 사유(자유 글). 병가 요청에는 보내지 않아요(오면 400, 병가 사유는 sickReason 코드만). 그 밖에는 꼭 있어야 해요. */
+  reason?: string;
   requestId: string;
   /**
    * 휴가 요청이면 쓸 날(ADR-24). 받는 팀(인사팀)이 승인하면 근태 기록에 들어가요.
-   * type이 없으면 연차예요. 공가(official)는 officialReason이 꼭 있어야 하고 연차에서 빠지지 않아요.
+   * type이 없으면 연차예요. 공가(official)는 officialReason이, 병가(sick)는 sickReason이 꼭 있어야 하고 연차에서 빠지지 않아요.
    */
-  leave?: { days: LeaveDay[]; type?: LeaveType; officialReason?: OfficialLeaveReason };
+  leave?: { days: LeaveDay[]; type?: LeaveType; officialReason?: OfficialLeaveReason; sickReason?: SickLeaveReason };
 }
 
 /** POST /api/navi/inquiries/:id/reply. 받은 팀이 보내는 답장이에요. 7일 보관해요. */
@@ -233,8 +261,20 @@ export interface InquiryItem {
   /** 받은 문의함: [확인했어요]·[처리했어요](휴가 요청은 [확인했어요]만, 승인·반려는 decision으로) */
   actions: CardAction[];
   kind: 'general' | 'leave';
-  /** 휴가 요청이면 종류·날·일수. balance는 받은 문의함에서, 아직 결정 전인 연차 요청일 때만 와요(공가는 연차에서 빠지지 않아요). */
-  leave?: { type: LeaveType; officialReason?: OfficialLeaveReason; days: LeaveDay[]; total: number; balance?: LeaveRequestBalance | null };
+  /**
+   * 휴가 요청이면 종류·날·일수. balance는 받은 문의함에서, 아직 결정 전인 연차 요청일 때만 와요(공가·병가는 연차에서 빠지지 않아요).
+   * sick은 받은 문의함에서 결정 전인 병가 요청일 때만 와요(보낸 사람 올해 병가, 열 때마다 계산). sickNote는 진단서 안내 대상(운영 값 일수를 넘음)이에요.
+   */
+  leave?: {
+    type: LeaveType;
+    officialReason?: OfficialLeaveReason;
+    sickReason?: SickLeaveReason;
+    days: LeaveDay[];
+    total: number;
+    balance?: LeaveRequestBalance | null;
+    sick?: SickLeaveUsage | null;
+    sickNote?: true;
+  };
   /** 반려 사유(반려했을 때만) */
   decisionReason?: string;
   /** 승인했는데 근태 기록에 넣지 못했으면 false(근태 연결 안 함). 그룹웨어 근태에 직접 반영해야 해요. */
@@ -339,4 +379,69 @@ export function itInquiryDraft(input: { maskedText: string; faqTitle?: string })
   // 넘치면 앞을 줄이고 끝을 남겨요. 오류 원인은 대개 끝에 있어요(11/1 QA M5).
   const kept = text.length > room ? `…${text.slice(text.length - room + 1)}` : text;
   return `${head}${label}${kept}`;
+}
+
+// ── IT FAQ 파일 올리기(11/3, ADR-25 "다시 볼 조건"). 분장표 S5 올리기와 같은 방식이에요. ──
+// IT FAQ 주인 부서(FAQ "문의 행"이 가리키는 분장표 행의 주인 부서, 지금은 IT지원팀)의 분장표 주인만 올려요.
+// 정해진 칸만 읽고 나머지 칸(사람 이름 등)은 버려요. 단계는 원문 그대로 저장해요(AI가 고치지 않아요).
+
+export const IT_FAQ_COLUMNS = {
+  id: 'ID',
+  title: '제목',
+  aliases: '다른 말',
+  errorCodes: '오류 코드',
+  steps: '단계',
+  revisedOn: '개정일',
+  rowId: '문의 행',
+} as const;
+export type ItFaqColumn = keyof typeof IT_FAQ_COLUMNS;
+/** "다른 말"·"오류 코드" 칸 안에서 여러 값을 나누는 글자. "단계"는 칸 안 줄바꿈으로 나눠요. */
+export const IT_FAQ_LIST_SEPARATOR = '|';
+
+/** IT FAQ 한 항목(올리기 화면 목록) */
+export interface ItFaqSummary {
+  id: string;
+  title: string;
+  aliases: string[];
+  errorCodes: string[];
+  steps: string[];
+  /** YYYY-MM-DD */
+  revisedOn: string;
+  /** 해결이 안 될 때 문의를 보내는 분장표 행 */
+  rowId: string | null;
+  /** 가상 FAQ(demo)인지 올린 FAQ(upload)인지 */
+  source: 'demo' | 'upload';
+}
+
+/** GET /api/navi/it-faq. IT FAQ 주인 부서가 아니면 enabled가 false이고 목록이 비어 있어요. */
+export interface ItFaqListResponse {
+  department: string;
+  enabled: boolean;
+  faqs: ItFaqSummary[];
+}
+
+export interface ItFaqChange {
+  faqId: string;
+  title: string;
+  type: 'changed' | 'added';
+  fields: { name: string; before?: string; after: string }[];
+}
+
+/** POST /api/navi/it-faq/preview(본문은 ChartUploadRequest와 같아요) */
+export interface ItFaqPreviewResponse {
+  department: string;
+  baseVersion: string;
+  changes: ItFaqChange[];
+  /** 파일에 있었지만 바뀌지 않은 FAQ 수 */
+  unchanged: number;
+  /** 파일에 없어서 그대로 두는 우리 부서 FAQ 수(지우지 않아요) */
+  untouched: number;
+}
+
+/** POST /api/navi/it-faq/apply(본문은 ChartApplyRequest와 같아요) */
+export interface ItFaqApplyResponse {
+  applied: number;
+  /** YYYY-MM-DD */
+  revisedOn: string;
+  message: string;
 }

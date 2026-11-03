@@ -42,12 +42,16 @@ afterEach(async () => {
 const grantsOf = async (t: TestApp) => (await t.db.query('select * from mcp_grants')).rows;
 
 describe('메타데이터', () => {
-  it('[ADR-15 시험] 보호 자원 메타데이터는 MCP 주소·우리 발급자·범위 둘을 알려요(RFC 9728)', async () => {
+  it('[ADR-15 시험] 보호 자원 메타데이터는 MCP 주소·우리 발급자·범위 넷을 알려요(RFC 9728)', async () => {
     const t = await setup();
     for (const url of ['/.well-known/oauth-protected-resource/mcp', '/.well-known/oauth-protected-resource']) {
       const res = await t.app.inject({ method: 'GET', url });
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toMatchObject({ resource: MCP_URL, authorization_servers: [BASE], scopes_supported: ['rooms.read', 'notices.read'] });
+      expect(res.json()).toMatchObject({
+        resource: MCP_URL,
+        authorization_servers: [BASE],
+        scopes_supported: ['rooms.read', 'notices.read', 'navi.read', 'mine.read', 'leave.prepare', 'pantry.read'],
+      });
     }
   });
 
@@ -83,7 +87,13 @@ describe('authorize와 동의 시트', () => {
     expect(auth.status).toBe(302);
     expect(`${auth.location.origin}${auth.location.pathname}`).toBe(`${BASE}/oauth/consent`);
     const info = await user.call('GET', `/api/mcp/consent?req=${auth.location.searchParams.get('req')}`);
-    expect(info.body).toEqual({ status: 'ready', appName: 'Claude', redirectHost: 'claude.ai', tools: ['rooms.read', 'notices.read'], roomsWrite: true });
+    expect(info.body).toEqual({
+      status: 'ready',
+      appName: 'Claude',
+      redirectHost: 'claude.ai',
+      tools: ['rooms.read', 'notices.read', 'navi.read', 'mine.read', 'leave.prepare', 'pantry.read'],
+      roomsWrite: true,
+    });
   });
 
   it('[MCP-4] 미등록 클라이언트는 동의 시트 대신 "허락하지 않은 앱"으로 멈추고, 리디렉트 주소로 보내지 않아요', async () => {
@@ -178,6 +188,8 @@ describe('authorize와 동의 시트', () => {
     expect((await user.call('POST', '/api/mcp/consent', { req, decision: 'allow' })).status).toBe(409);
 
     await t.ctx.ops.setFlag('p_op', 'mcp', true);
+    await t.ctx.ops.setModule('p_op', 'navi', 'link');
+    await t.ctx.ops.setModule('p_op', 'pantry', 'link');
     await t.ctx.ops.setModule('p_op', 'rooms', 'link');
     expect((await user.call('GET', `/api/mcp/consent?req=${req}`)).body).toMatchObject({ status: 'ready', tools: ['notices.read'] });
     await t.ctx.ops.setModule('p_op', 'notices', 'off');
@@ -189,11 +201,14 @@ describe('token', () => {
   it('[MCP 시연] 동의 → 코드 교환으로 짧은 접근 토큰과 갱신 토큰을 받고, 승인 표에는 해시만 남아요', async () => {
     const t = await setup();
     const { tokens } = await connect(t, MOCK.staff);
-    expect(tokens).toMatchObject({ token_type: 'Bearer', expires_in: 150, scope: 'rooms.read notices.read' });
+    expect(tokens).toMatchObject({ token_type: 'Bearer', expires_in: 150, scope: 'rooms.read notices.read navi.read mine.read leave.prepare pantry.read' });
     expect(tokens.expires_in).toBeLessThanOrEqual(t.ctx.ops.get().values.employmentRecheckSeconds);
     const grants = await grantsOf(t);
     expect(grants).toHaveLength(1);
-    expect(grants[0]).toMatchObject({ client_id: DEMO_CLIENT.clientId, scopes: ['rooms.read', 'notices.read'] });
+    expect(grants[0]).toMatchObject({
+      client_id: DEMO_CLIENT.clientId,
+      scopes: ['rooms.read', 'notices.read', 'navi.read', 'mine.read', 'leave.prepare', 'pantry.read'],
+    });
     expect(JSON.stringify(grants)).not.toContain(tokens.refresh_token);
     expect(JSON.stringify(grants)).not.toContain(MOCK.staff);
   });

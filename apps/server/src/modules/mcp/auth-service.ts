@@ -5,6 +5,7 @@ import type { AppContext } from '../../context';
 import { endEverything } from '../../core/guard';
 import { pseudonymize } from '../../core/pseudonym';
 import type { ToolDef } from '../../core/tool-registry';
+import * as counts from './counts';
 import { availableTools, canRunMcp, isAllMockData, isClientAllowed } from './policy';
 import * as repo from './repo';
 import { pkceMatches, randomToken, TOKEN_PREFIX, TokenKit } from './tokens';
@@ -57,6 +58,8 @@ const accessPayloadSchema = z.object({
   gid: z.string(),
   iat: z.number(),
   exp: z.number(),
+  /** 연결한 사람의 층(11/3, 탕비실 요청 찾기). 발급·갱신 때 디렉터리에서 읽어 봉인해요. 못 읽으면 없어요. */
+  fl: z.string().max(10).optional(),
 });
 export type AccessPayload = z.infer<typeof accessPayloadSchema>;
 
@@ -70,6 +73,7 @@ interface PendingCode {
   scopes: McpScope[];
   pseudonymId: string;
   idpSubject: string;
+  floor?: string;
   exp: number;
 }
 
@@ -78,6 +82,8 @@ export interface McpPrincipal {
   clientId: string;
   scopes: McpScope[];
   grantId: string;
+  /** 연결한 사람의 층. 접근 토큰 안에 봉인돼 있어요(탕비실 요청 찾기가 그 층 판만 읽어요). */
+  floor?: string;
 }
 
 export interface TokenResponse {
@@ -155,7 +161,7 @@ export class McpAuth {
   }
 
   /** [연결 허락] 뒤 짧은 인가 코드를 줘요. DB에는 쓰지 않아요. */
-  issueCode(request: ConsentRequest, user: { pseudonymId: string; idpSubject: string }, scopes: McpScope[]): string {
+  issueCode(request: ConsentRequest, user: { pseudonymId: string; idpSubject: string; floor?: string }, scopes: McpScope[]): string {
     this.sweepCodes();
     const code = randomToken(32);
     this.codes.set(code, {
@@ -166,6 +172,7 @@ export class McpAuth {
       scopes,
       pseudonymId: user.pseudonymId,
       idpSubject: user.idpSubject,
+      ...(user.floor ? { floor: user.floor } : {}),
       exp: this.ctx.now() + AUTH_CODE_TTL_MS,
     });
     return code;
@@ -186,7 +193,7 @@ export class McpAuth {
     if (p.resource !== this.urls.resource || p.resource !== pending.resource) return fail('invalid_target', 'resource is not this MCP server');
     if (!this.isClientAllowed(client)) return fail('unauthorized_client', 'client is not allowed');
     if (!(await this.runnable())) return fail('invalid_grant', 'MCP is not available');
-    if (!(await this.confirmEmployment(pending.pseudonymId, pending.idpSubject))) return fail('invalid_grant', 'account is not active');
+    if (!(await this.confirmEmployment(pending.pseudonymId, pending.idpSubject, client.clientId))) return fail('invalid_grant', 'account is not active');
 
     const grantId = randomUUID();
     const refreshToken = this.newRefreshToken(pending.idpSubject, client.clientId);
@@ -203,7 +210,10 @@ export class McpAuth {
     await this.ctx.audit.record({ pseudonymId: pending.pseudonymId, channel: 'mcp', action: 'token', clientId: client.clientId, result: 'issued' });
     return {
       ok: true,
-      body: this.tokenResponse({ pseudonymId: pending.pseudonymId, clientId: client.clientId, scopes: pending.scopes, grantId }, refreshToken),
+      body: this.tokenResponse(
+        { pseudonymId: pending.pseudonymId, clientId: client.clientId, scopes: pending.scopes, grantId, ...(pending.floor ? { floor: pending.floor } : {}) },
+        refreshToken,
+      ),
     };
   }
 
@@ -227,17 +237,26 @@ export class McpAuth {
 
     const deny = async (description: string) => {
       await this.ctx.audit.record({ pseudonymId: grant.pseudonymId, channel: 'mcp', action: 'token', clientId: client.clientId, result: 'refused' });
+      await counts.count(this.ctx.db, this.ctx.now(), 'token.refused', client.clientId);
       return fail('invalid_grant', description);
     };
     if (!this.isClientAllowed(client)) return deny('client is not allowed');
-    if (!(await this.confirmEmployment(grant.pseudonymId, payload.data.sub))) return deny('account is not active');
+    if (!(await this.confirmEmployment(grant.pseudonymId, payload.data.sub, client.clientId))) return deny('account is not active');
 
     const refreshToken = this.newRefreshToken(payload.data.sub, client.clientId);
     if (!(await repo.rotateRefreshToken(this.ctx.db, grant.grantId, oldHash, this.tokens.hash(refreshToken)))) {
       return deny('refresh token is revoked');
     }
     await this.ctx.audit.record({ pseudonymId: grant.pseudonymId, channel: 'mcp', action: 'token', clientId: client.clientId, result: 'refreshed' });
-    return { ok: true, body: this.tokenResponse({ pseudonymId: grant.pseudonymId, clientId: client.clientId, scopes, grantId: grant.grantId }, refreshToken) };
+    // 층은 갱신 때마다 디렉터리에서 다시 읽어요(자리를 옮기면 다음 갱신부터 새 층). 못 읽으면 넣지 않아요.
+    const floor = await this.floorOf(payload.data.sub);
+    return {
+      ok: true,
+      body: this.tokenResponse(
+        { pseudonymId: grant.pseudonymId, clientId: client.clientId, scopes, grantId: grant.grantId, ...(floor ? { floor } : {}) },
+        refreshToken,
+      ),
+    };
   }
 
   /** RFC 7009. 갱신 토큰이든 접근 토큰이든 그 기기의 승인만 지워요. 모르는 토큰도 성공으로 답해요. */
@@ -245,14 +264,16 @@ export class McpAuth {
     if (token.startsWith(TOKEN_PREFIX.refresh)) {
       const grant = await repo.findGrantByRefreshHash(this.ctx.db, this.tokens.hash(token));
       if (grant && grant.clientId === client.clientId) {
-        await repo.deleteGrantById(this.ctx.db, client.clientId, grant.grantId);
+        const removed = await repo.deleteGrantById(this.ctx.db, client.clientId, grant.grantId);
         await this.ctx.audit.record({ pseudonymId: grant.pseudonymId, channel: 'mcp', action: 'revoke', clientId: client.clientId, result: 'done' });
+        await counts.count(this.ctx.db, this.ctx.now(), 'disconnect', client.clientId, removed);
       }
       return;
     }
     const access = accessPayloadSchema.safeParse(this.tokens.open('access', token));
     if (access.success && access.data.cid === client.clientId && (await repo.deleteGrantById(this.ctx.db, client.clientId, access.data.gid)) > 0) {
       await this.ctx.audit.record({ pseudonymId: access.data.sub, channel: 'mcp', action: 'revoke', clientId: client.clientId, result: 'done' });
+      await counts.count(this.ctx.db, this.ctx.now(), 'disconnect', client.clientId);
     }
   }
 
@@ -275,13 +296,13 @@ export class McpAuth {
     if (!(await repo.grantExists(this.ctx.db, t.sub, t.cid, t.gid))) return { ok: false, error: 'invalid_token' };
     const client = await repo.findClient(this.ctx.db, t.cid);
     if (!client || !this.isClientAllowed(client)) return { ok: false, error: 'invalid_token' };
-    return { ok: true, principal: { pseudonymId: t.sub, clientId: t.cid, scopes: t.scope, grantId: t.gid } };
+    return { ok: true, principal: { pseudonymId: t.sub, clientId: t.cid, scopes: t.scope, grantId: t.gid, ...(t.fl ? { floor: t.fl } : {}) } };
   }
 
   // ── 재직·폐기 ─────────────────────────────────────────
 
-  /** 재직 확인. 재직이 아니면 웹 세션과 MCP 승인을 모두 지워요(ADR-13·15). */
-  async confirmEmployment(pseudonymId: string, idpSubject: string): Promise<boolean> {
+  /** 재직 확인. 재직이 아니면 웹 세션과 MCP 승인을 모두 지워요(ADR-13·15). clientId는 셈의 앱 이름에만 써요. */
+  async confirmEmployment(pseudonymId: string, idpSubject: string, clientId: string | null = null): Promise<boolean> {
     const at = this.employmentConfirmedAt.get(pseudonymId);
     if (at !== undefined && this.ctx.now() - at < this.employmentReuseMs()) return true;
     if (await this.ctx.adapters.idp.isActive(idpSubject)) {
@@ -290,17 +311,33 @@ export class McpAuth {
     }
     await endEverything(this.ctx, pseudonymId);
     await this.ctx.audit.record({ pseudonymId, channel: 'auth', action: 'employment.recheck', result: 'ended' });
+    await counts.count(this.ctx.db, this.ctx.now(), 'employment.ended', clientId);
     return false;
   }
 
   /** 모든 기기 로그아웃·퇴사 확인(core/guard.ts endEverything)이 불러요. */
   async revokeAll(pseudonymId: string): Promise<number> {
+    this.forget(pseudonymId);
+    const removed = await repo.deleteGrantsFor(this.ctx.db, pseudonymId);
+    await counts.countRemoved(this.ctx.db, this.ctx.now(), 'disconnect', removed);
+    return removed.length;
+  }
+
+  /**
+   * 그 사람의 메모리 상태(아직 바꾸지 않은 인가 코드·재직 확인 재사용)를 버려요. 끊은 뒤 60초 안의 코드로 다시 붙지 못하게 해요.
+   * 운영자 사람별 강제 끊기(admin.ts)도 불러요.
+   */
+  forget(pseudonymId: string): void {
     this.employmentConfirmedAt.delete(pseudonymId);
     for (const [code, pending] of this.codes) if (pending.pseudonymId === pseudonymId) this.codes.delete(code);
-    return repo.deleteGrantsFor(this.ctx.db, pseudonymId);
   }
 
   // ── 안쪽 ─────────────────────────────────────────────
+
+  private async floorOf(idpSubject: string): Promise<string | undefined> {
+    const floor = (await this.ctx.adapters.directory.getProfile(idpSubject).catch(() => null))?.floor;
+    return floor && floor.length <= 10 ? floor : undefined;
+  }
 
   private newRefreshToken(idpSubject: string, clientId: string): string {
     return this.tokens.seal('refresh', { sub: idpSubject, cid: clientId, n: randomToken(16) });
@@ -318,6 +355,7 @@ export class McpAuth {
       gid: principal.grantId,
       iat: now,
       exp: now + ttl,
+      ...(principal.floor ? { fl: principal.floor } : {}),
     });
     return { access_token: access, token_type: 'Bearer', expires_in: Math.floor(ttl / 1000), refresh_token: refreshToken, scope: principal.scopes.join(' ') };
   }

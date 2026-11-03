@@ -82,7 +82,17 @@ describe('공개 클라이언트(CLI)', () => {
         .json()
         .result.tools.map((x: { name: string }) => x.name)
         .sort(),
-    ).toEqual(['notices_search', 'rooms_find_free']);
+    ).toEqual([
+      'leave_prepare',
+      'my_requests_status',
+      'navi_find_team',
+      'navi_it_faq',
+      'navi_onboarding',
+      'notices_search',
+      'pantry_find_similar',
+      'rooms_find_equipment',
+      'rooms_find_free',
+    ]);
     const renewed = await publicRequest(t, CLAUDE_CODE.clientId, { grant_type: 'refresh_token', refresh_token: tokens.refresh_token, resource: MCP_URL });
     expect(renewed.statusCode).toBe(200);
   });
@@ -181,7 +191,13 @@ describe('기기별 승인(U6)', () => {
     expect((await mcpRequest(t, second.tokens.access_token, 'tools/list')).statusCode).toBe(200);
     const res = await second.user.call('GET', '/api/mcp/connections');
     expect(res.body.apps).toEqual([
-      { clientId: CLAUDE_CODE.clientId, appName: 'Claude Code', connectedOn: '2026-11-02', scopes: ['rooms.read', 'notices.read'], devices: 2 },
+      {
+        clientId: CLAUDE_CODE.clientId,
+        appName: 'Claude Code',
+        connectedOn: '2026-11-02',
+        scopes: ['rooms.read', 'notices.read', 'navi.read', 'mine.read', 'leave.prepare', 'pantry.read'],
+        devices: 2,
+      },
     ]);
   });
 

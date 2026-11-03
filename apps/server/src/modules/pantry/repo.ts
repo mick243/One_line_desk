@@ -282,6 +282,22 @@ export async function floorSetting(q: Queryable, floor: string): Promise<FloorSe
   return r ? { floor: r.floor, minShareWon: r.min_share_won, perPersonLimit: r.per_person_limit, cycleNote: r.cycle_note } : null;
 }
 
+/** 판 머리에 쓰는 층 설정과 열린 주기 번호를 한 번에 읽어요. 값은 floorSetting·openCycleNo와 같아요. */
+export async function boardFloorState(q: Queryable, floor: string): Promise<{ setting: FloorSettingRow | null; openCycleNo: number | null }> {
+  const { rows } = await q.query<{ floor: string | null; min_share_won: number; per_person_limit: number; cycle_note: string; open_cycle_no: number | null }>(
+    `select s.floor, s.min_share_won, s.per_person_limit, s.cycle_note,
+            (select cycle_no from pantry_cycles where floor = $1 and state = 'open' order by cycle_no desc limit 1) as open_cycle_no
+       from (select $1::text as floor) f
+       left join pantry_floor_settings s on s.floor = f.floor`,
+    [floor],
+  );
+  const r = rows[0];
+  return {
+    setting: r && r.floor !== null ? { floor: r.floor, minShareWon: r.min_share_won, perPersonLimit: r.per_person_limit, cycleNote: r.cycle_note } : null,
+    openCycleNo: r && r.open_cycle_no !== null ? Number(r.open_cycle_no) : null,
+  };
+}
+
 /** 층 설정이 없을 때만 기본값을 넣어요(seed·첫 게시). */
 export async function insertFloorSettingIfMissing(q: Queryable, s: FloorSettingRow): Promise<void> {
   await q.query(

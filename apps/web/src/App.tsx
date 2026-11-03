@@ -189,7 +189,9 @@ export function App() {
           </div>
           <main className='screen'>
             {entry?.kind === 'consent' && <ConsentScreen me={me} />}
-            {entry?.kind === 'link' && <LinkEntry me={me} token={entry.token} />}
+            {entry?.kind === 'link' && (
+              <LinkEntry me={me} token={entry.token} InquirySheet={webModules.InquirySheet} LeaveRequestSheet={webModules.LeaveRequestSheet} />
+            )}
             {!entry && current === 'home' && <Home me={me} switches={config} onOpen={go} />}
             {!entry && feature && current !== 'board' && (
               <FeaturePage

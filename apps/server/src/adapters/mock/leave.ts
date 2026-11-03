@@ -8,19 +8,30 @@ const half = (...dates: string[]): LeaveUse[] => dates.map((date) => ({ date, ki
 
 const RECORDS: Record<string, LeaveRecord> = {
   // 근속 7년: 18일. 지난 연차 기간(2월)에 쓴 날은 이번 기간에 들어가지 않아요. 11월 6일은 예정이에요.
+  // 병가(11/3): 2025-12-15는 지난해라 올해 병가에 세지 않고, 1월 19일 하루·9월 7일 반차로 올해 병가 1.5일이에요. 연차에서는 빠지지 않아요.
   'haneul@corp.example': {
     hireDate: '2019-03-04',
     uses: [
       ...full('2026-02-13', '2026-04-10', '2026-07-27', '2026-07-28', '2026-07-29', '2026-07-30', '2026-07-31', '2026-11-06'),
       ...half('2026-05-22', '2026-09-18'),
+      { date: '2025-12-15', kind: 'full', type: 'sick' },
+      { date: '2026-01-19', kind: 'full', type: 'sick' },
+      { date: '2026-09-07', kind: 'half', type: 'sick' },
     ],
   },
   // 입사 1년 미만: 개근한 달마다 1일
   'doyun@corp.example': { hireDate: '2025-12-01', uses: [...full('2026-03-13', '2026-08-14'), ...half('2026-06-05')] },
-  // 6월 16일은 공가(예비군)라 연차에서 빠지지 않아요.
+  // 6월 16일은 공가(예비군)라 연차에서 빠지지 않아요. 3월 9~10일·9월 22일 오후는 병가라 연차에서 빠지지 않고 올해 병가 2.5일로 세요.
   'seoyeon@corp.example': {
     hireDate: '2022-07-01',
-    uses: [...full('2026-08-03', '2026-08-04'), ...half('2026-10-02'), { date: '2026-06-16', kind: 'full', type: 'official' }],
+    uses: [
+      ...full('2026-08-03', '2026-08-04'),
+      ...half('2026-10-02'),
+      { date: '2026-06-16', kind: 'full', type: 'official' },
+      { date: '2026-03-09', kind: 'full', type: 'sick' },
+      { date: '2026-03-10', kind: 'full', type: 'sick' },
+      { date: '2026-09-22', kind: 'half', type: 'sick' },
+    ],
   },
   'jihu@corp.example': {
     hireDate: '2016-01-04',

@@ -170,6 +170,49 @@ describe('담당 팀에 문의 보내기(ADR-16)', () => {
     expect(await count()).toBe(0);
   });
 
+  it('[ADR-21 개정 11/3] 7일 지난 문의는 지우기 전에도 받은 문의함·내 문의·상태 바꾸기·답장 어디에도 안 보이고, 목록 열기는 지우지 않아요', async () => {
+    const t = await setup();
+    const doyun = await t.loginAs(MOCK.dev);
+    await doyun.call('POST', '/api/navi/inquiries', { rowId: 'HR-01', question: QUESTION, reason: REASON, requestId: requestId() });
+    let jihu = await t.loginAs(MOCK.hr);
+    const id = ((await jihu.call('GET', '/api/navi/inquiries/inbox')).body as InquiryListResponse).items[0]!.id;
+    const count = async () => (await t.db.query<{ n: number }>('select count(*)::int as n from navi_inquiries')).rows[0]!.n;
+
+    // 보낸 지 7일이 되기 1분 전까지는 보여요.
+    t.advance(7 * 24 * 60 * 60 * 1000 - 60_000);
+    jihu = await t.loginAs(MOCK.hr);
+    expect(((await jihu.call('GET', '/api/navi/inquiries/inbox')).body as InquiryListResponse).items).toHaveLength(1);
+
+    // 7일이 지나면 보관 회차가 돌기 전에도 보이지 않아요.
+    t.advance(2 * 60_000);
+    jihu = await t.loginAs(MOCK.hr);
+    const again = await t.loginAs(MOCK.dev);
+    const deletes: string[] = [];
+    const query = t.db.query.bind(t.db);
+    t.db.query = ((sql: string, params?: unknown[]) => {
+      if (/delete/i.test(sql) || /navi_inquiry_weeks/.test(sql)) deletes.push(sql);
+      return query(sql, params);
+    }) as typeof t.db.query;
+    const inbox = await jihu.call('GET', '/api/navi/inquiries/inbox');
+    const mine = await again.call('GET', '/api/navi/inquiries/mine');
+    const seen = await jihu.call('POST', `/api/navi/inquiries/${id}/state`, { state: 'seen' });
+    const reply = await jihu.call('POST', `/api/navi/inquiries/${id}/reply`, { text: '답장이에요', requestId: requestId() });
+    t.db.query = query;
+    expect((inbox.body as InquiryListResponse).items).toEqual([]);
+    expect((mine.body as InquiryListResponse).items).toEqual([]);
+    expect(seen.status).toBe(404);
+    expect(reply.status).toBe(404);
+    for (const body of [inbox.body, mine.body, seen.body, reply.body]) expect(JSON.stringify(body)).not.toContain('INQCANARY7');
+    // 목록 열기·버튼은 지우지도 주간 셈에 더하지도 않아요. 지우기는 한 시간 보관 회차만 해요.
+    expect(deletes).toEqual([]);
+    expect(await count()).toBe(1);
+    expect((await t.db.query<{ state: string }>('select state from navi_inquiries')).rows).toEqual([{ state: 'new' }]);
+
+    await t.runRetention();
+    expect(await count()).toBe(0);
+    expect((await t.db.query('select sent from navi_inquiry_weeks')).rows).toEqual([{ sent: 1 }]);
+  });
+
   it('[ADR-16] 받은 부서가 [확인했어요]·[처리했어요]를 누르면 보낸 사람에게 알림이 가요(다른 부서는 못 바꿔요)', async () => {
     const t = await setup();
     const doyun = await t.loginAs(MOCK.dev);

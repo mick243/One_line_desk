@@ -35,7 +35,12 @@ export interface WebModules {
   /** 담당 팀에 문의 보내기 양식(ADR-16). 담당 카드의 [○○에 문의하기]로 열려요. */
   InquirySheet: ComponentType<{ action: Extract<CardAction, { type: 'inquire' }>; initialQuestion: string; reasonPlaceholder?: string; onClose: () => void }>;
   /** 휴가 신청 양식(ADR-24). 연차 카드의 [휴가 신청하기]로 열려요. 보내기는 확인 시트를 거쳐요. */
-  LeaveRequestSheet: ComponentType<{ action: Extract<CardAction, { type: 'leave-request' }>; onClose: () => void }>;
+  LeaveRequestSheet: ComponentType<{
+    action: Extract<CardAction, { type: 'leave-request' }>;
+    onClose: () => void;
+    /** 미리 채운 날 안내를 바꿔요(AI 앱 확인 링크로 열 때 "Claude에서 가져온 날", 11/3). 없으면 "질문에서 읽은 날"이에요. */
+    filledNote?: string;
+  }>;
   /** 담당 찾기 페이지: 우리 팀에 온 문의(받은 문의함) */
   InquiryInbox: ComponentType;
   /** 담당 찾기 페이지·홈(compact)·마이 페이지: 내가 보낸 문의와 처리 상태 */
@@ -75,6 +80,9 @@ export interface WebModules {
   ConnectedApps: ComponentType;
   /** /oauth/consent: 사내 로그인 뒤 S6 위에 뜨는 MCP 연결 동의 시트(M4) */
   ConsentScreen: ComponentType<ScreenProps>;
-  /** /r/<토큰>: MCP 결과의 앱 확인 링크로 들어온 S2(M3) */
-  LinkEntry: ComponentType<ScreenProps & { token: string }>;
+  /**
+   * /r/<토큰>: MCP 결과의 앱 확인 링크로 들어온 S2(M3). 담당 팀 문의 링크면 문의 양식(InquirySheet)을,
+   * 휴가 준비 링크면 휴가 신청 양식(LeaveRequestSheet)을 그 날짜·종류로 채워 열어요(11/3).
+   */
+  LinkEntry: ComponentType<ScreenProps & { token: string; InquirySheet: WebModules['InquirySheet']; LeaveRequestSheet: WebModules['LeaveRequestSheet'] }>;
 }

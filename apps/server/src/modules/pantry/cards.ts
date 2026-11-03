@@ -73,6 +73,26 @@ export function sameItemCard(input: {
 }
 
 /**
+ * MCP 판 품목 링크를 열었을 때(11/3 확인 링크 넓히기): 지금 다시 읽은 그 품목. [여기에 +1]은 사람이 누르는 고정 버튼이에요.
+ * 누가 표를 줬는지는 없고 표 수만 있어요. 링크를 연 것만으로는 아무것도 바뀌지 않아요.
+ */
+export function linkedItemCard(target: SameTarget): Card {
+  return makeCard({
+    id: `pantry-link-${target.bundleId}`,
+    kind: 'pantry',
+    label: '제안',
+    headline: `판에 있는 품목이에요: ${target.name}`,
+    fields: [{ name: '지금 표 수', value: `${target.votes}표` }, ...(target.myVote ? [{ name: '내 표', value: '이미 줬어요' }] : [])],
+    evidence: { text: '판의 열린 품목 · 지금 다시 확인했어요', aiSummarized: false },
+    primary: target.myVote
+      ? { type: 'navigate', text: '판에서 보기', to: 'board' }
+      : { type: 'fixed', text: '여기에 +1', method: 'POST', path: '/api/pantry/votes', body: { bundleId: target.bundleId } },
+    ...(target.myVote ? {} : { secondary: [{ type: 'navigate' as const, text: '판에서 보기', to: 'board' as const }] }),
+    tail: '누르기 전에는 아무것도 바뀌지 않아요',
+  });
+}
+
+/**
  * 게시 직전 재검사에서 막혔을 때(R5 "올릴 수 없는 글자"). [이름 고치기]는 새 제안 토큰으로 미리보기를 다시 열어요.
  * 막힌 이름은 카드·행동·토큰 어디에도 넣지 않아요(이 카드는 plan 결과·영수증에 저장돼요, R13).
  */

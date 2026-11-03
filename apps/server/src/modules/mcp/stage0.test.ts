@@ -66,23 +66,44 @@ describe('도구별 운영 스위치', () => {
     const off = await op.call('PUT', '/api/ops/mcp-tool', { tool: 'notices_search', value: false });
     expect(off.status).toBe(200);
     expect(off.body.mcpToolsOff).toEqual(['notices_search']);
-    expect(await toolNames(t, tokens.access_token)).toEqual(['rooms_find_free']);
+    expect(await toolNames(t, tokens.access_token)).toEqual([
+      'leave_prepare',
+      'my_requests_status',
+      'navi_find_team',
+      'navi_it_faq',
+      'navi_onboarding',
+      'pantry_find_similar',
+      'rooms_find_equipment',
+      'rooms_find_free',
+    ]);
     const refused = await callTool(t, tokens.access_token, 'notices_search', { query: '공지' });
     expect(refused.json().result?.isError ?? refused.json().error).toBeTruthy();
     const audit = (await t.db.query("select tool, result from audit_log where action = 'mcpTool.set'")).rows;
     expect(audit).toEqual([{ tool: 'notices_search', result: 'false' }]);
 
     await op.call('PUT', '/api/ops/mcp-tool', { tool: 'notices_search', value: true });
-    expect(await toolNames(t, tokens.access_token)).toEqual(['notices_search', 'rooms_find_free']);
+    expect(await toolNames(t, tokens.access_token)).toEqual([
+      'leave_prepare',
+      'my_requests_status',
+      'navi_find_team',
+      'navi_it_faq',
+      'navi_onboarding',
+      'notices_search',
+      'pantry_find_similar',
+      'rooms_find_equipment',
+      'rooms_find_free',
+    ]);
   });
 
   it('도구별 스위치는 서버를 다시 켜도 남고, 동의 시트·S6 범위에도 반영돼요', async () => {
     const t = await setup();
+    // 회의실 범위에는 빈 회의실 찾기와 장비 대여 확인(11/3)이 있어서 둘 다 꺼야 범위가 빠져요.
     await t.ctx.ops.setMcpTool(OPERATOR_ID, 'rooms_find_free', false);
+    await t.ctx.ops.setMcpTool(OPERATOR_ID, 'rooms_find_equipment', false);
     await t.ctx.ops.load();
-    expect(t.ctx.ops.get().mcpToolsOff).toEqual(['rooms_find_free']);
+    expect([...t.ctx.ops.get().mcpToolsOff].sort()).toEqual(['rooms_find_equipment', 'rooms_find_free']);
     const user = await t.loginAs(MOCK.staff);
-    expect((await user.call('GET', '/api/mcp/connections')).body.tools).toEqual(['notices.read']);
+    expect((await user.call('GET', '/api/mcp/connections')).body.tools).toEqual(['notices.read', 'navi.read', 'mine.read', 'leave.prepare', 'pantry.read']);
   });
 
   it('레지스트리에 없는 이름이나 MCP가 아닌 도구는 받지 않고, 운영자만 바꿀 수 있어요', async () => {

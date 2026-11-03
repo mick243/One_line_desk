@@ -30,9 +30,15 @@ describe('연결된 AI 앱', () => {
     await callTool(t, tokens.access_token, 'rooms_find_free', ROOMS_ARGS);
     const res = await user.call('GET', '/api/mcp/connections');
     expect(res.body.apps).toEqual([
-      { clientId: DEMO_CLIENT.clientId, appName: 'Claude', connectedOn: '2026-10-26', scopes: ['rooms.read', 'notices.read'], devices: 1 },
+      {
+        clientId: DEMO_CLIENT.clientId,
+        appName: 'Claude',
+        connectedOn: '2026-10-26',
+        scopes: ['rooms.read', 'notices.read', 'navi.read', 'mine.read', 'leave.prepare', 'pantry.read'],
+        devices: 1,
+      },
     ]);
-    expect(res.body).toMatchObject({ available: true, tools: ['rooms.read', 'notices.read'] });
+    expect(res.body).toMatchObject({ available: true, tools: ['rooms.read', 'notices.read', 'navi.read', 'mine.read', 'leave.prepare', 'pantry.read'] });
     expect(JSON.stringify(res.body)).not.toMatch(/last|used/i);
   });
 
@@ -47,7 +53,10 @@ describe('연결된 AI 앱', () => {
     const t = await setup();
     const { user } = await connect(t, MOCK.staff);
     await t.ctx.ops.setModule('p_op', 'notices', 'off');
-    expect((await user.call('GET', '/api/mcp/connections')).body).toMatchObject({ available: true, tools: ['rooms.read'] });
+    expect((await user.call('GET', '/api/mcp/connections')).body).toMatchObject({
+      available: true,
+      tools: ['rooms.read', 'navi.read', 'mine.read', 'leave.prepare', 'pantry.read'],
+    });
     await t.ctx.ops.setFlag('p_op', 'mcp', false);
     const res = await user.call('GET', '/api/mcp/connections');
     expect(res.body).toMatchObject({ available: false, tools: [] });

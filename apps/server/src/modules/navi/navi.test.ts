@@ -50,7 +50,7 @@ const ROW_EVIDENCE = /^분장표 "(.+)" 행 · 개정일 (\d{4}-\d{2}-\d{2})$/;
 const FIXTURE_NAMES = [...new Set([...demoChartCsv().matchAll(/가상 담당 [가-힣]+/g)].map((m) => m[0]))];
 
 describe('[F1] 담당 카드', () => {
-  it('[F1-4] 담당 질문은 분장표 행 원문으로 담당 카드를 줘요(사람 이름 없음)', async () => {
+  it('[F1-4] 담당 질문은 분장표 행 원문으로 담당 카드를 줘요(사람 이름 없음, 메일 창구는 [메일 보내기])', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.dev);
     const res = await ask(t, me, '법인카드 잃어버렸어요');
@@ -67,7 +67,7 @@ describe('[F1] 담당 카드', () => {
         { name: '처리 기간', value: '재발급 7영업일' },
       ],
       evidence: { text: '분장표 "법인카드 분실 신고" 행 · 개정일 2026-09-01' },
-      actions: { primary: { type: 'link', text: '창구 열기', href: 'mailto:finance@corp.example' } },
+      actions: { primary: { type: 'link', text: '메일 보내기', href: 'mailto:finance@corp.example' } },
       wrong: { predictedKind: 'navi', predictedRowId: 'FIN-01' },
       tail: '질문 원문은 저장하지 않아요',
     });
@@ -84,7 +84,7 @@ describe('[F1] 담당 카드', () => {
     expect(card.fields.find((f) => f.name === '처리 기간')?.value).toBe('분장표에 없음');
   });
 
-  it('[F1-6] IT 질문은 IT 창구와 헬프데스크 링크가 담긴 담당 카드로 끝나요(해결 단계 없음)', async () => {
+  it('[F1-6] IT 질문은 IT 창구와 헬프데스크 링크([창구 열기])가 담긴 담당 카드로 끝나요(해결 단계 없음)', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.dev);
     const card = (await ask(t, me, '노트북이 안 켜져요')).cards[0]!;
@@ -196,7 +196,7 @@ describe('[F1] 담당 카드', () => {
     expect(rows).toEqual([]);
   });
 
-  it('[F1 완료 기준·ADR-10] 담당·공지 질문과 틀렸어요를 거쳐도 질문 카나리가 DB에 0건이에요', async () => {
+  it('[F1 완료 기준·ADR-10] 담당·공지 질문과 받는 곳 바꿔 보내기를 거쳐도 질문 카나리가 DB에 0건이에요', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.dev);
     const canary = '질문카나리ZK41';
@@ -204,12 +204,15 @@ describe('[F1] 담당 카드', () => {
     await ask(t, me, `건강검진 공지 언제였지 ${canary}`);
     await ask(t, me, `${canary} 어디서 해요`);
     const card = navi.cards[0]!;
-    await me.call('POST', '/api/navi/feedback', {
-      predictedKind: 'navi',
-      predictedRowId: card.wrong!.predictedRowId,
-      correctedKind: 'notices',
-      reason: 'wrong-kind',
+    // 문의 글은 사람이 새로 쓴 글이에요(묻기 문장은 화면 메모리에만 있어요).
+    const sent = await me.call('POST', '/api/navi/inquiries', {
+      rowId: 'HR-01',
+      suggestedRowId: card.wrong!.predictedRowId,
+      question: '재직증명서가 필요해요',
+      reason: '은행 제출용이에요',
+      requestId: 'req-canary-01',
     });
+    expect(sent.status).toBe(200);
     expect(await dumpDb(t)).not.toContain(canary);
   });
 });
@@ -293,52 +296,35 @@ describe('[ADR-09] LLM은 후보 번호 하나나 none만 골라요', () => {
   });
 });
 
-describe('[F1-8·R8] 틀렸어요 기록', () => {
-  it('[F1 완료 기준] 기록은 여섯 칸뿐이고 사용자 ID·가명 ID가 없어요. 감사 로그도 남기지 않아요', async () => {
+describe('[F1-8·R8] 받는 곳을 바꿔 보낸 기록(11/2 ADR-26, 옛 틀렸어요)', () => {
+  let seq = 0;
+  /** 문의를 보내며 처음 고른 행(suggestedRowId)과 다른 곳으로 바꿔 보내요. 기록은 이 길로만 생겨요. */
+  const reroute = (me: Session, suggestedRowId: string, rowId: string | null) =>
+    me.call('POST', '/api/navi/inquiries', { rowId, suggestedRowId, question: '문의해요', reason: '사유예요', requestId: `req-reroute-${(seq += 1)}` });
+
+  it('[F1 완료 기준] 기록은 여섯 칸뿐이고 사용자 ID·가명 ID·글이 없어요. 시각은 날 단위예요', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.dev);
-    const card = (await ask(t, me, '법인카드 잃어버렸어요')).cards[0]!;
-    const auditBefore = (await t.db.query('select count(*)::int as n from audit_log')).rows[0];
-
-    const res = await me.call('POST', '/api/navi/feedback', { predictedKind: 'navi', predictedRowId: card.wrong!.predictedRowId, reason: 'content-changed' });
-    expect(res).toEqual({ status: 200, body: { saved: true } });
+    expect((await reroute(me, 'FIN-01', 'HR-01')).status).toBe(200);
 
     const { rows } = await t.db.query('select * from navi_feedback');
     expect(rows).toHaveLength(1);
     expect(Object.keys(rows[0]!).sort()).toEqual(['at', 'chosen_row', 'corrected_kind', 'id', 'predicted_kind', 'predicted_row', 'reason_code']);
+    expect(rows[0]).toMatchObject({ predicted_kind: 'navi', predicted_row: 'FIN-01', chosen_row: 'HR-01', reason_code: 'other-owner', corrected_kind: null });
     const json = JSON.stringify(rows);
     expect(json).not.toContain(pseudonymize(t.ctx.config.pseudonymSecret, MOCK.dev));
     expect(json).not.toContain(MOCK.dev);
     expect(json).not.toContain('도윤');
+    expect(json).not.toContain('문의해요');
     // 시각은 날 단위(한국 시간 0시)예요.
     expect(new Date(rows[0]!.at as string).toISOString()).toBe(new Date('2026-10-26T00:00:00+09:00').toISOString());
-    expect((await t.db.query('select count(*)::int as n from audit_log')).rows[0]).toEqual(auditBefore);
   });
 
-  it('[ADR-09 시험] 정해진 칸 말고 다른 칸(자유 문장)이 오면 거부해요', async () => {
+  it('[11/3 사용자 결정] "틀렸어요" 경로는 없어요(404). 기록을 따로 남기는 길이 없어요', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.dev);
-    for (const extra of [{ comment: '이거 틀렸어요' }, { pseudonymId: 'p_x' }, { question: '법인카드 잃어버렸어요' }]) {
-      const res = await me.call('POST', '/api/navi/feedback', { predictedKind: 'navi', predictedRowId: 'FIN-01', reason: 'not-listed', ...extra });
-      expect(res.status).toBe(400);
-    }
-    expect((await t.db.query('select * from navi_feedback')).rows).toEqual([]);
-  });
-
-  it('칸 조합이 이유와 맞지 않거나 없는 행이면 거부해요', async () => {
-    const t = await setup();
-    const me = await t.loginAs(MOCK.dev);
-    const bad = [
-      { predictedKind: 'navi', predictedRowId: 'FIN-01', reason: 'other-owner' },
-      { predictedKind: 'navi', predictedRowId: 'FIN-01', chosenRowId: 'FIN-01', reason: 'other-owner' },
-      { predictedKind: 'navi', predictedRowId: 'FIN-01', reason: 'wrong-kind' },
-      { predictedKind: 'navi', predictedRowId: 'FIN-01', correctedKind: 'navi', reason: 'wrong-kind' },
-      { predictedKind: 'navi', predictedRowId: 'FIN-77', reason: 'not-listed' },
-      { predictedKind: 'navi', predictedRowId: 'FIN-01', chosenRowId: 'HR-99', reason: 'other-owner' },
-      { predictedKind: 'notices', reason: 'not-listed' },
-      { predictedKind: 'navi', predictedRowId: 'drop table', reason: 'not-listed' },
-    ];
-    for (const body of bad) expect((await me.call('POST', '/api/navi/feedback', body)).status, JSON.stringify(body)).toBe(400);
+    const res = await me.call('POST', '/api/navi/feedback', { predictedKind: 'navi', predictedRowId: 'FIN-01', reason: 'not-listed' });
+    expect(res.status).toBe(404);
     expect((await t.db.query('select * from navi_feedback')).rows).toEqual([]);
   });
 
@@ -351,22 +337,12 @@ describe('[F1-8·R8] 틀렸어요 기록', () => {
     const before = await chartRows(t);
     const auditBefore = (await t.db.query('select count(*)::int as n from audit_log')).rows[0];
 
-    expect(
-      (
-        await me.call('POST', '/api/navi/feedback', {
-          predictedKind: 'navi',
-          predictedRowId: card.wrong!.predictedRowId,
-          chosenRowId: other.id,
-          reason: 'other-owner',
-        })
-      ).status,
-    ).toBe(200);
     const res = await me.call('POST', '/api/navi/rows/card', { rowId: other.id });
     expect(res.status).toBe(200);
     expect(res.body.card).toMatchObject({ id: `navi-${other.id}`, kind: 'navi', label: '안내', evidence: { aiSummarized: false } });
     expect(res.body.card.wrong).toBeUndefined();
     expect(await chartRows(t)).toEqual(before);
-    // 기록·행 카드 모두 감사 로그를 남기지 않아요(누가 어떤 행을 골랐나가 남지 않게).
+    // 행 카드는 감사 로그를 남기지 않아요(누가 어떤 행을 골랐나가 남지 않게).
     expect((await t.db.query('select count(*)::int as n from audit_log')).rows[0]).toEqual(auditBefore);
 
     expect((await me.call('POST', '/api/navi/rows/card', { rowId: 'ZZ-99' })).status).toBe(404);
@@ -377,27 +353,10 @@ describe('[F1-8·R8] 틀렸어요 기록', () => {
     const me = await t.loginAs(MOCK.dev);
     const before = await chartRows(t);
     const cardBefore = (await ask(t, me, '법인카드 잃어버렸어요')).cards[0];
-    for (const reason of ['not-listed', 'content-changed', 'content-changed'] as const) {
-      expect((await me.call('POST', '/api/navi/feedback', { predictedKind: 'navi', predictedRowId: 'FIN-01', reason })).status).toBe(200);
-    }
-    expect(
-      (await me.call('POST', '/api/navi/feedback', { predictedKind: 'navi', predictedRowId: 'FIN-01', chosenRowId: 'GA-01', reason: 'other-owner' })).status,
-    ).toBe(200);
-    expect(
-      (await me.call('POST', '/api/navi/feedback', { predictedKind: 'navi', predictedRowId: 'FIN-01', correctedKind: 'notices', reason: 'wrong-kind' })).status,
-    ).toBe(200);
+    for (const to of [null, null, 'GA-01', 'HR-01']) expect((await reroute(me, 'FIN-01', to)).status).toBe(200);
+    expect((await t.db.query('select count(*)::int as n from navi_feedback')).rows[0]).toEqual({ n: 4 });
     expect(await chartRows(t)).toEqual(before);
     expect((await ask(t, me, '법인카드 잃어버렸어요')).cards[0]).toEqual(cardBefore);
-  });
-
-  it('[ADR-13] 피드백도 요청 횟수 제한을 받아요', async () => {
-    const t = await setup();
-    const me = await t.loginAs(MOCK.dev);
-    const statuses: number[] = [];
-    for (let i = 0; i < 21; i += 1)
-      statuses.push((await me.call('POST', '/api/navi/feedback', { predictedKind: 'navi', predictedRowId: 'FIN-01', reason: 'not-listed' })).status);
-    expect(statuses.slice(0, 20).every((s) => s === 200)).toBe(true);
-    expect(statuses[20]).toBe(429);
   });
 });
 
@@ -409,30 +368,34 @@ describe('[F1-9·R9] S5 분장표 수정 제안함', () => {
     expect((await t.loginAs(MOCK.dev)).me.roles).not.toContain('chart-owner');
   });
 
-  it('[F1-9] 자기 부서 행과 이유 넷별 기록 묶음을 보여 줘요(기록이 쌓인 행 먼저, 누가 눌렀는지 없음)', async () => {
+  it('[F1-9] 자기 부서 행과 이유 둘(다른 팀·대표 창구로 바꿔 보냄)별 기록 묶음을 보여 줘요(기록이 쌓인 행 먼저, 누가 보냈는지 없음)', async () => {
     const t = await setup();
     const dev = await t.loginAs(MOCK.dev);
-    const fb = (body: Record<string, unknown>) => dev.call('POST', '/api/navi/feedback', { predictedKind: 'navi', ...body });
-    await fb({ predictedRowId: 'FIN-03', reason: 'not-listed' });
-    await fb({ predictedRowId: 'FIN-03', reason: 'not-listed' });
-    await fb({ predictedRowId: 'FIN-03', chosenRowId: 'HR-06', reason: 'other-owner' });
-    await fb({ predictedRowId: 'FIN-03', correctedKind: 'notices', reason: 'wrong-kind' });
-    await fb({ predictedRowId: 'HR-02', reason: 'content-changed' });
+    let seq = 0;
+    const reroute = (suggestedRowId: string, rowId: string | null) =>
+      dev.call('POST', '/api/navi/inquiries', { rowId, suggestedRowId, question: '문의해요', reason: '사유예요', requestId: `req-s5-${(seq += 1)}` });
+    await reroute('FIN-03', null);
+    await reroute('FIN-03', null);
+    await reroute('FIN-03', 'HR-06');
+    await reroute('HR-02', 'FIN-01');
+    // 옛 "틀렸어요" 값(content-changed·wrong-kind)이 7일 지우기 전까지 남아 있어도 세지 않아요(11/3).
+    await t.db.query(
+      "insert into navi_feedback (predicted_kind, corrected_kind, predicted_row, chosen_row, reason_code, at) values ('navi', null, 'FIN-03', null, 'content-changed', $1), ('navi', 'notices', 'FIN-03', null, 'wrong-kind', $1)",
+      [new Date(t.ctx.now()).toISOString()],
+    );
 
     const staff = await t.loginAs(MOCK.staff);
     const res = await staff.call('GET', '/api/navi/chart');
     expect(res.status).toBe(200);
     expect(res.body.department).toBe('재무팀');
     expect(res.body.rows.every((r: { id: string }) => r.id.startsWith('FIN-'))).toBe(true);
-    expect(res.body.rows[0]).toMatchObject({
-      id: 'FIN-03',
-      feedback: { 'other-owner': 1, 'not-listed': 2, 'content-changed': 0, 'wrong-kind': 1 },
-      total: 4,
-    });
+    expect(res.body.rows[0]).toMatchObject({ id: 'FIN-03', total: 3 });
+    expect(res.body.rows[0].feedback).toEqual({ 'other-owner': 1, 'not-listed': 2 });
     expect(res.body.rows.slice(1).every((r: { total: number }) => r.total === 0)).toBe(true);
     const json = JSON.stringify(res.body);
     expect(json).not.toContain(pseudonymize(t.ctx.config.pseudonymSecret, MOCK.dev));
     expect(json).not.toContain('HR-02');
+    expect(json).not.toMatch(/content-changed|wrong-kind/);
     for (const name of FIXTURE_NAMES) expect(json).not.toContain(name);
   });
 

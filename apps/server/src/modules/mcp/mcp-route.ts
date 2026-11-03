@@ -7,6 +7,7 @@ import type { AppContext } from '../../context';
 import { accessFrom } from '../../core/access-record';
 import { listMcpTools, type McpToolDef, TOOLS } from '../../core/tool-registry';
 import type { McpAuth, McpPrincipal } from './auth-service';
+import * as counts from './counts';
 import { scopeOf } from './policy';
 import * as repo from './repo';
 import { MCP_TOOL_IMPLS, type ToolEnv } from './tool-impls';
@@ -16,14 +17,17 @@ import { MCP_TOOL_IMPLS, type ToolEnv } from './tool-impls';
 // 도구는 이름으로 나누지 않고 레지스트리(core/tool-registry.ts)와 구현 표(tool-impls.ts)로 똑같이 다뤄요(11/2 정리).
 // 이 경로는 LLM(ctx.gateway)을 부르지 않고, DB에는 감사 로그·접속기록 말고 쓰지 않아요.
 
-/** 서버 안내문. 이 MCP가 못 하는 질문(담당 부서·내 예약)은 짐작하지 말고 앱으로 보내게 해요(10/26 MCP 베타 시험 U5). */
+/**
+ * 서버 안내문. 이 MCP가 할 수 있는 것과 못 하는 것을 적고, 못 하는 질문은 짐작하지 말고 앱으로 보내게 해요(10/26 MCP 베타 시험 U5).
+ * 11/3 2단계: 담당 팀 찾기·IT 오류 FAQ·첫 2주 할 일·내 요청 상태가 생겨서 "담당 부서 질문은 답할 수 없어요" 문장을 바꿨어요.
+ */
 function instructions(appUrl: string): string {
   return (
-    '한 줄 데스크 읽기 전용 MCP예요. 빈 회의실 후보(정원·장비·설비 포함)와 공지 제목·게시일·원문 링크만 돌려줘요. ' +
-    '예약·취소·게시는 할 수 없어요. 회의실 예약은 후보의 링크를 사람이 열어 한 줄 데스크 앱의 확인 시트에서 해요. ' +
+    '한 줄 데스크 읽기 전용 MCP예요. 빈 회의실 후보(정원·장비·설비 포함), 공지 제목·게시일·원문 링크, 업무 분장표의 받을 팀, IT 오류 FAQ 원문 단계, 첫 2주 할 일, 내가 보낸 요청의 상태를 돌려줘요. ' +
+    '예약·취소·게시·문의 보내기는 할 수 없어요. 그런 일은 결과의 앱 확인 링크를 사람이 열어 한 줄 데스크 앱에서 한 번 눌러 확정해요. 링크를 여는 것만으로는 아무것도 바뀌지 않아요. ' +
     '결과가 없으면 emptyReason.message에 까닭이 있어요. ' +
-    `담당 부서·할 일 질문(예: "법인카드를 잃어버렸어요", "재직증명서 어디서 떼요?")은 이 MCP로 답할 수 없어요. 짐작해서 답하지 말고, 한 줄 데스크 앱(${appUrl})의 문의하기에서 물어보라고 안내해 주세요. ` +
-    `내 예약 보기·취소도 앱(${appUrl})의 회의실이나 마이 페이지에서 해요. ` +
+    `담당 부서·할 일 질문(예: "법인카드를 잃어버렸어요")은 navi_find_team 결과의 팀·지금 할 일만 전하고, 분장표에 없는 내용은 짐작해서 답하지 말고 대표 창구나 한 줄 데스크 앱(${appUrl})의 문의하기를 안내해 주세요. ` +
+    `남은 연차 숫자·문의와 답장 글은 이 MCP로 보내지 않아요. 앱(${appUrl})에서 보라고 안내해 주세요. ` +
     APP_IS_FOR_PEOPLE
   );
 }
@@ -33,7 +37,7 @@ const APP_IS_FOR_PEOPLE = '앱은 사람이 회사 계정으로 로그인해서 
 
 /** 운영자가 MCP를 껐을 때 안내. 인증 문제가 아니라는 걸 분명히 해요(U4). */
 function offMessage(appUrl: string): string {
-  return `운영자가 한 줄 데스크 MCP를 잠시 껐어요. 인증이나 연결 문제는 아니에요. 그동안 회의실·공지는 사람이 한 줄 데스크 앱(${appUrl})을 직접 열어 찾도록 안내해 주세요. ${APP_IS_FOR_PEOPLE}`;
+  return `운영자가 한 줄 데스크 MCP를 잠시 껐어요. 인증이나 연결 문제는 아니에요. 그동안 회의실·공지·담당 찾기는 사람이 한 줄 데스크 앱(${appUrl})을 직접 열어 찾도록 안내해 주세요. ${APP_IS_FOR_PEOPLE}`;
 }
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
@@ -51,8 +55,11 @@ export function registerMcpRoute(app: FastifyInstance, ctx: AppContext, mcp: Mcp
   const ownOrigin = new URL(urls.issuer).origin;
   const appUrl = `${ownOrigin}/`;
 
-  const auditTool = (principal: McpPrincipal, tool: string, result: 'found' | 'none' | 'refused' | 'error') =>
-    ctx.audit.record({ pseudonymId: principal.pseudonymId, channel: 'mcp', tool, clientId: principal.clientId, result });
+  // 감사 로그(7일)와 같은 자리에서 월간 보고용 날마다 셈(call.<결과>, 앱 이름별)도 더해요(counts.ts).
+  const auditTool = async (principal: McpPrincipal, tool: string, result: 'found' | 'none' | 'refused' | 'error') => {
+    await ctx.audit.record({ pseudonymId: principal.pseudonymId, channel: 'mcp', tool, clientId: principal.clientId, result });
+    await counts.count(ctx.db, ctx.now(), `call.${result}`, principal.clientId);
+  };
 
   /** 토큰이 없거나 맞지 않으면 401 + 보호 자원 메타데이터 주소(RFC 9728 5.1). */
   const challenge = (reply: FastifyReply, error?: 'invalid_token') => {
@@ -115,8 +122,8 @@ export function registerMcpRoute(app: FastifyInstance, ctx: AppContext, mcp: Mcp
     const server =
       tools.length > 0
         ? buildServer(ctx, mcp, principal, tools, auditTool, appUrl)
-        : // 회의실·공지가 모두 빠지면 도구가 없어요(M5). 예전 목록으로 부르면 꺼졌다고 알려 줘요.
-          emptyServer(instructions(appUrl), `지금은 회의실·공지 찾기가 꺼져 있어요. 한 줄 데스크 앱(${appUrl})에서 확인해 주세요.`);
+        : // 도구가 모두 빠지면(모듈·도구 스위치, M5) 목록이 비어요. 예전 목록으로 부르면 꺼졌다고 알려 줘요.
+          emptyServer(instructions(appUrl), `지금은 이 도구가 꺼져 있어요. 한 줄 데스크 앱(${appUrl})에서 확인해 주세요.`);
     return serve(req, reply, server);
   });
 
@@ -178,6 +185,7 @@ function buildServer(ctx: AppContext, mcp: McpAuth, principal: McpPrincipal, too
     issuer: mcp.urls.issuer,
     // 실제(모의가 아닌) 데이터는 보안팀 승인 클라이언트에만 보내요(ADR-15 계약 전 잠금).
     realDataAllowed: async () => (await repo.findClient(ctx.db, principal.clientId))?.securityApproved === true,
+    allMockData: () => mcp.allMockData(),
   };
   for (const tool of tools) {
     const impl = MCP_TOOL_IMPLS[tool.name];

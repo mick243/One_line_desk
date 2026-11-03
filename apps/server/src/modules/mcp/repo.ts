@@ -1,9 +1,10 @@
-import { MCP_SCOPES, type McpScope } from '@one-line-desk/shared';
+import { MCP_SCOPES, type McpCountKind, type McpScope } from '@one-line-desk/shared';
 import type { Queryable } from '../../core/db';
 
 // MCP 인가 서버 표(ADR-15). SQL은 여기에만 둬요.
 // - mcp_clients: 등록 클라이언트(동적 등록 없음). 기밀(비밀 해시) 또는 공개(비밀 없음, 루프백 리디렉트, 11/2)
 // - mcp_grants: 기기별 승인(가명 ID·클라이언트·범위·연결한 날·갱신 토큰 해시·승인 ID). "마지막 사용"은 없어요.
+// - mcp_daily_counts: 월간 보고용 날마다 셈(날·종류·앱 이름·수, 11/3). 사람·클라이언트 ID는 없어요. 13개월 보관(ADR-21 예외).
 
 /** 한 사람 × 한 앱에서 동시에 연결해 둘 수 있는 기기 수. 넘치면 가장 먼저 연결한 기기가 끊겨요. */
 export const MAX_DEVICES_PER_APP = 5;
@@ -169,12 +170,128 @@ export async function deleteGrant(q: Queryable, pseudonymId: string, clientId: s
   return rows.length;
 }
 
-export async function deleteGrantsFor(q: Queryable, pseudonymId: string): Promise<number> {
-  const { rows } = await q.query('delete from mcp_grants where pseudonym_id = $1 returning client_id', [pseudonymId]);
-  return rows.length;
+/** 그 사람의 모든 연결(모든 앱·기기)을 지워요. 지운 승인마다 클라이언트 ID 하나씩(겹칠 수 있어요) 돌려줘요. 셈에만 써요. */
+export async function deleteGrantsFor(q: Queryable, pseudonymId: string): Promise<string[]> {
+  const { rows } = await q.query<{ client_id: string }>('delete from mcp_grants where pseudonym_id = $1 returning client_id', [pseudonymId]);
+  return rows.map((r) => r.client_id);
 }
 
 export async function deleteGrantById(q: Queryable, clientId: string, grantId: string): Promise<number> {
   const { rows } = await q.query('delete from mcp_grants where client_id = $1 and grant_id = $2 returning client_id', [clientId, grantId]);
   return rows.length;
+}
+
+// ── 운영자 관리(11/3, 1단계). 연결한 사람은 셈만 내보내요. 가명 ID는 접속기록(처리한 정보주체 표시)에만 가요. ──
+
+export interface ClientOverview extends Omit<ClientRecord, 'secretHash'> {
+  people: number;
+  devices: number;
+  /** YYYY-MM-DD */
+  createdOn: string;
+}
+
+/** 등록 클라이언트 전부와 지금 연결한 사람·기기 수. 비밀 해시는 읽지 않아요. */
+export async function listClientsOverview(q: Queryable): Promise<ClientOverview[]> {
+  const { rows } = await q.query<Omit<ClientRow, 'client_secret_hash'> & { people: number; devices: number; created_on: string }>(
+    `select c.client_id, c.public_client, c.app_name, c.redirect_uris, c.security_approved, c.demo_only,
+            to_char(c.created_at, 'YYYY-MM-DD') as created_on,
+            count(distinct g.pseudonym_id)::int as people, count(g.grant_id)::int as devices
+       from mcp_clients c left join mcp_grants g on g.client_id = c.client_id
+      group by c.client_id
+      order by c.app_name, c.client_id`,
+  );
+  return rows.map((r) => ({
+    clientId: r.client_id,
+    publicClient: r.public_client,
+    appName: r.app_name,
+    redirectUris: r.redirect_uris,
+    securityApproved: r.security_approved,
+    demoOnly: r.demo_only,
+    people: r.people,
+    devices: r.devices,
+    createdOn: r.created_on,
+  }));
+}
+
+/** 보안팀 승인 켜기·끄기. 바뀐 줄이 없으면(없는 클라이언트) 거짓이에요. */
+export async function setSecurityApproved(q: Queryable, clientId: string, approved: boolean): Promise<boolean> {
+  const { rows } = await q.query('update mcp_clients set security_approved = $2 where client_id = $1 returning client_id', [clientId, approved]);
+  return rows.length === 1;
+}
+
+/** 그 앱에 연결한 사람(가명 ID, 겹침 없이). 강제 끊기의 접속기록에만 써요. */
+export async function peopleOfClient(q: Queryable, clientId: string): Promise<string[]> {
+  const { rows } = await q.query<{ pseudonym_id: string }>('select distinct pseudonym_id from mcp_grants where client_id = $1 order by pseudonym_id', [
+    clientId,
+  ]);
+  return rows.map((r) => r.pseudonym_id);
+}
+
+/** 그 앱의 모든 연결(모든 사람·기기)을 지워요. 지운 승인 수를 돌려줘요. */
+export async function deleteGrantsOfClient(q: Queryable, clientId: string): Promise<number> {
+  const { rows } = await q.query('delete from mcp_grants where client_id = $1 returning grant_id', [clientId]);
+  return rows.length;
+}
+
+/** 클라이언트 회수. 승인은 외래 키(on delete cascade)로 같이 지워져요. */
+export async function deleteClient(q: Queryable, clientId: string): Promise<boolean> {
+  const { rows } = await q.query('delete from mcp_clients where client_id = $1 returning client_id', [clientId]);
+  return rows.length === 1;
+}
+
+// ── 날마다 셈(11/3, 월간 보고). 감사 로그를 남기는 자리에서 그때그때 더해요. 감사 로그를 다시 읽어 세지 않아요(7일 뒤 지워져요). ──
+
+/**
+ * 그 날·종류·앱 셈에 n을 더해요. 앱 이름은 클라이언트 ID로 등록 표에서 찾아 넣고, 없거나 모르면 '-'예요.
+ * 클라이언트 ID 자체는 표에 남지 않아요.
+ */
+export async function bumpDailyCount(q: Queryable, day: string, kind: McpCountKind, clientId: string | null, n: number): Promise<void> {
+  await q.query(
+    `insert into mcp_daily_counts (day, kind, app, count)
+     values ($1, $2, coalesce((select app_name from mcp_clients where client_id = $3), '-'), $4)
+     on conflict (day, kind, app) do update set count = mcp_daily_counts.count + excluded.count`,
+    [day, kind, clientId, n],
+  );
+}
+
+/** 그 날(YYYY-MM-DD)보다 앞선 셈을 지워요. */
+export async function purgeDailyCounts(q: Queryable, beforeDay: string): Promise<void> {
+  await q.query('delete from mcp_daily_counts where day < $1', [beforeDay]);
+}
+
+/** [fromDay, toDay) 사이 종류·앱별 합계. */
+export async function sumDailyCounts(q: Queryable, fromDay: string, toDay: string): Promise<{ kind: McpCountKind; app: string; n: number }[]> {
+  const { rows } = await q.query<{ kind: McpCountKind; app: string; n: number }>(
+    `select kind, app, sum(count)::int as n from mcp_daily_counts
+      where day >= $1 and day < $2 group by kind, app order by app, kind`,
+    [fromDay, toDay],
+  );
+  return rows;
+}
+
+/** 그 달 접속기록에서 센 연결·호출·끊기 줄 수와 호출한 사람 수. 줄 내용(가명 ID)은 밖으로 내보내지 않아요. */
+export async function accessCounts(q: Queryable, from: number, to: number): Promise<{ connects: number; calls: number; callers: number; disconnects: number }> {
+  return (
+    await q.query<{ connects: number; calls: number; callers: number; disconnects: number }>(
+      `select (count(*) filter (where action = 'mcp.connect'))::int as connects,
+              (count(*) filter (where action = 'mcp.call'))::int as calls,
+              (count(distinct pseudonym_id) filter (where action = 'mcp.call'))::int as callers,
+              (count(*) filter (where action = 'mcp.disconnect'))::int as disconnects
+         from access_log where at >= $1 and at < $2 and action like 'mcp.%'`,
+      [new Date(from).toISOString(), new Date(to).toISOString()],
+    )
+  ).rows[0]!;
+}
+
+/** 지금 등록된 앱·승인된 앱·연결한 사람·기기 수 */
+export async function nowCounts(q: Queryable): Promise<{ clients: number; approvedClients: number; people: number; devices: number }> {
+  const r = (
+    await q.query<{ clients: number; approved: number; people: number; devices: number }>(
+      `select (select count(*) from mcp_clients)::int as clients,
+              (select count(*) from mcp_clients where security_approved)::int as approved,
+              (select count(distinct pseudonym_id) from mcp_grants)::int as people,
+              (select count(*) from mcp_grants)::int as devices`,
+    )
+  ).rows[0]!;
+  return { clients: r.clients, approvedClients: r.approved, people: r.people, devices: r.devices };
 }
