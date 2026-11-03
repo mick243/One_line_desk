@@ -1,4 +1,4 @@
-import type { Kind, LeaveDay, LeaveType, OfficialLeaveReason, WrongReason } from '@one-line-desk/shared';
+import { type Kind, type LeaveDay, type LeaveType, type OfficialLeaveReason, REROUTE_REASONS, type RerouteReason } from '@one-line-desk/shared';
 import type { Queryable } from '../../core/db';
 import type { ChartRow } from './chart-csv';
 
@@ -127,12 +127,12 @@ export interface FeedbackRecord {
   correctedKind: Kind | null;
   predictedRow: string | null;
   chosenRow: string | null;
-  reason: WrongReason;
+  reason: RerouteReason;
   /** 날 단위로 줄인 시각(ISO). 감사 로그 시각과 이어 붙지 않게 해요. */
   at: string;
 }
 
-/** R8 여섯 칸만 넣어요. 사용자 ID·가명 ID·질문 원문 칸은 표에도 없어요. */
+/** 받는 곳을 바꿔 보낸 기록(ADR-26). 여섯 칸만 넣어요. 사용자 ID·가명 ID·글 칸은 표에도 없어요. 문의 보내기만 불러요. */
 export async function insertFeedback(q: Queryable, f: FeedbackRecord): Promise<void> {
   await q.query('insert into navi_feedback (predicted_kind, corrected_kind, predicted_row, chosen_row, reason_code, at) values ($1, $2, $3, $4, $5, $6)', [
     f.predictedKind,
@@ -144,14 +144,17 @@ export async function insertFeedback(q: Queryable, f: FeedbackRecord): Promise<v
   ]);
 }
 
-/** 예측 행별·이유별 기록 수. since는 행마다 개정일(그날 0시, 한국 시간)이에요. */
-export async function feedbackCounts(q: Queryable, rowIds: string[]): Promise<{ row: string; reason: WrongReason; at: string; n: number }[]> {
+/**
+ * 예측 행별·이유별 기록 수. since는 행마다 개정일(그날 0시, 한국 시간)이에요.
+ * 이유는 바꿔 보낸 둘(다른 팀·대표 창구)만 세요. 옛 "틀렸어요" 값(content-changed·wrong-kind)은 7일 지나 지워질 때까지 남아도 세지 않아요(11/3).
+ */
+export async function feedbackCounts(q: Queryable, rowIds: string[]): Promise<{ row: string; reason: RerouteReason; at: string; n: number }[]> {
   if (rowIds.length === 0) return [];
-  const { rows } = await q.query<{ row: string; reason: WrongReason; at: Date | string; n: number }>(
+  const { rows } = await q.query<{ row: string; reason: RerouteReason; at: Date | string; n: number }>(
     `select predicted_row as row, reason_code as reason, at, count(*)::int as n
-       from navi_feedback where predicted_row = any($1::text[])
+       from navi_feedback where predicted_row = any($1::text[]) and reason_code = any($2::text[])
       group by predicted_row, reason_code, at`,
-    [rowIds],
+    [rowIds, [...REROUTE_REASONS]],
   );
   return rows.map((r) => ({ row: r.row, reason: r.reason, at: new Date(r.at).toISOString(), n: r.n }));
 }
@@ -222,7 +225,7 @@ export async function insertInquiry(
   return rows[0]!;
 }
 
-/** 보관 기간(7일)이 지난 "틀렸어요" 기록을 지워요. 분장표 주인은 최근 7일 기록만 봐요. */
+/** 보관 기간(7일)이 지난 바꿔 보낸 기록을 지워요. 분장표 주인은 최근 7일 기록만 봐요. */
 export async function purgeFeedback(q: Queryable, before: number): Promise<void> {
   await q.query('delete from navi_feedback where at < $1', [new Date(before).toISOString()]);
 }
@@ -235,7 +238,7 @@ export async function purgeFeedback(q: Queryable, before: number): Promise<void>
 export async function purgeInquiries(q: Queryable, before: number, now: number): Promise<void> {
   const cutoff = new Date(before).toISOString();
   await q.query('delete from navi_inquiry_replies where created_at < $1', [cutoff]);
-  // 지운 행(returning)으로 세요. 목록 열기와 정시 지우기가 겹쳐도, 늦게 온 쪽은 지울 행이 없어서 두 번 세지 않아요.
+  // 지운 행(returning)으로 세요. 보관 회차가 겹쳐 돌아도(서버를 다시 켠 직후 등) 늦게 온 쪽은 지울 행이 없어서 두 번 세지 않아요.
   await q.query(
     `with gone as (delete from navi_inquiries where created_at < $1 returning created_at, department, state)
      insert into navi_inquiry_weeks (week, department, sent, handled, expired_open, updated_at)
@@ -274,38 +277,51 @@ export async function purgeInquiryWeeks(q: Queryable, before: number): Promise<v
 /** 받은 문의함 순서: 아직 끝나지 않은 것(새 문의·확인함) 먼저, 그다음 최근 순 */
 const OPEN_FIRST = `(state in ('done', 'approved', 'rejected')), created_at desc, id desc`;
 
-export async function inquiriesOfDepartment(q: Queryable, department: string): Promise<InquiryRow[]> {
-  const { rows } = await q.query<InquiryRow>(`select ${INQUIRY_COLUMNS} from navi_inquiries where department = $1 order by ${OPEN_FIRST} limit 100`, [
-    department,
-  ]);
+// 11/3(ADR-21 개정): 문의를 읽을 때 지우지 않아요. 지우기는 한 시간 보관 회차(purgeInquiries)만 해요.
+// 그래서 읽고 바꾸는 쿼리는 모두 보관 기간 안(created_at >= since)인 문의만 봐요. 지우기 전 한 시간 사이에도 7일 지난 문의는 안 보여요.
+const since$ = (since: number) => new Date(since).toISOString();
+
+export async function inquiriesOfDepartment(q: Queryable, department: string, since: number): Promise<InquiryRow[]> {
+  const { rows } = await q.query<InquiryRow>(
+    `select ${INQUIRY_COLUMNS} from navi_inquiries where department = $1 and created_at >= $2 order by ${OPEN_FIRST} limit 100`,
+    [department, since$(since)],
+  );
   return rows;
 }
 
-export async function inquiriesOfSender(q: Queryable, pseudonymId: string): Promise<InquiryRow[]> {
+export async function inquiriesOfSender(q: Queryable, pseudonymId: string, since: number): Promise<InquiryRow[]> {
   const { rows } = await q.query<InquiryRow>(
-    `select ${INQUIRY_COLUMNS} from navi_inquiries where sender_pseudonym = $1 order by created_at desc, id desc limit 50`,
-    [pseudonymId],
+    `select ${INQUIRY_COLUMNS} from navi_inquiries where sender_pseudonym = $1 and created_at >= $2 order by created_at desc, id desc limit 50`,
+    [pseudonymId, since$(since)],
   );
   return rows;
 }
 
 /** 받은 부서 사람만 상태를 바꿔요. 새 문의 → 확인함 → 처리함 순서로만 가요. 휴가 요청은 [처리했어요] 대신 승인·반려예요. 바뀌지 않으면 null이에요. */
-export async function moveInquiryState(q: Queryable, id: string, department: string, to: 'seen' | 'done', at: number): Promise<InquiryRow | null> {
+export async function moveInquiryState(
+  q: Queryable,
+  id: string,
+  department: string,
+  to: 'seen' | 'done',
+  at: number,
+  since: number,
+): Promise<InquiryRow | null> {
   const from = to === 'seen' ? ['new'] : ['new', 'seen'];
   const { rows } = await q.query<InquiryRow>(
     `update navi_inquiries set state = $3, updated_at = $5
-      where id = $1 and department = $2 and state = any($4::text[]) and (kind = 'general' or $3 = 'seen')
+      where id = $1 and department = $2 and state = any($4::text[]) and (kind = 'general' or $3 = 'seen') and created_at >= $6
       returning ${INQUIRY_COLUMNS}`,
-    [id, department, to, from, new Date(at).toISOString()],
+    [id, department, to, from, new Date(at).toISOString(), since$(since)],
   );
   return rows[0] ?? null;
 }
 
 /** 받은 부서 사람이 아직 결정 전인 휴가 요청을 잠가서 읽어요(승인 중 두 번 눌러도 한 번만). */
-export async function lockOpenLeaveRequest(q: Queryable, id: string, department: string): Promise<InquiryRow | null> {
+export async function lockOpenLeaveRequest(q: Queryable, id: string, department: string, since: number): Promise<InquiryRow | null> {
   const { rows } = await q.query<InquiryRow>(
-    `select ${INQUIRY_COLUMNS} from navi_inquiries where id = $1 and department = $2 and kind = 'leave' and state in ('new', 'seen') for update`,
-    [id, department],
+    `select ${INQUIRY_COLUMNS} from navi_inquiries
+      where id = $1 and department = $2 and kind = 'leave' and state in ('new', 'seen') and created_at >= $3 for update`,
+    [id, department, since$(since)],
   );
   return rows[0] ?? null;
 }
@@ -323,8 +339,12 @@ export async function decideLeaveRequest(
 }
 
 /** 받은 부서 문의인지 확인하고 돌려줘요(답장 전). */
-export async function inquiryOfDepartment(q: Queryable, id: string, department: string): Promise<InquiryRow | null> {
-  const { rows } = await q.query<InquiryRow>(`select ${INQUIRY_COLUMNS} from navi_inquiries where id = $1 and department = $2`, [id, department]);
+export async function inquiryOfDepartment(q: Queryable, id: string, department: string, since: number): Promise<InquiryRow | null> {
+  const { rows } = await q.query<InquiryRow>(`select ${INQUIRY_COLUMNS} from navi_inquiries where id = $1 and department = $2 and created_at >= $3`, [
+    id,
+    department,
+    since$(since),
+  ]);
   return rows[0] ?? null;
 }
 
@@ -396,4 +416,27 @@ export async function upsertDemoItFaq(q: Queryable, f: ItFaqRow): Promise<void> 
 export async function hasUploadedItFaqs(q: Queryable): Promise<boolean> {
   const { rows } = await q.query<{ found: boolean }>(`select exists (select 1 from navi_it_faqs where source = 'upload') as found`);
   return rows[0]?.found === true;
+}
+
+export type OwnedItFaq = ItFaqRow & { ownerDepartment: string | null; source: 'demo' | 'upload' };
+
+/** IT FAQ와 그 FAQ "문의 행"의 주인 부서·출처(올리기 화면·권한 계산). 문의 행이 없으면 주인 부서도 null이에요. */
+export async function itFaqsWithOwner(q: Queryable): Promise<OwnedItFaq[]> {
+  const { rows } = await q.query<OwnedItFaq>(
+    `select f.id, f.title, f.aliases, f.error_codes as "errorCodes", f.steps, to_char(f.revised_on, 'YYYY-MM-DD') as "revisedOn", f.row_id as "rowId",
+            f.source, r.owner_department as "ownerDepartment"
+       from navi_it_faqs f left join navi_rows r on r.id = f.row_id order by f.id`,
+  );
+  return rows;
+}
+
+/** IT FAQ 파일 반영(11/3)은 이 하나로 써요. 출처는 올린 것(upload)이에요. 사람 이름 칸은 받지도 않아요. */
+export async function upsertUploadedItFaq(q: Queryable, f: ItFaqRow): Promise<void> {
+  await q.query(
+    `insert into navi_it_faqs (id, title, aliases, error_codes, steps, revised_on, row_id, source)
+     values ($1, $2, $3::text[], $4::text[], $5::text[], $6::date, $7, 'upload')
+     on conflict (id) do update set title = excluded.title, aliases = excluded.aliases, error_codes = excluded.error_codes,
+       steps = excluded.steps, revised_on = excluded.revised_on, row_id = excluded.row_id, source = 'upload'`,
+    [f.id, f.title, f.aliases, f.errorCodes, f.steps, f.revisedOn, f.rowId],
+  );
 }

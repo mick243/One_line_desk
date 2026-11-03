@@ -9,8 +9,8 @@ import { createNaviService } from './service';
 
 // F1 담당 안내(ADR-09, R8·R9).
 // - 묻기: 분장표 후보 검색 → LLM은 후보 번호 하나 또는 none → 그 행 원문으로 담당 카드(사람 이름 없음)
-// - "틀렸어요" 기록: 묻기와 다른 피드백 경로, 여섯 칸만, 사용자 ID 없음
-// - S5: 분장표 주인이 자기 부서 행의 기록 묶음을 보고, 파일을 다시 올려(확인 시트) 반영해요
+// - 바꿔 보낸 기록(ADR-26): 문의를 처음 고른 곳과 다른 곳으로 보내면 남아요. 여섯 칸만, 사용자 ID 없음
+// - S5: 분장표 주인이 자기 부서 행의 기록 묶음(이유 둘)을 보고, 파일을 다시 올려(확인 시트) 반영해요
 // - 문의 보내기(ADR-16): 담당 카드 [○○에 문의하기] → 확인 시트 → 주인 부서 받은 문의함 + 앱 안 알림
 export function createNaviModule(ctx: AppContext): DeskModule {
   const navi = createNaviService(ctx);
@@ -43,7 +43,7 @@ export function createNaviModule(ctx: AppContext): DeskModule {
           : { name: 'chart', label: '업무 분장표', mock: false },
       itHelp.hasRealFaqs() ? { name: 'it-faq', label: 'IT FAQ', mock: false } : { name: 'mock-it-faq', label: 'IT FAQ(가상 FAQ)', mock: true },
     ],
-    // 보관 기간(7일, 10/28): 문의(지우며 주간 셈에 더해요)·주간 셈·"틀렸어요" 기록
+    // 보관 기간(7일, 10/28): 문의(지우며 주간 셈에 더해요)·주간 셈·바꿔 보낸 기록. 문의는 여기서만 지워요(11/3, 목록 열기는 읽을 때 걸러요).
     async retention() {
       await inquiries.purge();
       await repo.purgeInquiryWeeks(ctx.db, recordCutoff(ctx.now()));

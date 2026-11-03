@@ -19,9 +19,8 @@ import {
   type OnboardingItem,
   type OnboardingResponse,
   RECORD_KEEP_DAYS,
-  WRONG_REASONS,
-  type WrongFeedbackRequest,
-  type WrongReason,
+  REROUTE_REASONS,
+  type RerouteReason,
 } from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { AppContext } from '../../context';
@@ -156,10 +155,9 @@ export function withRoute(card: Card, by: InquiryRouteBy, alternatives: InquiryT
   return { ...card, actions: { ...card.actions, secondary } };
 }
 
-const FEEDBACK_BAD = () => new DeskError('bad-request', 400, '요청 형식이 맞지 않아요');
 const OTHER_DEPARTMENT = () => new DeskError('other-department', 422, '다른 부서 행은 바뀌지 않아요');
 
-/** 기록 시각은 날 단위(한국 시간 0시)로 줄여요. 묻기 감사 로그의 시각과 이어 붙여 사람을 찾지 못하게 해요(R8). */
+/** 바꿔 보낸 기록 시각은 날 단위(한국 시간 0시)로 줄여요. 감사 로그의 시각과 이어 붙여 사람을 찾지 못하게 해요(R8). */
 export function feedbackDay(now: number): string {
   return new Date(`${kstDate(now)}T00:00:00+09:00`).toISOString();
 }
@@ -399,35 +397,7 @@ export function createNaviService(ctx: AppContext) {
       return naviCard(row, { aiSummarized: false });
     },
 
-    /**
-     * "틀렸어요" 기록(R8). 여섯 칸(예측 종류·고친 종류·예측 행·고른 행·이유 코드·날)만 남겨요.
-     * 사용자 ID·가명 ID·질문 원문은 받지도 남기지도 않아요. 감사 로그도 남기지 않아요:
-     * 감사 로그(가명 ID·시각)와 기록의 시각을 맞대어 "누가 어떤 행을 골랐나"가 다시 이어지지 않게 하려고요.
-     */
-    async recordFeedback(body: WrongFeedbackRequest): Promise<void> {
-      const { predictedKind, correctedKind, predictedRowId, chosenRowId, reason } = body;
-      if (!WRONG_REASONS.includes(reason)) throw FEEDBACK_BAD();
-      const rowReason: WrongReason[] = ['other-owner', 'not-listed', 'content-changed'];
-      if (rowReason.includes(reason)) {
-        if (predictedKind !== 'navi' || !predictedRowId || correctedKind !== undefined) throw FEEDBACK_BAD();
-        if (reason === 'other-owner' ? !chosenRowId || chosenRowId === predictedRowId : chosenRowId !== undefined) throw FEEDBACK_BAD();
-      } else if (!correctedKind || correctedKind === predictedKind || chosenRowId !== undefined) {
-        throw FEEDBACK_BAD();
-      }
-      const ids = [predictedRowId, chosenRowId].filter((x): x is string => typeof x === 'string');
-      if ((await repo.findRows(ctx.db, ids)).length !== new Set(ids).size) throw FEEDBACK_BAD();
-
-      await repo.insertFeedback(ctx.db, {
-        predictedKind,
-        correctedKind: correctedKind ?? null,
-        predictedRow: predictedRowId ?? null,
-        chosenRow: chosenRowId ?? null,
-        reason,
-        at: feedbackDay(ctx.now()),
-      });
-    },
-
-    /** S5: 우리 부서 행과 개정일 뒤에 쌓인 기록 묶음(이유 넷별 건수). 누가 눌렀는지·질문 원문은 없어요. */
+    /** S5: 우리 부서 행과 개정일 뒤에 쌓인 기록 묶음(받는 곳을 바꿔 보낸 이유 둘별 건수). 누가 보냈는지·글은 없어요. */
     async listChart(user: DeskUser): Promise<ChartListResponse> {
       const rows = await repo.rowsOfDepartment(ctx.db, user.department);
       const counts = await repo.feedbackCounts(
@@ -436,7 +406,7 @@ export function createNaviService(ctx: AppContext) {
       );
       const summaries: ChartRowSummary[] = rows.map((r) => {
         const since = dayStart(r.revisedOn);
-        const feedback = Object.fromEntries(WRONG_REASONS.map((k) => [k, 0])) as Record<WrongReason, number>;
+        const feedback = Object.fromEntries(REROUTE_REASONS.map((k) => [k, 0])) as Record<RerouteReason, number>;
         for (const c of counts) if (c.row === r.id && Date.parse(c.at) >= since) feedback[c.reason] += c.n;
         return {
           id: r.id,

@@ -1,4 +1,4 @@
-import type { Card, CardAction } from '@one-line-desk/shared';
+import { type Card, type CardAction, deskLinkText } from '@one-line-desk/shared';
 import { makeCard } from '../../core/cards';
 import type { ChartRow } from './chart-csv';
 import { GENERAL_DESK } from './fixtures';
@@ -26,7 +26,8 @@ export function candidateLabel(row: Pick<CardRow, 'task' | 'team'>): string {
  * - others: "틀렸어요 → 다른 담당이에요"에 보여 줄 다른 후보(최대 3개). 없으면 틀렸어요를 붙이지 않아요(직접 고른 행 카드).
  */
 export function naviCard(row: CardRow, opts: { aiSummarized: boolean; others?: CardRow[] }): Card {
-  const primary: CardAction | undefined = row.deskUrl ? { type: 'link', text: '창구 열기', href: row.deskUrl } : undefined;
+  // 창구 링크가 mailto:면 [메일 보내기], https면 [창구 열기]예요(11/3).
+  const primary: CardAction | undefined = row.deskUrl ? { type: 'link', text: deskLinkText(row.deskUrl), href: row.deskUrl } : undefined;
   const inquire: CardAction = { type: 'inquire', text: `${row.team}에 문의하기`, rowId: row.id, team: row.team, task: row.task };
   return makeCard({
     id: `navi-${row.id}`,

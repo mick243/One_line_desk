@@ -1,32 +1,25 @@
 import type { CardAction } from '../cards';
-import type { Kind } from '../kinds';
 import { RECORD_KEEP_DAYS } from '../retention';
 
-// "틀렸어요" 선택지(R8). 세 문서가 같은 넷을 써요.
-export const WRONG_REASONS = ['other-owner', 'not-listed', 'content-changed', 'wrong-kind'] as const;
-export type WrongReason = (typeof WRONG_REASONS)[number];
+// 받는 곳을 바꿔 보낸 기록의 이유(11/2 ADR-26, 옛 "틀렸어요" 자리). 수정 제안함 기록 묶음은 이 둘만 세요.
+// DB check 제약(110_navi.sql)에는 옛 값 둘(content-changed·wrong-kind)이 남아 있지만 이제 쓰지 않아요(11/3).
+export const REROUTE_REASONS = ['other-owner', 'not-listed'] as const;
+export type RerouteReason = (typeof REROUTE_REASONS)[number];
 
-export const WRONG_REASON_LABEL: Record<WrongReason, string> = {
+export const REROUTE_REASON_LABEL: Record<RerouteReason, string> = {
   'other-owner': '다른 팀으로 바꿔 보냄',
   'not-listed': '대표 창구로 바꿔 보냄',
-  'content-changed': '안내 내용이 바뀌었어요',
-  'wrong-kind': '종류가 달라요',
 };
 
-/** 분장표 행 ID 모양(예: FIN-01). 파일 가져오기·피드백·행 카드가 같이 써요. */
+/** 분장표 행 ID 모양(예: FIN-01). 파일 가져오기·문의·행 카드가 같이 써요. */
 export const NAVI_ROW_ID_PATTERN = '^[A-Z]{2,5}-[0-9]{2,3}$';
 
-/** 기록은 이 여섯 칸뿐이에요. 사용자 ID·가명 ID·질문 원문은 없어요(R8). 시각은 서버가 붙여요. */
-export interface WrongFeedbackRequest {
-  predictedKind: Kind;
-  correctedKind?: Kind;
-  predictedRowId?: string;
-  chosenRowId?: string;
-  reason: WrongReason;
-}
-
-export interface WrongFeedbackResponse {
-  saved: true;
+/**
+ * 분장표 창구 링크 버튼 이름(11/3). mailto:면 메일 앱이 열려서 [메일 보내기], 아니면(https) [창구 열기]예요.
+ * 담당 카드(서버)·첫 2주 할 일(화면)이 같이 써요.
+ */
+export function deskLinkText(url: string): '메일 보내기' | '창구 열기' {
+  return /^mailto:/i.test(url.trim()) ? '메일 보내기' : '창구 열기';
 }
 
 /** POST /api/navi/rows/card 본문. 행 ID가 URL·접근 기록에 남지 않게 POST 본문으로 보내요(R11). */
@@ -65,7 +58,7 @@ export interface ChartRowSummary {
   aliases: string[];
   /** YYYY-MM-DD */
   revisedOn: string;
-  feedback: Record<WrongReason, number>;
+  feedback: Record<RerouteReason, number>;
   total: number;
 }
 
@@ -339,4 +332,69 @@ export function itInquiryDraft(input: { maskedText: string; faqTitle?: string })
   // 넘치면 앞을 줄이고 끝을 남겨요. 오류 원인은 대개 끝에 있어요(11/1 QA M5).
   const kept = text.length > room ? `…${text.slice(text.length - room + 1)}` : text;
   return `${head}${label}${kept}`;
+}
+
+// ── IT FAQ 파일 올리기(11/3, ADR-25 "다시 볼 조건"). 분장표 S5 올리기와 같은 방식이에요. ──
+// IT FAQ 주인 부서(FAQ "문의 행"이 가리키는 분장표 행의 주인 부서, 지금은 IT지원팀)의 분장표 주인만 올려요.
+// 정해진 칸만 읽고 나머지 칸(사람 이름 등)은 버려요. 단계는 원문 그대로 저장해요(AI가 고치지 않아요).
+
+export const IT_FAQ_COLUMNS = {
+  id: 'ID',
+  title: '제목',
+  aliases: '다른 말',
+  errorCodes: '오류 코드',
+  steps: '단계',
+  revisedOn: '개정일',
+  rowId: '문의 행',
+} as const;
+export type ItFaqColumn = keyof typeof IT_FAQ_COLUMNS;
+/** "다른 말"·"오류 코드" 칸 안에서 여러 값을 나누는 글자. "단계"는 칸 안 줄바꿈으로 나눠요. */
+export const IT_FAQ_LIST_SEPARATOR = '|';
+
+/** IT FAQ 한 항목(올리기 화면 목록) */
+export interface ItFaqSummary {
+  id: string;
+  title: string;
+  aliases: string[];
+  errorCodes: string[];
+  steps: string[];
+  /** YYYY-MM-DD */
+  revisedOn: string;
+  /** 해결이 안 될 때 문의를 보내는 분장표 행 */
+  rowId: string | null;
+  /** 가상 FAQ(demo)인지 올린 FAQ(upload)인지 */
+  source: 'demo' | 'upload';
+}
+
+/** GET /api/navi/it-faq. IT FAQ 주인 부서가 아니면 enabled가 false이고 목록이 비어 있어요. */
+export interface ItFaqListResponse {
+  department: string;
+  enabled: boolean;
+  faqs: ItFaqSummary[];
+}
+
+export interface ItFaqChange {
+  faqId: string;
+  title: string;
+  type: 'changed' | 'added';
+  fields: { name: string; before?: string; after: string }[];
+}
+
+/** POST /api/navi/it-faq/preview(본문은 ChartUploadRequest와 같아요) */
+export interface ItFaqPreviewResponse {
+  department: string;
+  baseVersion: string;
+  changes: ItFaqChange[];
+  /** 파일에 있었지만 바뀌지 않은 FAQ 수 */
+  unchanged: number;
+  /** 파일에 없어서 그대로 두는 우리 부서 FAQ 수(지우지 않아요) */
+  untouched: number;
+}
+
+/** POST /api/navi/it-faq/apply(본문은 ChartApplyRequest와 같아요) */
+export interface ItFaqApplyResponse {
+  applied: number;
+  /** YYYY-MM-DD */
+  revisedOn: string;
+  message: string;
 }
