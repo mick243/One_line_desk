@@ -519,7 +519,7 @@ describe('보관 지우기 인덱스(470)', () => {
     const t = await createTestApp();
     opened.push(t);
     const { rows } = await t.db.query<{ indexname: string; indexdef: string }>(
-      "select indexname, indexdef from pg_indexes where tablename in ('pantry_order_lines', 'pantry_merges') order by indexname",
+      "select indexname, indexdef from pg_indexes where schemaname = current_schema() and tablename in ('pantry_order_lines', 'pantry_merges') order by indexname",
     );
     const defs = new Map(rows.map((r) => [r.indexname, r.indexdef]));
     expect(defs.get('pantry_order_lines_bundle')).toMatch(/\(bundle_id\)$/);
