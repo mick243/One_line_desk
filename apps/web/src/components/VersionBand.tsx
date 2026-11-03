@@ -14,7 +14,15 @@ export function VersionBand() {
   const [shown, setShown] = useState(newVersionAvailable);
   const [closed, setClosed] = useState(false);
   const [draft, setDraft] = useState(false);
-  useEffect(() => onNewVersion(() => setShown(true)), []);
+  // 옛 화면 조각을 부르지 못하면(markNewVersion) 닫아 둔 띠도 다시 띄워요. 머리로 알아챈 새 판은 한 번만 알려요.
+  useEffect(
+    () =>
+      onNewVersion(() => {
+        setShown(true);
+        setClosed(false);
+      }),
+    [],
+  );
   // 화면이 바뀐 뒤(그려진 뒤)에도 다시 봐요. 로그인 화면으로 넘어가 입력 칸이 사라지면 "쓰던 글" 문구도 빼요.
   useEffect(() => {
     if (shown) setDraft(hasDraft());

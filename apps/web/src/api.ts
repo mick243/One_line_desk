@@ -91,6 +91,15 @@ export function onNewVersion(listener: () => void): () => void {
   return () => newVersionListeners.delete(listener);
 }
 
+/**
+ * 새 판이 있다고 알려요. 서버 판 머리가 다를 때 한 번, 배포로 지워진 옛 화면 조각을 부르지 못했을 때마다 불러요.
+ * 옛 조각을 못 부른 건 사람이 화면을 열려다 막힌 거라, 닫아 둔 새 버전 띠도 다시 띄워요.
+ */
+export function markNewVersion(): void {
+  newVersion = true;
+  for (const listener of newVersionListeners) listener();
+}
+
 /** background: 사람이 누른 게 아닌 반복 요청(폴링). 서버가 쉬는 시간을 늘리지 않아요(ADR-20). */
 async function raw<T>(method: string, url: string, body?: unknown, opts: { background?: boolean } = {}): Promise<{ status: number; data: T }> {
   if (sessionEnded && !isAuthPath(url)) return { status: 401, data: { error: 'login-required', message: SESSION_ENDED_MESSAGE } as T };
@@ -108,10 +117,7 @@ async function raw<T>(method: string, url: string, body?: unknown, opts: { backg
   // 서버에 닿지 못하거나 15초 안에 답이 없어도 던지지 않고 실패로 돌려줘요. 화면이 멈추지 않고 문구를 보여 줘요(배포 준비 회의 D2, 개선 회의 A3).
   if (res === 'offline') return { status: 0, data: { error: 'unavailable', message: unavailableMessage(0, false) } as T };
   if (res === 'timeout') return { status: 0, data: { error: 'timeout', message: TIMEOUT_MESSAGE } as T };
-  if (!newVersion && isOtherBuild(res.headers.get('x-desk-build'), WEB_BUILD)) {
-    newVersion = true;
-    for (const listener of newVersionListeners) listener();
-  }
+  if (!newVersion && isOtherBuild(res.headers.get('x-desk-build'), WEB_BUILD)) markNewVersion();
   // 배포 중 관문이 주는 502·503·504와 HTML 오류는 서버 글(영어·HTML) 대신 정해진 문구로 바꿔요.
   const unavailable = unavailableMessage(res.status, (res.headers.get('content-type') ?? '').includes('application/json'));
   if (unavailable) return { status: res.status, data: { error: 'unavailable', message: unavailable } as T };
