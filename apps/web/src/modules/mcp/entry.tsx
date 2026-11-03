@@ -214,8 +214,7 @@ export function LinkEntry({
   // 링크를 열 때 한 번만 쓰는 값들. 행동 함수는 렌더마다 바뀔 수 있어서 ref로 읽어요.
   const runRef = useRef(actions.run);
   runRef.current = actions.run;
-  // 장비 대여 확인 시트는 링크를 열 때 한 번만 자동으로 띄워요. 닫으면 카드의 [빌리기]로 다시 열어요.
-  const autoOpened = useRef(false);
+  // 장비 대여 확인 시트는 저절로 띄우지 않아요. 시트를 열면 확인 대기(plan)가 생겨서, 링크를 연 것만으로는 아무것도 쓰지 않게 사람이 카드의 [빌리기]를 눌러요(11/3).
 
   useEffect(() => {
     let alive = true;
@@ -261,15 +260,6 @@ export function LinkEntry({
       alive = false;
     };
   }, [token]);
-
-  // 장비 대여: 다시 확인한 카드에 [빌리기]가 있으면 확인 시트를 바로 띄워요. 시트의 [빌리기]가 유일한 확인이에요.
-  useEffect(() => {
-    if (view.kind !== 'cards' || view.about !== 'equipment' || autoOpened.current) return;
-    autoOpened.current = true;
-    const card = view.cards[0];
-    const primary = card?.actions.primary;
-    if (card && primary?.type === 'propose') void runRef.current(primary, card);
-  }, [view]);
 
   const backButton = (about: LinkAbout | 'navi') => (
     <button type='button' className='secondary' onClick={() => void actions.run({ type: 'navigate', text: BACK_TO[about].text, to: BACK_TO[about].to })}>
