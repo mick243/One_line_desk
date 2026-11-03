@@ -6,6 +6,7 @@ import {
   type InquiryListResponse,
   LEAVE_REJECT_REASON_MAX,
   type LeaveDay,
+  leaveDayWord,
   LEAVE_TYPE_LABEL,
   type LeaveRequestBalance,
   maskLine,
@@ -30,7 +31,8 @@ function when(iso: string): string {
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const dayLabel = (date: string) => `${Number(date.slice(5, 7))}월 ${Number(date.slice(8, 10))}일(${WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]})`;
 const fmt = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}일`;
-const daysText = (days: readonly LeaveDay[]) => days.map((d) => `${dayLabel(d.date)} ${d.kind === 'full' ? '하루' : '반차'}`).join(' · ');
+/** "11월 5일(목) 오전 반차". 11/3 전에 보낸 구분 없는 반차는 "반차(구분 없음)"이에요. */
+const daysText = (days: readonly LeaveDay[]) => days.map((d) => `${dayLabel(d.date)} ${leaveDayWord(d)}`).join(' · ');
 /** 목록 머리표: 휴가(연차)·공가·병가 */
 const kindTag = (item: InquiryItem) =>
   item.kind !== 'leave' ? null : item.leave?.type === 'official' ? '공가' : item.leave?.type === 'sick' ? '병가' : '휴가';

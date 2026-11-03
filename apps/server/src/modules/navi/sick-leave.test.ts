@@ -10,7 +10,7 @@ import { computeLeave, isSickLeaveQuestion, needsSickNote, readSickDates, sickUs
 
 type TestApp = Awaited<ReturnType<typeof createTestApp>>;
 type Session = Awaited<ReturnType<TestApp['loginAs']>>;
-type Day = { date: string; kind: 'full' | 'half' };
+type Day = { date: string; kind: 'full' | 'half'; half?: 'am' | 'pm' };
 const opened: TestApp[] = [];
 afterEach(async () => {
   while (opened.length) await opened.pop()!.close();
@@ -139,23 +139,23 @@ describe('병가 요청(ADR-24 개정)', () => {
   it('[병가-보내기] 보내면 인사팀이 병가로 받고, 결정 전에는 보낸 사람 올해 병가 쓴 날을 그 요청 안에서 봐요. 남은 연차는 오지 않아요', async () => {
     const { t, haneul, jihu } = await setup();
     const sent = await sendSick(haneul, [
-      { date: '2026-10-26', kind: 'half' },
+      { date: '2026-10-26', kind: 'half', half: 'pm' },
       { date: '2026-10-23', kind: 'full' },
     ]);
     expect(sent.status).toBe(200);
     expect(sent.body.card).toMatchObject({ label: '확정', headline: '인사팀에 병가 요청을 보냈어요' });
-    expect(sent.body.card.fields).toContainEqual({ name: '쓸 날', value: '10월 23일(금) 하루 · 10월 26일(월) 반차 · 병가 1.5일' });
+    expect(sent.body.card.fields).toContainEqual({ name: '쓸 날', value: '10월 23일(금) 하루 · 10월 26일(월) 오후 반차 · 병가 1.5일' });
     expect(sent.body.card.fields).toContainEqual({ name: '병가 사유', value: '병원 진료' });
     expect(sent.body.card.fields.find((f: { name: string }) => f.name === '진단서')).toBeUndefined();
 
     const [item] = await inbox(jihu);
-    expect(item).toMatchObject({ question: '병가 신청 · 병원 진료 · 10월 23일(금) 하루 · 10월 26일(월) 반차', reason: '병원 진료', canDecide: true });
+    expect(item).toMatchObject({ question: '병가 신청 · 병원 진료 · 10월 23일(금) 하루 · 10월 26일(월) 오후 반차', reason: '병원 진료', canDecide: true });
     expect(item!.leave).toEqual({
       type: 'sick',
       sickReason: 'clinic',
       days: [
         { date: '2026-10-23', kind: 'full' },
-        { date: '2026-10-26', kind: 'half' },
+        { date: '2026-10-26', kind: 'half', half: 'pm' },
       ],
       total: 1.5,
       sick: { year: 2026, used: 1.5, limit: null },
@@ -215,7 +215,7 @@ describe('병가 요청(ADR-24 개정)', () => {
     const { haneul, jihu } = await setup();
     const before = await remainingOf(haneul);
     await sendSick(haneul, [
-      { date: '2026-10-27', kind: 'half' },
+      { date: '2026-10-27', kind: 'half', half: 'am' },
       { date: '2026-10-28', kind: 'full' },
     ]);
     const [item] = await inbox(jihu);
@@ -247,7 +247,7 @@ describe('병가 요청(ADR-24 개정)', () => {
     const week = (k: number, half = false): Day[] => [
       ...['2026-11-02', '2026-11-03', '2026-11-04'].slice(0, k).map((date) => ({ date, kind: 'full' as const })),
       // 11월 6일은 하늘의 연차 예정일이라 반차는 5일에 둬요.
-      ...(half ? [{ date: '2026-11-05', kind: 'half' as const }] : []),
+      ...(half ? [{ date: '2026-11-05', kind: 'half' as const, half: 'am' as const }] : []),
     ];
     const three = await sendSick(haneul, week(3));
     expect(three.body.card.fields.find((f: { name: string }) => f.name === '진단서')).toBeUndefined();

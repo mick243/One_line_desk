@@ -143,7 +143,10 @@ export const TOOLS: ToolDef[] = [
       '남은 연차나 병가 쓴 날 같은 숫자는 돌려주지 않으니, 숫자를 물으면 앱에서 보라고 안내해 주세요. ' +
       '사유는 링크에 담지 않아서 사람이 앱 양식에서 직접 고르거나 써요. 보내기는 앱 확인 시트에서 한 번이에요. 링크를 여는 것만으로는 아무것도 보내지 않아요.',
     input: {
-      days: { type: 'object[]', description: '쓸 날 목록. 날마다 date(YYYY-MM-DD)와 kind(full 하루 · half 반차)' },
+      days: {
+        type: 'object[]',
+        description: '쓸 날 목록. 날마다 date(YYYY-MM-DD)와 kind(full 하루 · am 오전 반차 · pm 오후 반차). 반차인데 오전·오후를 모르면 먼저 사람에게 물어요',
+      },
       type: { type: 'string', description: '종류: annual(연차) · official(공가) · sick(병가)' },
     },
   },

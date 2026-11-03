@@ -26,7 +26,8 @@ kill_timeout = 60
   # AI 공급자(11/3 사용자 결정): Anthropic을 써요. 키는 비밀이라 여기 적지 않고 `fly secrets set ANTHROPIC_API_KEY=…`로만 넣어요.
   # 키 없이 배포하면 운영 설정 검사가 막아서 서버가 뜨지 않아요. Gemini로 바꾸려면 DESK_AI_PROVIDER="gemini"·DESK_AI_MODEL="gemini-…"·GEMINI_API_KEY(비밀).
   DESK_AI_PROVIDER = "anthropic"
-  DESK_AI_MODEL = "claude-opus-5-5"
+  # 모델(11/3 사용자 결정): 앱이 모델에 맡기는 일은 짧은 분류·번호 고르기라서 빠른 모델(Haiku)을 써요.
+  DESK_AI_MODEL = "claude-haiku-5-5"
   # 무보관 계약을 했다고 가정한 시연이에요(11/3 사용자 결정). 사람이 쓴 질문 글(등급 1)이 모델로 가요. 자료는 모두 가상이에요.
   NO_RETENTION_CONTRACT_CONFIRMED = "true"
 

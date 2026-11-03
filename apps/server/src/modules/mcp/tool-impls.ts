@@ -35,6 +35,7 @@ import {
   LEAVE_INPUT,
   LEAVE_OUTPUT,
   type LeaveInput,
+  leaveDaysOfInput,
   PANTRY_INPUT,
   PANTRY_OUTPUT,
   type PantryInput,
@@ -168,7 +169,7 @@ const linkTo = (env: ToolEnv, token: string) => `${env.issuer}/r/${token}`;
 /** 휴가 신청 준비: 날짜 형식·주말·기간만 보고 링크를 줘요. 연차 자료(등급 2)는 읽지 않아서 숫자가 나갈 길이 없어요. */
 async function prepareLeave(env: ToolEnv, raw: unknown): Promise<ToolOutcome> {
   const input = raw as LeaveInput;
-  const prepared = naviRead(env).prepareLeave({ pseudonymId: env.principal.pseudonymId }, { days: input.days, type: input.type });
+  const prepared = naviRead(env).prepareLeave({ pseudonymId: env.principal.pseudonymId }, { days: leaveDaysOfInput(input.days), type: input.type });
   const out = shapeLeave(input.type, prepared.ok ? { ok: true, days: prepared.days, link: linkTo(env, prepared.token) } : prepared);
   return { result: out.link ? 'found' : 'none', out };
 }

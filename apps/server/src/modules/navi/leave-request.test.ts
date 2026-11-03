@@ -28,7 +28,7 @@ async function leaveCard(me: Session, text: string): Promise<Card> {
   return cards.find((c) => c.id === 'navi-my-leave')!;
 }
 const remainingOf = async (me: Session) => Number((await leaveCard(me, '내 연차 몇 개 남았어?')).headline.match(/([\d.]+)일/)![1]);
-const sendLeave = (me: Session, days: { date: string; kind: 'full' | 'half' }[], reason = REASON) =>
+const sendLeave = (me: Session, days: { date: string; kind: 'full' | 'half'; half?: 'am' | 'pm' }[], reason = REASON) =>
   me.call('POST', '/api/navi/inquiries', { rowId: 'HR-02', question: '휴가 신청', reason, requestId: requestId(), leave: { days } });
 const inbox = async (me: Session) => ((await me.call('GET', '/api/navi/inquiries/inbox')).body as InquiryListResponse).items;
 const mine = async (me: Session) => ((await me.call('GET', '/api/navi/inquiries/mine')).body as InquiryListResponse).items;
@@ -59,18 +59,18 @@ describe('휴가 요청(ADR-24)', () => {
     const { t, haneul, jihu, doyun } = await setup();
     const before = await remainingOf(haneul);
     const sent = await sendLeave(haneul, [
-      { date: '2026-11-04', kind: 'half' },
+      { date: '2026-11-04', kind: 'half', half: 'am' },
       { date: '2026-11-03', kind: 'full' },
     ]);
     expect(sent.status).toBe(200);
     expect(sent.body.card).toMatchObject({ label: '확정', headline: '인사팀에 휴가 요청을 보냈어요' });
-    expect(sent.body.card.fields).toContainEqual({ name: '쓸 날', value: '11월 3일(화) 하루 · 11월 4일(수) 반차 · 연차 1.5일' });
+    expect(sent.body.card.fields).toContainEqual({ name: '쓸 날', value: '11월 3일(화) 하루 · 11월 4일(수) 오전 반차 · 연차 1.5일' });
 
     const [item] = await inbox(jihu);
     expect(item).toMatchObject({
       kind: 'leave',
       state: 'new',
-      question: '휴가 신청 · 11월 3일(화) 하루 · 11월 4일(수) 반차',
+      question: '휴가 신청 · 11월 3일(화) 하루 · 11월 4일(수) 오전 반차',
       reason: REASON,
       sender: { name: '가상 직원 하늘', department: '재무팀' },
       leave: { total: 1.5, balance: { remaining: before, after: before - 1.5 } },
@@ -96,7 +96,7 @@ describe('휴가 요청(ADR-24)', () => {
     const before = await remainingOf(haneul);
     await sendLeave(haneul, [
       { date: '2026-11-03', kind: 'full' },
-      { date: '2026-11-04', kind: 'half' },
+      { date: '2026-11-04', kind: 'half', half: 'pm' },
     ]);
     const [item] = await inbox(jihu);
     const ok = await jihu.call('POST', `/api/navi/inquiries/${item!.id}/decision`, { decision: 'approved' });
@@ -145,7 +145,7 @@ describe('휴가 요청(ADR-24)', () => {
 
   it('날 검사: 지난 날·주말·같은 날 두 번·이미 근태 기록에 있는 날은 보내지 않아요', async () => {
     const { haneul } = await setup();
-    const reject = async (days: { date: string; kind: 'full' | 'half' }[], status: number, message: RegExp) => {
+    const reject = async (days: { date: string; kind: 'full' | 'half'; half?: 'am' | 'pm' }[], status: number, message: RegExp) => {
       const res = await sendLeave(haneul, days);
       expect(res.status, JSON.stringify(days)).toBe(status);
       expect(res.body.message).toMatch(message);
@@ -155,7 +155,7 @@ describe('휴가 요청(ADR-24)', () => {
     await reject(
       [
         { date: '2026-11-03', kind: 'full' },
-        { date: '2026-11-03', kind: 'half' },
+        { date: '2026-11-03', kind: 'half', half: 'am' },
       ],
       400,
       /두 번/,
@@ -280,7 +280,7 @@ describe('연차 기간별 계산(10/30 버그: 다음 기간 날인데 "7.5일 
     // 이번 기간과 다음 기간에 걸친 새 요청: 이번 기간 하루, 다음 기간 하루. 다음 기간은 승인된 2일이 이미 빠져 있어요.
     await sendLeave(doyun, [
       { date: '2026-11-27', kind: 'full' },
-      { date: '2027-03-02', kind: 'half' },
+      { date: '2027-03-02', kind: 'half', half: 'am' },
     ]);
     const second = (await inbox(jihu)).find((i) => i.state === 'new')!.leave!.balance!;
     expect(second).toMatchObject({ remaining: now.remaining, after: now.remaining - 1, days: 1, next: { remaining: 13, after: 12.5, days: 0.5 } });

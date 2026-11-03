@@ -15,10 +15,13 @@ import {
   type InquiryRequest,
   kstDate,
   type LeaveDay,
+  leaveDayHalves,
+  leaveDayWord,
   LEAVE_REJECT_REASON_MAX,
   LEAVE_REQUEST_MAX_DAYS,
   LEAVE_TYPE_LABEL,
   type LeaveRequestBalance,
+  mergeLeaveHalves,
   type LeaveType,
   OFFICIAL_LEAVE_REASON_LABEL,
   type OfficialLeaveReason,
@@ -65,13 +68,12 @@ function subject(word: string): string {
 
 const SENT_TAIL = `보낸 글은 ${INQUIRY_KEEP_DAYS}일 동안 보관돼요`;
 const OPEN: readonly repo.InquiryRow['state'][] = ['new', 'seen'];
-const LEAVE_WORD = { full: '하루', half: '반차' } as const;
 
 const leaveTotal = (days: readonly LeaveDay[]) => days.reduce((n, d) => n + (d.kind === 'full' ? 1 : HALF_DAY), 0);
 const dayText = (d: string) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일(${WEEKDAYS[weekdayOf(d)]})`;
 const fmtDays = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}일`;
-/** "11월 3일(월) 하루 · 11월 4일(화) 반차" */
-export const leaveSummary = (days: readonly LeaveDay[]) => days.map((d) => `${dayText(d.date)} ${LEAVE_WORD[d.kind]}`).join(' · ');
+/** "11월 3일(월) 하루 · 11월 5일(수) 오전 반차". 11/3 전에 보낸 구분 없는 반차는 "반차(구분 없음)"이에요. */
+export const leaveSummary = (days: readonly LeaveDay[]) => days.map((d) => `${dayText(d.date)} ${leaveDayWord(d)}`).join(' · ');
 /** 알림·카드에 쓰는 요청 이름: "휴가 요청"(연차), "공가 요청", "병가 요청", "문의" */
 const requestWord = (i: Pick<repo.InquiryRow, 'kind' | 'leaveType'>) =>
   i.kind !== 'leave' ? '문의' : i.leaveType === 'official' ? '공가 요청' : i.leaveType === 'sick' ? '병가 요청' : '휴가 요청';
@@ -179,10 +181,17 @@ function checked(text: string, max: number, what: string): string {
   return result.text;
 }
 
-/** 휴가 날 검사: 오늘부터 1년 안의 평일, 겹치지 않게, 날짜 순으로 정리해요. 병가는 지난 3일까지 받아요(earliest). */
-function checkedLeaveDays(days: readonly LeaveDay[], today: string, earliest = today): LeaveDay[] {
-  if (!days.length) throw new DeskError('bad-request', 400, '쓸 날을 하나 이상 골라 주세요');
-  if (days.length > LEAVE_REQUEST_MAX_DAYS) throw new DeskError('bad-request', 400, `한 번에 ${LEAVE_REQUEST_MAX_DAYS}일까지 신청할 수 있어요`);
+/**
+ * 휴가 날 검사: 오늘부터 1년 안의 평일, 겹치지 않게, 날짜 순으로 정리해요. 병가는 지난 3일까지 받아요(earliest).
+ * 11/3: 반차는 오전·오후 중 하나가 꼭 있어야 해요. 같은 날 오전 반차와 오후 반차를 같이 고르면 하루로 합쳐요.
+ */
+function checkedLeaveDays(input: readonly LeaveDay[], today: string, earliest = today): LeaveDay[] {
+  if (!input.length) throw new DeskError('bad-request', 400, '쓸 날을 하나 이상 골라 주세요');
+  if (input.length > LEAVE_REQUEST_MAX_DAYS) throw new DeskError('bad-request', 400, `한 번에 ${LEAVE_REQUEST_MAX_DAYS}일까지 신청할 수 있어요`);
+  for (const d of input) {
+    if (d.kind === 'half' && d.half !== 'am' && d.half !== 'pm') throw new DeskError('bad-request', 400, '반차는 오전·오후 중 하나를 골라 주세요');
+  }
+  const days = mergeLeaveHalves(input);
   const last = addDays(today, 365);
   const seen = new Set<string>();
   for (const d of days) {
@@ -196,7 +205,7 @@ function checkedLeaveDays(days: readonly LeaveDay[], today: string, earliest = t
     if (seen.has(d.date)) throw new DeskError('bad-request', 400, `${dayText(d.date)}을 두 번 골랐어요`);
     seen.add(d.date);
   }
-  return [...days].map((d) => ({ date: d.date, kind: d.kind })).sort((a, b) => a.date.localeCompare(b.date));
+  return days.sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**
@@ -216,10 +225,18 @@ function checkedLeaveType(leave: NonNullable<InquiryRequest['leave']>): {
   return { type: t, reasonCode: t === 'official' ? leave.officialReason! : null, sickCode: t === 'sick' ? leave.sickReason! : null };
 }
 
-/** 근태 기록에 이미 있는 날(쓴 날·예정·승인된 날)과 겹치면 막아요. */
+/**
+ * 근태 기록에 이미 있는 날(쓴 날·예정·승인된 날)과 겹치면 막아요. 11/3: 오전·오후 단위로 봐요.
+ * 그날 오전 반차가 있으면 오후 반차는 되고 오전 반차·하루는 겹쳐요. 오전·오후를 모르는 반차는 하루로 봐요.
+ */
 function overlapping(record: LeaveRecord | null, days: readonly LeaveDay[]): string[] {
-  const used = new Set((record?.uses ?? []).map((u) => u.date));
-  return days.filter((d) => used.has(d.date)).map((d) => dayText(d.date));
+  const taken = new Map<string, Set<string>>();
+  for (const u of record?.uses ?? []) {
+    const set = taken.get(u.date) ?? new Set<string>();
+    for (const h of leaveDayHalves(u)) set.add(h);
+    taken.set(u.date, set);
+  }
+  return days.filter((d) => leaveDayHalves(d).some((h) => taken.get(d.date)?.has(h))).map((d) => `${dayText(d.date)} ${leaveDayWord(d)}`);
 }
 
 export function createInquiryService(ctx: AppContext) {
@@ -403,7 +420,8 @@ export function createInquiryService(ctx: AppContext) {
             recorded =
               (await ctx.adapters.leave.recordUses(
                 person,
-                i.leaveDays.map((day) => ({ ...day, type })),
+                // 반차는 오전·오후(half)를 같이 넣어요. 같은 팀 일정이 "오전 부재"·"오후 부재"로 보여요(11/3).
+                i.leaveDays.map((day) => ({ date: day.date, kind: day.kind, ...(day.kind === 'half' && day.half ? { half: day.half } : {}), type })),
               )) === 'recorded';
           }
           const done = await repo.decideLeaveRequest(q, id, { state: d.decision, reason, recorded, at: now });

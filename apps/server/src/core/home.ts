@@ -23,6 +23,7 @@ import {
   KST_OFFSET,
   LEAVE_TYPE_LABEL,
   type LeaveDay,
+  leaveDayWord,
   type ModuleKind,
   TEAM_SCHEDULE_TEXT,
 } from '@one-line-desk/shared';
@@ -454,7 +455,7 @@ export class HomeDesk {
 
 function leaveDaysText(days: LeaveDay[]): string {
   if (!days.length) return '날을 고르지 않았어요';
-  const shown = days.slice(0, 3).map((d) => `${dayLabel(d.date)} ${d.kind === 'half' ? '반차' : '하루'}`);
+  const shown = days.slice(0, 3).map((d) => `${dayLabel(d.date)} ${leaveDayWord(d)}`);
   return days.length > 3 ? `${shown.join(' · ')} 외 ${days.length - 3}일` : shown.join(' · ');
 }
 

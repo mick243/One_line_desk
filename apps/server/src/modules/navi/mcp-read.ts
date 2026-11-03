@@ -6,6 +6,7 @@ import {
   LEAVE_REQUEST_MAX_DAYS,
   LEAVE_TYPES,
   type LeaveDay,
+  mergeLeaveHalves,
   NAVI_ROW_ID_PATTERN,
   recordCutoff,
   SICK_LEAVE_PAST_DAYS,
@@ -51,13 +52,13 @@ export const inquireLinkHandler: PlanHandler<InquireLink> = {
   },
 };
 
-// 휴가 준비 링크(11/3 확인 링크 넓히기). 토큰에는 날짜·하루/반차·종류만 넣어요. 사유·남은 연차는 없어요.
+// 휴가 준비 링크(11/3 확인 링크 넓히기). 토큰에는 날짜·하루/오전 반차/오후 반차·종류만 넣어요. 사유·남은 연차는 없어요.
 // 이 처리기도 실행하지 않아요: 링크는 휴가 신청 양식을 채워 열 뿐이고, 보내기는 양식의 확인 시트 [보내기]예요.
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const LeaveLinkSchema = z
   .object({
     days: z
-      .array(z.object({ date: z.string().regex(DATE), kind: z.enum(['full', 'half']) }).strict())
+      .array(z.object({ date: z.string().regex(DATE), kind: z.enum(['full', 'half']), half: z.enum(['am', 'pm']).optional() }).strict())
       .min(1)
       .max(LEAVE_REQUEST_MAX_DAYS),
     type: z.enum(LEAVE_TYPES),
@@ -89,10 +90,15 @@ const isRealDate = (d: string) => DATE.test(d) && addDays(d, 0) === d;
 export function checkLeaveLink(link: LeaveLink, today: string): { ok: true; days: LeaveDay[] } | { ok: false; code: string; message: string } {
   if (!link.days.length) return { ok: false, code: 'no-days', message: '쓸 날을 하나 이상 골라 주세요' };
   if (link.days.length > LEAVE_REQUEST_MAX_DAYS) return { ok: false, code: 'too-many', message: `한 번에 ${LEAVE_REQUEST_MAX_DAYS}일까지 신청할 수 있어요` };
+  // 11/3: 반차는 오전·오후 중 하나가 꼭 있어야 해요. AI가 짐작하지 않게 사람에게 물어보라고 돌려줘요.
+  if (link.days.some((d) => d.kind === 'half' && d.half !== 'am' && d.half !== 'pm'))
+    return { ok: false, code: 'half-part', message: '반차는 오전·오후 중 하나여야 해요. 어느 쪽인지 사람에게 물어 주세요' };
+  // 같은 날 오전 반차와 오후 반차를 같이 고르면 하루로 합쳐요(앱 신청 검사와 같아요).
+  const days = mergeLeaveHalves(link.days);
   const earliest = link.type === 'sick' ? addDays(today, -SICK_LEAVE_PAST_DAYS) : today;
   const last = addDays(today, 365);
   const seen = new Set<string>();
-  for (const d of link.days) {
+  for (const d of days) {
     if (!isRealDate(d.date)) return { ok: false, code: 'bad-date', message: '날짜는 YYYY-MM-DD로 적어 주세요' };
     if (d.date < earliest) {
       const more = link.type === 'sick' ? `. 병가는 ${SICK_LEAVE_PAST_DAYS}일 전까지만 신청할 수 있어요` : '';
@@ -103,7 +109,7 @@ export function checkLeaveLink(link: LeaveLink, today: string): { ok: true; days
     if (seen.has(d.date)) return { ok: false, code: 'duplicate', message: `${dayLabel(d.date)}을 두 번 골랐어요` };
     seen.add(d.date);
   }
-  return { ok: true, days: link.days.map((d) => ({ date: d.date, kind: d.kind })).sort((a, b) => a.date.localeCompare(b.date)) };
+  return { ok: true, days: days.sort((a, b) => a.date.localeCompare(b.date)) };
 }
 
 const GENERAL_ROW = (revisedOn: string): NaviTeamRow => ({
