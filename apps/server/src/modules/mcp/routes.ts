@@ -1,4 +1,12 @@
-import type { ConnectionsResponse, ConsentDecisionRequest, ConsentDecisionResponse, ConsentInfo, McpScope } from '@one-line-desk/shared';
+import type {
+  ConnectionsResponse,
+  ConsentDecisionRequest,
+  ConsentDecisionResponse,
+  ConsentInfo,
+  LinkOpenRequest,
+  LinkOpenResponse,
+  McpScope,
+} from '@one-line-desk/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../../context';
 import { accessFrom } from '../../core/access-record';
@@ -91,6 +99,32 @@ export function registerMcpApiRoutes(app: FastifyInstance, ctx: AppContext, mcp:
       cliApps: cliApps.map((c) => ({ clientId: c.clientId, appName: c.appName })),
     };
   });
+
+  // 앱 확인 링크(/r/<토큰>)가 무엇을 여는지(11/3). 토큰 주인만 열어요. 링크를 연 것만으로는 아무것도 쓰지 않아요(plan도 만들지 않아요).
+  // 회의실 링크는 화면이 /api/rooms/recheck로 다시 확인하고, 문의 링크는 그 팀 문의 양식을 빈 칸으로 열어요(질문 글은 링크에 없어요, R13).
+  app.post<{ Body: LinkOpenRequest }>(
+    '/api/mcp/link',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['proposalToken'],
+          additionalProperties: false,
+          properties: { proposalToken: { type: 'string', minLength: 1, maxLength: 4096 } },
+        },
+      },
+    },
+    async (req): Promise<LinkOpenResponse> => {
+      const opened = ctx.plans.peek(req.deskUser!, req.body.proposalToken);
+      if (opened.module === 'rooms' && opened.action === 'reserve') return { kind: 'rooms' };
+      if (opened.module !== 'navi' || opened.action !== 'inquire') throw new DeskError('bad-request', 400, '앱 확인 링크가 아니에요');
+      if (ctx.ops.get().modules.navi === 'off' || !ctx.services.navi?.mcp) return { kind: 'off' };
+      if (opened.expired) return { kind: 'expired' };
+      const target = await ctx.services.navi.mcp.inquiryTarget((opened.params as { rowId: string | null }).rowId);
+      return target ? { kind: 'inquiry', ...target } : { kind: 'gone' };
+    },
+  );
 
   // [끊기]: 확인 시트를 거친 고정 버튼 쓰기예요. 그 앱의 모든 기기 승인(갱신 토큰)을 바로 지워요(ADR-03·15).
   app.delete<{ Params: { clientId: string } }>(

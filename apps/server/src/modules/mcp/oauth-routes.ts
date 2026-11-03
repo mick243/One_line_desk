@@ -53,9 +53,18 @@ export function registerOauthRoutes(app: FastifyInstance, ctx: AppContext, mcp: 
     const redirectUri = one('redirect_uri');
     if (duplicated || !clientId || !redirectUri || clientId.length > 100 || redirectUri.length > 500) return stop('invalid-request');
     const client = await repo.findClient(ctx.db, clientId);
-    if (!client) return stop('not-allowed');
+    // 막힌 앱 셈(11/3 보고): 로그인 전이라 사람은 'anonymous'예요. 등록되지 않은 ID는 바깥에서 온 글자라 감사 로그에 넣지 않아요.
+    const blocked = (result: 'unknown-client' | 'not-allowed') =>
+      ctx.audit.record({ pseudonymId: 'anonymous', channel: 'mcp', action: 'authorize', ...(client ? { clientId: client.clientId } : {}), result });
+    if (!client) {
+      await blocked('unknown-client');
+      return stop('not-allowed');
+    }
     if (!redirectMatches(client, redirectUri)) return stop('invalid-request');
-    if (!mcp.isClientAllowed(client)) return stop('not-allowed');
+    if (!mcp.isClientAllowed(client)) {
+      await blocked('not-allowed');
+      return stop('not-allowed');
+    }
 
     const state = one('state');
     const back = (error: string, description: string) =>

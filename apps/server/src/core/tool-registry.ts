@@ -71,6 +71,61 @@ export const TOOLS: ToolDef[] = [
       floor: { type: 'string', description: '층', optional: true },
     },
   },
+  // 11/3 2단계(ADR-14 개정, 사용자 결정): 읽기 도구 셋을 더해요. 모두 규칙·색인만 쓰고 LLM을 부르지 않아요.
+  // 쓰기는 결과의 앱 확인 링크를 사람이 열어 앱에서 한 번 눌러요. 설명은 AI 앱이 그대로 읽어서 내부 문서 번호를 넣지 않아요.
+  {
+    name: 'navi_find_team',
+    module: 'navi',
+    access: 'read',
+    mcpExposed: true,
+    mcp: {
+      scope: 'navi.read',
+      title: '받을 팀 찾기',
+      withheld: ['분장표 행 ID', '주인 부서', '담당자 이름', '질문 글(어디에도 남지 않아요)', '남은 연차'],
+    },
+    description:
+      '업무 분장표에서 이 일을 어느 팀에 물어야 하는지 후보 최대 3개(업무·담당 팀·창구·지금 할 일·처리 기간·개정일)를 돌려줘요. 사람 이름은 없어요. ' +
+      '후보마다 문의 양식 앱 링크가 있어요. 링크는 받을 팀만 담고 질문 글은 담지 않아서, 사람이 앱에서 내용을 직접 써서 [보내기]를 눌러요. 확정은 앱에서 한 번이에요. ' +
+      '맞는 업무가 없으면 emptyReason과 대표 창구 문의 링크를 줘요. 분장표에 없는 내용을 지어내지 말아 주세요.',
+    input: { query: { type: 'string', description: '무슨 일인지 한 줄(예: 법인카드를 잃어버렸어요)', maxLength: 300 } },
+  },
+  {
+    name: 'navi_it_faq',
+    module: 'navi',
+    access: 'read',
+    mcpExposed: true,
+    mcp: { scope: 'navi.read', title: 'IT 오류 FAQ 찾기', withheld: ['붙여 넣은 오류 글(어디에도 남지 않아요)', 'FAQ 내부 번호', '분장표 행 ID'] },
+    description:
+      'IT 오류 창의 글로 사내 IT FAQ를 찾아 원문 단계를 그대로 돌려줘요. 단계를 고치거나 지어내지 말고 그대로 전해 주세요. ' +
+      '오류 글에 든 이메일·사용자 폴더 같은 값은 가린 뒤 찾고, 글은 어디에도 남지 않아요. 키·비밀번호·주민번호가 든 글은 거절해요. ' +
+      '안 풀리면 IT 담당 팀 문의 양식 앱 링크를 열어 사람이 직접 보내요(확정은 앱에서 한 번).',
+    input: { text: { type: 'string', description: '오류 창에 뜬 글', maxLength: 1000 } },
+  },
+  {
+    name: 'navi_onboarding',
+    module: 'navi',
+    access: 'read',
+    mcpExposed: true,
+    mcp: { scope: 'navi.read', title: '첫 2주 할 일', withheld: ['분장표 행 ID', '주인 부서', '담당자 이름', '진행 여부(저장하지 않아요)'] },
+    description:
+      '신규 입사자가 첫 1주·2주에 할 일 목록(업무·담당 팀·창구·지금 할 일·처리 기간)을 돌려줘요. 누구나 읽는 안내이고, 신규 입사자인지는 묻지도 판단하지도 않아요.',
+    input: {},
+  },
+  {
+    name: 'my_requests_status',
+    module: 'navi',
+    access: 'read',
+    mcpExposed: true,
+    mcp: {
+      scope: 'mine.read',
+      title: '내 요청 상태',
+      withheld: ['문의·답장·반려 사유 글', '답한 사람 이름', '휴가 날짜와 남은 연차', '다른 사람의 요청', '참석자'],
+    },
+    description:
+      '연결한 사람 본인이 보낸 문의·휴가 요청의 업무 이름·받은 팀·상태·보낸 날·답장 있음 여부와, 본인의 다가오는 회의실 예약(방·시간)을 돌려줘요. ' +
+      '문의·답장 글은 없어서 내용은 앱에서 확인하라고 안내해 주세요. 취소·답장은 앱에서 해요.',
+    input: {},
+  },
   {
     name: 'pantry_find_similar',
     module: 'pantry',

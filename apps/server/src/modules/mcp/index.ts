@@ -3,12 +3,13 @@ import type { DeskModule } from '../../core/module';
 import { McpAuth } from './auth-service';
 import { registerMcpRoute } from './mcp-route';
 import { registerOauthRoutes } from './oauth-routes';
+import { registerMcpOpsRoutes } from './ops-routes';
 import * as repo from './repo';
 import { registerMcpApiRoutes } from './routes';
 import { hashClientSecret } from './tokens';
 
-// 읽기 전용 MCP(ADR-14·15): 인가 서버, /mcp, 도구 둘, 동의 시트·연결된 AI 앱 경로.
-// 다른 모듈은 ctx.services.rooms·notices로만 불러요. 쓰기 도구는 없고, MCP 경로는 LLM을 부르지 않아요.
+// 읽기 전용 MCP(ADR-14·15): 인가 서버, /mcp, 읽기 도구(11/3 2단계로 여섯), 동의 시트·연결된 AI 앱·앱 확인 링크·운영자 관리 경로.
+// 다른 모듈은 ctx.services.rooms·notices·navi로만 불러요. 쓰기 도구는 없고, MCP 경로는 LLM을 부르지 않아요.
 
 /**
  * 시연용 가상 클라이언트(claude.ai 조직 커넥터 흉내). 보안팀 승인은 없고 demo_only라서
@@ -41,6 +42,7 @@ export function createMcpModule(ctx: AppContext): DeskModule {
       registerOauthRoutes(app, ctx, mcp);
       registerMcpRoute(app, ctx, mcp);
       registerMcpApiRoutes(app, ctx, mcp);
+      registerMcpOpsRoutes(app, ctx);
     },
     async seed() {
       // 운영 환경에는 개발용 비밀을 가진 클라이언트를 넣지 않아요(모의 로그인을 연 시연 배포만 빼고). 운영자가 보안팀 승인 목록에서 등록해요.

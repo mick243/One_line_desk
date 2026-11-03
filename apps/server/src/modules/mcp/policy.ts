@@ -33,6 +33,45 @@ function loopbackUrl(uri: string): URL | null {
   }
 }
 
+/** 루프백(localhost·127.0.0.1·[::1]) http 주소인지. 공개 클라이언트는 이런 주소로만 돌아가요. */
+export function isLoopbackRedirect(uri: string): boolean {
+  return loopbackUrl(uri) !== null;
+}
+
+export const APP_NAME_MAX = 40;
+export const MAX_REDIRECTS = 5;
+const REDIRECT_MAX_LENGTH = 500;
+
+/**
+ * 운영자가 등록하는 클라이언트 검사(11/3, 1단계). 맞으면 다듬은 값, 아니면 화면에 보일 까닭이에요.
+ * - 공개 클라이언트: 루프백 http 주소만(비밀이 없어서 바깥 주소로 코드를 보내면 가로챌 수 있어요)
+ * - 기밀 클라이언트: https 주소(사용자 정보·조각 없음) 또는 개발용 루프백
+ */
+export function checkRegistration(input: {
+  appName: string;
+  kind: 'confidential' | 'public';
+  redirectUris: string[];
+}): { ok: true; appName: string; redirectUris: string[] } | { ok: false; reason: string } {
+  const appName = input.appName.replace(/[\p{Cc}\p{Cf}]/gu, '').trim();
+  if (!appName || appName.length > APP_NAME_MAX) return { ok: false, reason: `앱 이름은 1~${APP_NAME_MAX}자로 적어 주세요` };
+  const uris = [...new Set(input.redirectUris.map((u) => u.trim()).filter(Boolean))];
+  if (uris.length === 0 || uris.length > MAX_REDIRECTS) return { ok: false, reason: `리디렉트 주소는 1~${MAX_REDIRECTS}개예요` };
+  for (const uri of uris) {
+    if (uri.length > REDIRECT_MAX_LENGTH) return { ok: false, reason: '리디렉트 주소가 너무 길어요' };
+    if (isLoopbackRedirect(uri)) continue;
+    if (input.kind === 'public') return { ok: false, reason: '공개 클라이언트는 루프백 주소(http://localhost/… · http://127.0.0.1/…)로만 돌아가요' };
+    let url: URL;
+    try {
+      url = new URL(uri);
+    } catch {
+      return { ok: false, reason: `주소 모양이 아니에요: ${uri.slice(0, 80)}` };
+    }
+    if (url.protocol !== 'https:' || url.username || url.password || url.hash)
+      return { ok: false, reason: '기밀 클라이언트 리디렉트는 https 주소예요(사용자 정보·# 조각 없이)' };
+  }
+  return { ok: true, appName, redirectUris: uris };
+}
+
 /**
  * 리디렉트 주소가 등록된 주소와 맞는지(ADR-15, 11/2 개정).
  * - 기본은 글자 그대로 같아야 해요.

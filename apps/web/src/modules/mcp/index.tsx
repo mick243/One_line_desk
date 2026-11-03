@@ -9,7 +9,7 @@ import { failMessage, josa } from './text';
 // 여기서 다시 내보내면 첫 화면에 같이 묶이니 내보내지 않아요.
 // 문구는 docs/화면설계.md "보안이 보이는 문구"를 그대로 써요. 브라우저 저장소에는 아무것도 넣지 않아요(R13).
 
-const SCOPE_LABEL: Record<McpScope, string> = { 'rooms.read': '회의실', 'notices.read': '공지' };
+const SCOPE_LABEL: Record<McpScope, string> = { 'rooms.read': '회의실', 'notices.read': '공지', 'navi.read': '담당 찾기', 'mine.read': '내 요청 상태' };
 
 function formatDay(isoDate: string): string {
   const [, m, d] = isoDate.split('-');
@@ -58,6 +58,15 @@ export function ConnectedApps() {
                     {data.available && !data.tools.includes(scope) ? ' · 지금 꺼져 있어요' : ''}
                   </span>
                 ))}
+                {/* 11/3 새 범위: 지금 켜진 도구인데 이 연결이 허락하지 않은 것. AI 앱에서 부르면 다시 허락을 받아요. */}
+                {data.available &&
+                  data.tools
+                    .filter((scope) => !app.scopes.includes(scope))
+                    .map((scope) => (
+                      <span key={scope} className='chip'>
+                        {SCOPE_LABEL[scope]} · 허락이 필요해요
+                      </span>
+                    ))}
                 {!data.available && <span className='hint'>쓸 수 있는 도구 없음</span>}
               </div>
               <div className='actions'>
