@@ -2,7 +2,7 @@ import { recordCutoff } from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
 import type { DeskModule, PlanHandler } from '../../core/module';
 import { RoomChat } from './chat';
-import { RoomEquipment } from './equipment';
+import { RoomEquipment, rentLinkHandler } from './equipment';
 import { MockRoomLedger } from './ledger-adapter';
 import * as repo from './repo';
 import { registerRoomRoutes } from './routes';
@@ -23,6 +23,7 @@ export function createRoomsModule(ctx: AppContext): DeskModule {
     findFree: (query) => desk.findFree(query),
     proposeReservation: (user, candidate) => desk.proposeReservation(user, candidate),
     myReservations: (user) => desk.myReservations(user),
+    equipment: equipment.mcpRead(),
   };
 
   return {
@@ -37,7 +38,8 @@ export function createRoomsModule(ctx: AppContext): DeskModule {
       });
       return { cards, found };
     },
-    planHandlers: [desk.reserveHandler() as PlanHandler<unknown>, equipment.rentHandler() as PlanHandler<unknown>],
+    // 'rooms:rent-link'은 MCP 장비 대여 링크 토큰이에요(열어 보기만, 실행 없음).
+    planHandlers: [desk.reserveHandler() as PlanHandler<unknown>, equipment.rentHandler() as PlanHandler<unknown>, rentLinkHandler as PlanHandler<unknown>],
     register(app) {
       registerRoomRoutes(app, ctx, desk, equipment, chat);
     },

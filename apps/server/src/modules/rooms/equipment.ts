@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { AppContext } from '../../context';
 import { DeskError } from '../../core/errors';
 import type { PlanHandler } from '../../core/module';
+import type { RentLink, RoomsEquipmentRead } from '../../core/services';
 import type { DeskUser } from '../../core/user';
 import { endLoanAction, loanBlockedCard, loanCard, loanEndedCard, roomEquipmentCard, stockCard, whenText, withSubject } from './cards';
 import { DEMO_EQUIPMENT, DEMO_FACILITY_STATUS } from './fixtures/equipment';
@@ -63,6 +64,28 @@ export const RentParamsSchema = z
   );
 export type RentParams = z.infer<typeof RentParamsSchema>;
 
+/**
+ * MCP 장비 대여 링크(11/3 확인 링크 넓히기): 'rooms:rent-link' 토큰에는 장비 종류와 구간만 넣어요.
+ * 이 처리기는 실행하지 않아요(열어 보기만). 링크를 열면 지금 다시 확인한 남은 수 카드가 새 'rooms:rent' 제안을 붙이고,
+ * 빌리기는 그 카드의 [빌리기] → 확인 시트 [빌리기]뿐이에요. 자동 실행 허용 목록(ADR-19)에 넣지 않아요.
+ */
+const RentLinkSchema = z.strictObject({ kind: z.enum(LOAN_KINDS), start: z.string().regex(KST_ISO), end: z.string().regex(KST_ISO) });
+
+const RENT_LINK_ONLY = () => new DeskError('bad-request', 400, '이 링크는 장비 대여 확인을 여는 링크예요. 앱에서 [빌리기]를 눌러 주세요');
+
+export const rentLinkHandler: PlanHandler<RentLink> = {
+  module: 'rooms',
+  action: 'rent-link',
+  schema: RentLinkSchema,
+  enabled: () => false,
+  async sheet() {
+    throw RENT_LINK_ONLY();
+  },
+  async execute() {
+    throw RENT_LINK_ONLY();
+  },
+};
+
 export class RoomEquipment {
   constructor(private readonly ctx: AppContext) {}
 
@@ -112,6 +135,18 @@ export class RoomEquipment {
         roomName: l.roomName,
         endAction: endLoanAction(l, now),
       })),
+    };
+  }
+
+  /** MCP 장비 대여 확인이 쓰는 읽기(11/3). 남은 수·전체 수만이고, 누가 빌렸는지는 없어요. */
+  mcpRead(): RoomsEquipmentRead {
+    return {
+      stock: async (kind, from, to) => {
+        const row = (await loanStock(this.ctx.db, from, to)).find((s) => s.kind === kind);
+        return { free: row?.free ?? 0, total: row?.total ?? 0 };
+      },
+      proposeRentLink: (user, link) => this.ctx.plans.propose(user, 'rooms', 'rent-link', RentLinkSchema.parse(link)),
+      linkCards: async (user, link) => [await this.stock(user, [link.kind], Date.parse(link.start), Date.parse(link.end), { aiSummarized: false })],
     };
   }
 

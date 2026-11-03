@@ -7,7 +7,7 @@
 - 실제(모의가 아닌) 자료는 보안팀이 승인한 클라이언트에만 가요(ADR-15). 도구 호출마다 감사 로그(도구·클라이언트·결과, 7일)와 접속기록(가명 ID·접속지, 1년)이 남아요. 입력 값은 어디에도 남지 않아요.
 - 운영자는 MCP 전체·모듈·도구 하나씩 끌 수 있어요(`/api/ops/flag`, `/api/ops/switch`, `/api/ops/mcp-tool`).
 
-범위: `rooms.read`, `notices.read`, `navi.read`, `mine.read`
+범위: `rooms.read`, `notices.read`, `navi.read`, `mine.read`, `leave.prepare`, `pantry.read`
 
 | 도구 | 이름 | 범위 | 모듈 | 일부러 내보내지 않는 칸 |
 |---|---|---|---|---|
@@ -17,6 +17,9 @@
 | `navi_it_faq` | IT 오류 FAQ 찾기 | `navi.read` | navi | 붙여 넣은 오류 글(어디에도 남지 않아요), FAQ 내부 번호, 분장표 행 ID |
 | `navi_onboarding` | 첫 2주 할 일 | `navi.read` | navi | 분장표 행 ID, 주인 부서, 담당자 이름, 진행 여부(저장하지 않아요) |
 | `my_requests_status` | 내 요청 상태 | `mine.read` | navi | 문의·답장·반려 사유 글, 답한 사람 이름, 휴가 날짜와 남은 연차, 다른 사람의 요청, 참석자 |
+| `leave_prepare` | 휴가 신청 준비 | `leave.prepare` | navi | 남은 연차, 올해 병가 쓴 날, 사유(앱에서 직접 골라요), 받는 팀 담당자 이름 |
+| `pantry_find_similar` | 탕비실 요청 찾기 | `pantry.read` | pantry | 표를 준 사람, 요청을 올린 사람, 찾은 품목 이름(어디에도 남지 않아요), 다른 층 판 |
+| `rooms_find_equipment` | 장비 대여 확인 | `rooms.read` | rooms | 빌린 사람, 장비별 대여 일정, 장비 보관 위치 |
 
 ## `notices_search` — 공지 찾기
 
@@ -229,3 +232,100 @@ IT 오류 창의 글로 사내 IT FAQ를 찾아 원문 단계를 그대로 돌�
 | `reservations[].floor` | string | 예 |  |
 | `reservations[].when` | string | 예 | 예: 10월 27일(화) 15:00~16:00 |
 | `appLink` | string | 예 | 내용 보기·취소·답장은 앱에서 |
+
+## `leave_prepare` — 휴가 신청 준비
+
+휴가 신청 양식을 고른 날짜·종류로 채워 여는 앱 링크를 돌려줘요. 서버는 날짜 형식·주말·신청할 수 있는 기간만 확인해요. 남은 연차나 병가 쓴 날 같은 숫자는 돌려주지 않으니, 숫자를 물으면 앱에서 보라고 안내해 주세요. 사유는 링크에 담지 않아서 사람이 앱 양식에서 직접 고르거나 써요. 보내기는 앱 확인 시트에서 한 번이에요. 링크를 여는 것만으로는 아무것도 보내지 않아요.
+
+- 범위: `leave.prepare` · 꺼지는 조건: MCP 전체 끔, navi 모듈이 켬이 아님, 이 도구를 따로 끔
+- 일부러 내보내지 않는 칸: 남은 연차, 올해 병가 쓴 날, 사유(앱에서 직접 골라요), 받는 팀 담당자 이름
+
+### 입력
+
+| 칸 | 모양 | 꼭 | 설명 |
+|---|---|---|---|
+| `days` | 목록(최대 30) | 예 | 쓸 날 목록. 날마다 date(YYYY-MM-DD)와 kind(full 하루 · half 반차) |
+| `days[].date` | string | 예 | YYYY-MM-DD |
+| `days[].kind` | 정해진 값(2개) | 예 | full: 하루 · half: 반차 |
+| `type` | 정해진 값(3개) | 예 | 종류: annual(연차) · official(공가) · sick(병가) |
+
+### 출력
+
+| 칸 | 모양 | 꼭 | 설명 |
+|---|---|---|---|
+| `type` | 정해진 값(3개) | 예 |  |
+| `typeLabel` | string | 예 | 연차 · 공가 · 병가 |
+| `days` | 목록(최대 30) | 예 | 양식에 채울 날(날짜 순). 형식·주말·기간을 확인한 날만이에요 |
+| `days[].date` | string | 예 | YYYY-MM-DD |
+| `days[].kind` | 정해진 값(2개) | 예 |  |
+| `days[].label` | string | 예 | 예: 11월 6일(금) 하루 |
+| `link` | string |  | 앱 확인 링크. 본인만 열 수 있고 짧은 시간만 유효해요 |
+| `linkText` | string |  |  |
+| `emptyReason` | object |  | 결과가 없을 때만: 왜 없는지(message를 그대로 전해요) |
+| `emptyReason.code` | string | 예 |  |
+| `emptyReason.message` | string | 예 |  |
+| `confirm` | string | 예 | 사람에게 같이 전할 안내 |
+
+## `pantry_find_similar` — 탕비실 요청 찾기
+
+연결한 사람 층의 탕비실 요청판에서 같은 상품 같아 보이는 열린 품목을 최대 3개(이름·지금 표 수) 돌려줘요. 누가 표를 줬는지는 없어요. 품목마다 [여기에 +1] 앱 링크가 있고, +1은 사람이 앱에서 직접 눌러요. 찾는 품목이 없으면 새 요청 쓰기 앱 링크를 줘요. 링크에는 품목 이름을 담지 않아서 새 요청은 사람이 앱에서 직접 써요. 링크를 여는 것만으로는 아무것도 바뀌지 않아요.
+
+- 범위: `pantry.read` · 꺼지는 조건: MCP 전체 끔, pantry 모듈이 켬이 아님, 이 도구를 따로 끔
+- 일부러 내보내지 않는 칸: 표를 준 사람, 요청을 올린 사람, 찾은 품목 이름(어디에도 남지 않아요), 다른 층 판
+
+### 입력
+
+| 칸 | 모양 | 꼭 | 설명 |
+|---|---|---|---|
+| `itemName` | string(최대 60자) | 예 | 찾을 품목 이름(예: 제로콜라) |
+
+### 출력
+
+| 칸 | 모양 | 꼭 | 설명 |
+|---|---|---|---|
+| `mock` | boolean | 예 | 시연 데이터인지 |
+| `floor` | string | 예 | 찾아본 판의 층(연결한 사람의 층) |
+| `items` | 목록(최대 3) | 예 | 같은 상품 같아 보이는 열린 품목(표 많은 순) |
+| `items[].name` | string | 예 | 판에 올라간 품목 이름 |
+| `items[].votes` | integer(0 이상) | 예 | 지금 표 수 |
+| `items[].link` | string | 예 | 앱 확인 링크. 본인만 열 수 있고 짧은 시간만 유효해요 |
+| `items[].linkText` | string | 예 |  |
+| `newRequest` | object | 예 | 새 요청 쓰기: 판의 요청 쓰기 칸을 빈 채로 열어요(품목 이름은 링크에 없어요) |
+| `newRequest.link` | string | 예 | 앱 확인 링크. 본인만 열 수 있고 짧은 시간만 유효해요 |
+| `newRequest.linkText` | string | 예 |  |
+| `emptyReason` | object |  | 결과가 없을 때만: 왜 없는지(message를 그대로 전해요) |
+| `emptyReason.code` | string | 예 |  |
+| `emptyReason.message` | string | 예 |  |
+| `confirm` | string | 예 | 사람에게 같이 전할 안내 |
+
+## `rooms_find_equipment` — 장비 대여 확인
+
+그 시간에 이동식 장비를 빌릴 수 있는지(남은 수·전체 수)와 대여 확인 앱 링크를 돌려줘요. 누가 빌렸는지는 없어요. 빌리기는 사람이 링크를 열어 앱 확인 시트에서 한 번 눌러요. 링크를 여는 것만으로는 빌리지 않아요. 빌릴 수 없으면 emptyReason에 까닭이 있어요.
+
+- 범위: `rooms.read` · 꺼지는 조건: MCP 전체 끔, rooms 모듈이 켬이 아님, 이 도구를 따로 끔
+- 일부러 내보내지 않는 칸: 빌린 사람, 장비별 대여 일정, 장비 보관 위치
+
+### 입력
+
+| 칸 | 모양 | 꼭 | 설명 |
+|---|---|---|---|
+| `kind` | 정해진 값(6개) | 예 | 정해진 장비 종류 중에서: 빔프로젝터, 노트북, 무선 마이크, 웹캠, 스피커폰, HDMI 젠더 |
+| `date` | string | 예 | YYYY-MM-DD |
+| `start` | string | 예 | HH:MM |
+| `minutes` | integer(15~480) |  | 빌릴 시간(분). 비우면 운영 설정 기본 회의 길이 |
+
+### 출력
+
+| 칸 | 모양 | 꼭 | 설명 |
+|---|---|---|---|
+| `mock` | boolean | 예 | 시연 데이터인지 |
+| `kind` | 정해진 값(6개) | 예 |  |
+| `when` | string | 예 | 예: 10월 27일(화) 15:00~16:00 |
+| `free` | integer(0 이상) | 예 | 그 시간에 남은 수 |
+| `total` | integer(0 이상) | 예 | 전체 수 |
+| `link` | string |  | 앱 확인 링크. 본인만 열 수 있고 짧은 시간만 유효해요 |
+| `linkText` | string |  |  |
+| `emptyReason` | object |  | 결과가 없을 때만: 왜 없는지(message를 그대로 전해요) |
+| `emptyReason.code` | string | 예 |  |
+| `emptyReason.message` | string | 예 |  |
+| `confirm` | string | 예 | 사람에게 같이 전할 안내 |

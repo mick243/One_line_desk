@@ -327,11 +327,20 @@ describe('범위·스위치', () => {
     const t = await setup();
     const { tokens } = await connect(t, MOCK.staff);
     await t.ctx.ops.setMcpTool('p_op', 'navi_find_team', false);
-    expect(await toolNames(t, tokens.access_token)).toEqual(['my_requests_status', 'navi_it_faq', 'navi_onboarding', 'notices_search', 'rooms_find_free']);
+    expect(await toolNames(t, tokens.access_token)).toEqual([
+      'leave_prepare',
+      'my_requests_status',
+      'navi_it_faq',
+      'navi_onboarding',
+      'notices_search',
+      'pantry_find_similar',
+      'rooms_find_equipment',
+      'rooms_find_free',
+    ]);
     const off = await callTool(t, tokens.access_token, 'navi_find_team', { query: '법인카드' });
     expect(off.json().result?.isError ?? off.json().error).toBeTruthy();
     await t.ctx.ops.setModule('p_op', 'navi', 'link');
-    expect(await toolNames(t, tokens.access_token)).toEqual(['notices_search', 'rooms_find_free']);
+    expect(await toolNames(t, tokens.access_token)).toEqual(['notices_search', 'pantry_find_similar', 'rooms_find_equipment', 'rooms_find_free']);
   });
 
   it('[MCP-6] 새 도구도 감사 로그·접속기록 말고 DB에 쓰지 않아요', async () => {

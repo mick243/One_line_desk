@@ -1,12 +1,25 @@
-import { checkInput, INQUIRY_STATE_LABEL, kstDate, NAVI_ROW_ID_PATTERN, recordCutoff } from '@one-line-desk/shared';
+import {
+  addDays,
+  checkInput,
+  INQUIRY_STATE_LABEL,
+  kstDate,
+  LEAVE_REQUEST_MAX_DAYS,
+  LEAVE_TYPES,
+  type LeaveDay,
+  NAVI_ROW_ID_PATTERN,
+  recordCutoff,
+  SICK_LEAVE_PAST_DAYS,
+} from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { AppContext } from '../../context';
 import { DeskError } from '../../core/errors';
 import type { PlanHandler } from '../../core/module';
-import type { NaviMcpRead, NaviTeamRow } from '../../core/services';
+import type { LeaveLink, NaviMcpRead, NaviTeamRow } from '../../core/services';
+import { weekdayOf } from '../../core/slots';
 import { GENERAL_TASK } from './cards';
 import { GENERAL_DESK } from './fixtures';
 import type { ItHelpService } from './it-help';
+import { dayLabel, findLeaveRequestRow, leaveLinkAction } from './leave';
 import * as repo from './repo';
 import { type NaviService, rankRows, topTied } from './service';
 
@@ -37,6 +50,61 @@ export const inquireLinkHandler: PlanHandler<InquireLink> = {
     throw LINK_ONLY();
   },
 };
+
+// 휴가 준비 링크(11/3 확인 링크 넓히기). 토큰에는 날짜·하루/반차·종류만 넣어요. 사유·남은 연차는 없어요.
+// 이 처리기도 실행하지 않아요: 링크는 휴가 신청 양식을 채워 열 뿐이고, 보내기는 양식의 확인 시트 [보내기]예요.
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const LeaveLinkSchema = z
+  .object({
+    days: z
+      .array(z.object({ date: z.string().regex(DATE), kind: z.enum(['full', 'half']) }).strict())
+      .min(1)
+      .max(LEAVE_REQUEST_MAX_DAYS),
+    type: z.enum(LEAVE_TYPES),
+  })
+  .strict();
+
+const LEAVE_LINK_ONLY = () => new DeskError('bad-request', 400, '이 링크는 휴가 신청 양식을 여는 링크예요. 양식에서 [보내기]를 눌러 주세요');
+
+/** 휴가 준비 앱 링크 토큰 처리기. 열어 보기(peek)만 되고, plan 만들기·바로 실행·자동 실행은 모두 막혀요. */
+export const leaveLinkHandler: PlanHandler<LeaveLink> = {
+  module: 'navi',
+  action: 'leave-link',
+  schema: LeaveLinkSchema,
+  enabled: () => false,
+  async sheet() {
+    throw LEAVE_LINK_ONLY();
+  },
+  async execute() {
+    throw LEAVE_LINK_ONLY();
+  },
+};
+
+const isRealDate = (d: string) => DATE.test(d) && addDays(d, 0) === d;
+
+/**
+ * 휴가 준비 링크의 날 검사(앱 신청 검사와 같은 규칙): 오늘부터 1년 안의 평일, 겹치지 않게. 병가는 지난 3일까지 받아요.
+ * 연차 자료(등급 2)는 읽지 않아요. 남은 연차가 모자라는지는 앱 양식이 본인 화면에서 보여 줘요.
+ */
+export function checkLeaveLink(link: LeaveLink, today: string): { ok: true; days: LeaveDay[] } | { ok: false; code: string; message: string } {
+  if (!link.days.length) return { ok: false, code: 'no-days', message: '쓸 날을 하나 이상 골라 주세요' };
+  if (link.days.length > LEAVE_REQUEST_MAX_DAYS) return { ok: false, code: 'too-many', message: `한 번에 ${LEAVE_REQUEST_MAX_DAYS}일까지 신청할 수 있어요` };
+  const earliest = link.type === 'sick' ? addDays(today, -SICK_LEAVE_PAST_DAYS) : today;
+  const last = addDays(today, 365);
+  const seen = new Set<string>();
+  for (const d of link.days) {
+    if (!isRealDate(d.date)) return { ok: false, code: 'bad-date', message: '날짜는 YYYY-MM-DD로 적어 주세요' };
+    if (d.date < earliest) {
+      const more = link.type === 'sick' ? `. 병가는 ${SICK_LEAVE_PAST_DAYS}일 전까지만 신청할 수 있어요` : '';
+      return { ok: false, code: 'past', message: `${dayLabel(d.date)}은 지난 날이에요${more}` };
+    }
+    if (d.date > last) return { ok: false, code: 'too-far', message: '1년 안의 날만 신청할 수 있어요' };
+    if ([0, 6].includes(weekdayOf(d.date))) return { ok: false, code: 'weekend', message: `${dayLabel(d.date)}은 주말이에요` };
+    if (seen.has(d.date)) return { ok: false, code: 'duplicate', message: `${dayLabel(d.date)}을 두 번 골랐어요` };
+    seen.add(d.date);
+  }
+  return { ok: true, days: link.days.map((d) => ({ date: d.date, kind: d.kind })).sort((a, b) => a.date.localeCompare(b.date)) };
+}
 
 const GENERAL_ROW = (revisedOn: string): NaviTeamRow => ({
   rowId: null,
@@ -139,6 +207,18 @@ export function createNaviMcpRead(
       if (rowId === null) return { rowId: null, team: GENERAL_DESK.team, task: GENERAL_TASK };
       const [row] = await repo.findRows(ctx.db, [rowId]);
       return row ? { rowId: row.id, team: row.team, task: row.task } : null;
+    },
+
+    prepareLeave(user, link) {
+      const checked = checkLeaveLink(link, kstDate(ctx.now()));
+      if (!checked.ok) return checked;
+      return { ok: true, days: checked.days, token: ctx.plans.propose(user, 'navi', 'leave-link', { days: checked.days, type: link.type }) };
+    },
+
+    async leaveTarget(user, link) {
+      const target = findLeaveRequestRow(await repo.allRows(ctx.db));
+      if (!target) return null;
+      return leaveLinkAction(ctx, user, target, link.days, link.type);
     },
   };
 }

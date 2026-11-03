@@ -52,7 +52,7 @@ function nextWeekday(after: string): string {
   return d;
 }
 
-export function LeaveRequestSheet({ action, onClose }: { action: LeaveRequest; onClose: () => void }) {
+export function LeaveRequestSheet({ action, onClose, filledNote }: { action: LeaveRequest; onClose: () => void; filledNote?: string }) {
   const actions = useActions();
   const today = useMemo(() => kstDate(Date.now()), []);
   const [days, setDays] = useState<LeaveDay[]>(() => (action.days.length ? action.days.map((d) => ({ ...d })) : [{ date: nextWeekday(today), kind: 'full' }]));
@@ -208,7 +208,7 @@ export function LeaveRequestSheet({ action, onClose }: { action: LeaveRequest; o
         </p>
       )}
       {action.planned !== undefined && !action.days.length && <p className='hint'>말씀하신 {fmt(action.planned)}만큼 날을 골라 주세요.</p>}
-      {action.days.length > 0 && <p className='hint'>질문에서 읽은 날을 채워 두었어요. 맞는지 보고 고쳐 주세요.</p>}
+      {action.days.length > 0 && <p className='hint'>{filledNote ?? '질문에서 읽은 날을 채워 두었어요. 맞는지 보고 고쳐 주세요.'}</p>}
 
       <ul className='plain leave-days' aria-label='쓸 날'>
         {days.map((d, i) => (

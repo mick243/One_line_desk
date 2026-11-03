@@ -34,15 +34,18 @@ async function listed(t: TestApp, at: string): Promise<ToolListItem[]> {
 }
 
 describe('도구 목록', () => {
-  it('[MCP-1] 도구 목록 스냅샷에 쓰기 도구가 0개예요(읽기 여섯, 모두 readOnly)', async () => {
+  it('[MCP-1] 도구 목록 스냅샷에 쓰기 도구가 0개예요(읽기 아홉, 모두 readOnly)', async () => {
     const { t, at } = await setup();
     const tools = await listed(t, at);
     expect(tools.map((x) => x.name).sort()).toEqual([
+      'leave_prepare',
       'my_requests_status',
       'navi_find_team',
       'navi_it_faq',
       'navi_onboarding',
       'notices_search',
+      'pantry_find_similar',
+      'rooms_find_equipment',
       'rooms_find_free',
     ]);
     for (const tool of tools) expect(tool.annotations, tool.name).toMatchObject({ readOnlyHint: true, destructiveHint: false });
@@ -305,6 +308,7 @@ describe('MCP 경로의 경계', () => {
     const { t, at, rooms } = await setup();
     // 담당 찾기 도구는 navi 모듈 스위치를 따로 봐요(read-tools.test.ts). 여기서는 회의실·공지만 봐요.
     await t.ctx.ops.setModule('p_op', 'navi', 'link');
+    await t.ctx.ops.setModule('p_op', 'pantry', 'link');
     await t.ctx.ops.setModule('p_op', 'rooms', 'link');
     expect(await toolNames(t, at)).toEqual(['notices_search']);
     const res = await callTool(t, at, 'rooms_find_free', ROOMS_ARGS);

@@ -34,13 +34,15 @@ describe('계약 전 잠금과 허용 목록', () => {
   it('[MCP-7] MCP 끔이면 도구가 없고, 모듈이 링크만·끔이면 그 범위가 빠져요', () => {
     expect(availableTools(settings(), false)).toEqual([]);
     expect(availableTools(settings({ mcp: false }), true)).toEqual([]);
-    expect(scopesOf(availableTools(settings(), true))).toEqual(['rooms.read', 'notices.read', 'navi.read', 'mine.read']);
+    expect(scopesOf(availableTools(settings(), true))).toEqual(['rooms.read', 'notices.read', 'navi.read', 'mine.read', 'leave.prepare', 'pantry.read']);
     const roomsLink = settings({ modules: { ...DEFAULT_OPS_SETTINGS.modules, rooms: 'link' } });
-    expect(scopesOf(availableTools(roomsLink, true))).toEqual(['notices.read', 'navi.read', 'mine.read']);
+    expect(scopesOf(availableTools(roomsLink, true))).toEqual(['notices.read', 'navi.read', 'mine.read', 'leave.prepare', 'pantry.read']);
     const bothOff = settings({ modules: { ...DEFAULT_OPS_SETTINGS.modules, rooms: 'off', notices: 'link' } });
-    expect(scopesOf(availableTools(bothOff, true))).toEqual(['navi.read', 'mine.read']);
+    expect(scopesOf(availableTools(bothOff, true))).toEqual(['navi.read', 'mine.read', 'leave.prepare', 'pantry.read']);
     const naviLink = settings({ modules: { ...DEFAULT_OPS_SETTINGS.modules, rooms: 'off', notices: 'link', navi: 'link' } });
-    expect(scopesOf(availableTools(naviLink, true))).toEqual([]);
+    expect(scopesOf(availableTools(naviLink, true))).toEqual(['pantry.read']);
+    const pantryLink = settings({ modules: { ...DEFAULT_OPS_SETTINGS.modules, rooms: 'off', notices: 'link', navi: 'link', pantry: 'link' } });
+    expect(scopesOf(availableTools(pantryLink, true))).toEqual([]);
   });
 });
 

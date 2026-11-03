@@ -1,6 +1,9 @@
+import type { Card, CardAction } from '../cards';
+
 // 읽기 전용 MCP(ADR-14·15). 11/3 2단계(ADR-14 개정): 담당 찾기·IT FAQ·첫 2주(navi.read)와 내 요청 상태(mine.read)를 더해 넷이에요.
+// 11/3 확인 링크 넓히기: 휴가 준비(leave.prepare)·같이 채워요(pantry.read)를 더해요. 장비 대여는 회의실(rooms.read) 안이에요.
 // 이미 연결한 사람은 끊지 않아요. 새 범위의 도구를 부르면 403 insufficient_scope로 다시 허락을 받아요.
-export const MCP_SCOPES = ['rooms.read', 'notices.read', 'navi.read', 'mine.read'] as const;
+export const MCP_SCOPES = ['rooms.read', 'notices.read', 'navi.read', 'mine.read', 'leave.prepare', 'pantry.read'] as const;
 export type McpScope = (typeof MCP_SCOPES)[number];
 
 /** POST /api/mcp/link: 앱 확인 링크(/r/<토큰>)가 무엇을 여는지. 링크를 연 것만으로는 아무것도 쓰지 않아요. */
@@ -8,12 +11,26 @@ export interface LinkOpenRequest {
   proposalToken: string;
 }
 
+/** 열지 못한 링크가 어느 기능 것인지. 화면이 기능에 맞는 안내와 버튼을 골라요. 담당 팀 문의 링크는 비워 둬요. */
+export type LinkAbout = 'leave' | 'pantry' | 'equipment';
+
 /**
  * - rooms: 회의실 예약 링크 → 화면이 /api/rooms/recheck로 지금 다시 확인해요
  * - inquiry: 담당 팀 문의 링크 → 그 팀 문의 양식을 빈 칸으로 열어요(질문 글은 링크에 없어요, R13)
- * - gone: 분장표가 바뀌어 그 업무가 없어요 · expired: 링크 시간이 지났어요 · off: 담당 찾기가 꺼져 있어요
+ * - leave: 휴가 준비 링크 → 휴가 신청 양식을 그 날짜·종류로 채워 열어요. 사유는 앱에서 직접 골라요(남은 연차는 본인 화면에서만)
+ * - pantry: 판 품목 링크 → 지금 다시 읽은 그 품목 카드. [여기에 +1]은 사람이 누르는 고정 버튼이에요
+ * - pantry-new: 새 요청 링크 → 판의 요청 쓰기 칸을 빈 채로 열어요(품목 이름은 링크에 없어요)
+ * - equipment: 장비 대여 링크 → 지금 다시 확인한 남은 수 카드. [빌리기] → 확인 시트가 유일한 확인이에요
+ * - gone: 그 업무·품목이 없어요 · expired: 링크 시간이 지났어요 · off: 그 기능이 꺼져 있어요
  */
-export type LinkOpenResponse = { kind: 'rooms' } | { kind: 'inquiry'; rowId: string | null; team: string; task: string } | { kind: 'gone' | 'expired' | 'off' };
+export type LinkOpenResponse =
+  | { kind: 'rooms' }
+  | { kind: 'inquiry'; rowId: string | null; team: string; task: string }
+  | { kind: 'leave'; action: Extract<CardAction, { type: 'leave-request' }> }
+  | { kind: 'pantry'; cards: Card[] }
+  | { kind: 'pantry-new' }
+  | { kind: 'equipment'; cards: Card[] }
+  | { kind: 'gone' | 'expired' | 'off'; about?: LinkAbout };
 
 /** S6 "연결된 AI 앱" 줄. "마지막 사용"은 두지 않아요(M4). */
 export interface ConnectedApp {

@@ -340,7 +340,7 @@ export const LEAVE_TAIL = '나에게만 보여요. 연차 기록은 저장하지
 const LEAVE_DESK = '그룹웨어 근태 메뉴';
 
 const days = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}일`;
-const dayLabel = (d: string) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일(${WEEKDAYS[weekdayOf(d)]})`;
+export const dayLabel = (d: string) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일(${WEEKDAYS[weekdayOf(d)]})`;
 
 function planLabel(full: number, half: number): string {
   const parts = [full ? `연차 ${days(full)}` : '', half ? `반차 ${half}번` : ''].filter(Boolean);
@@ -647,4 +647,31 @@ export async function myLeaveCard(
   const record = await ctx.adapters.leave.leaveOf(person).catch(() => null);
   const balance = record ? computeLeave(record, today) : null;
   return leaveCard(balance, q, today, request, record && balance ? nextPeriodLeave(record, balance) : null, sickOf(record));
+}
+
+/**
+ * MCP 휴가 준비 링크를 열 때(11/3 확인 링크 넓히기): 링크의 날짜·종류로 채운 휴가 신청 양식 행동.
+ * 앱에서 본인이 로그인해 열 때만 불러요. 남은 연차·병가 쓴 날은 이 사람 화면에만 가고 MCP 출력에는 없어요(ADR-18).
+ * 근태 기록이 없으면(앱에서 신청할 수 없으면) null이에요. 사유는 링크에 없어서 양식에서 사람이 골라요.
+ */
+export async function leaveLinkAction(
+  ctx: AppContext,
+  user: Pick<DeskUser, 'idpSubject' | 'email'>,
+  target: LeaveRequestTarget,
+  days: readonly LeaveDay[],
+  type: 'annual' | 'official' | 'sick',
+): Promise<Extract<CardAction, { type: 'leave-request' }> | null> {
+  const today = kstDate(ctx.now());
+  const record = await ctx.adapters.leave.leaveOf({ idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) }).catch(() => null);
+  if (!record) return null;
+  const balance = computeLeave(record, today);
+  const v = ctx.ops.get().values;
+  const sick: SickInfo = { ...sickUsage(record, today, v.sickLeaveYearDays), noteOverDays: v.sickNoteOverDays };
+  const base = leaveRequestAction(target, { planDates: [], planFull: 0, planHalf: 0 }, balance, nextPeriodLeave(record, balance), sick);
+  return {
+    ...base,
+    text: type === 'official' ? '공가 신청하기' : type === 'sick' ? '병가 신청하기' : '휴가 신청하기',
+    days: days.map((d) => ({ date: d.date, kind: d.kind })),
+    ...(type === 'annual' ? {} : { leaveType: type }),
+  };
 }

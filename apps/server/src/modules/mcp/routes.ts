@@ -11,6 +11,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../../context';
 import { accessFrom } from '../../core/access-record';
 import { DeskError } from '../../core/errors';
+import type { LeaveLink, RentLink } from '../../core/services';
 import type { ConsentRequest, McpAuth } from './auth-service';
 import { withParams } from './oauth-routes';
 import { redirectMatches, scopesOf } from './policy';
@@ -102,6 +103,8 @@ export function registerMcpApiRoutes(app: FastifyInstance, ctx: AppContext, mcp:
 
   // 앱 확인 링크(/r/<토큰>)가 무엇을 여는지(11/3). 토큰 주인만 열어요. 링크를 연 것만으로는 아무것도 쓰지 않아요(plan도 만들지 않아요).
   // 회의실 링크는 화면이 /api/rooms/recheck로 다시 확인하고, 문의 링크는 그 팀 문의 양식을 빈 칸으로 열어요(질문 글은 링크에 없어요, R13).
+  // 11/3 확인 링크 넓히기: 휴가 준비(양식을 그 날짜·종류로 채워 열기)·판 품목(+1은 고정 버튼)·새 요청(쓰기 칸 빈 채)·장비 대여(다시 확인한 카드).
+  // 링크 토큰에는 구조 값만 있고, 남은 연차 같은 본인 자료는 여기서 본인 로그인으로 다시 읽어 이 화면에만 보내요(ADR-18).
   app.post<{ Body: LinkOpenRequest }>(
     '/api/mcp/link',
     {
@@ -116,13 +119,42 @@ export function registerMcpApiRoutes(app: FastifyInstance, ctx: AppContext, mcp:
       },
     },
     async (req): Promise<LinkOpenResponse> => {
-      const opened = ctx.plans.peek(req.deskUser!, req.body.proposalToken);
-      if (opened.module === 'rooms' && opened.action === 'reserve') return { kind: 'rooms' };
-      if (opened.module !== 'navi' || opened.action !== 'inquire') throw new DeskError('bad-request', 400, '앱 확인 링크가 아니에요');
-      if (ctx.ops.get().modules.navi === 'off' || !ctx.services.navi?.mcp) return { kind: 'off' };
-      if (opened.expired) return { kind: 'expired' };
-      const target = await ctx.services.navi.mcp.inquiryTarget((opened.params as { rowId: string | null }).rowId);
-      return target ? { kind: 'inquiry', ...target } : { kind: 'gone' };
+      const user = req.deskUser!;
+      const opened = ctx.plans.peek(user, req.body.proposalToken);
+      const settings = ctx.ops.get();
+      const link = `${opened.module}:${opened.action}`;
+      switch (link) {
+        case 'rooms:reserve':
+          return { kind: 'rooms' };
+        case 'navi:inquire': {
+          if (settings.modules.navi === 'off' || !ctx.services.navi?.mcp) return { kind: 'off' };
+          if (opened.expired) return { kind: 'expired' };
+          const target = await ctx.services.navi.mcp.inquiryTarget((opened.params as { rowId: string | null }).rowId);
+          return target ? { kind: 'inquiry', ...target } : { kind: 'gone' };
+        }
+        case 'navi:leave-link': {
+          if (settings.modules.navi === 'off' || !ctx.services.navi?.mcp) return { kind: 'off', about: 'leave' };
+          if (opened.expired) return { kind: 'expired', about: 'leave' };
+          const action = await ctx.services.navi.mcp.leaveTarget(user, opened.params as LeaveLink);
+          return action ? { kind: 'leave', action } : { kind: 'gone', about: 'leave' };
+        }
+        case 'pantry:board-link': {
+          if (settings.modules.pantry !== 'on' || !ctx.services.pantry?.mcp) return { kind: 'off', about: 'pantry' };
+          if (opened.expired) return { kind: 'expired', about: 'pantry' };
+          const cardId = (opened.params as { cardId: number | null }).cardId;
+          if (cardId === null) return { kind: 'pantry-new' };
+          const cards = await ctx.services.pantry.mcp.linkCards(user, cardId);
+          return cards ? { kind: 'pantry', cards } : { kind: 'gone', about: 'pantry' };
+        }
+        case 'rooms:rent-link': {
+          const equipment = ctx.services.rooms?.equipment;
+          if (settings.modules.rooms !== 'on' || !settings.roomsWrite || !equipment) return { kind: 'off', about: 'equipment' };
+          if (opened.expired) return { kind: 'expired', about: 'equipment' };
+          return { kind: 'equipment', cards: await equipment.linkCards(user, opened.params as RentLink) };
+        }
+        default:
+          throw new DeskError('bad-request', 400, '앱 확인 링크가 아니에요');
+      }
     },
   );
 

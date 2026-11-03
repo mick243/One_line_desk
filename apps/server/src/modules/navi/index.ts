@@ -3,7 +3,7 @@ import type { AppContext } from '../../context';
 import type { DeskModule, PlanHandler } from '../../core/module';
 import { createInquiryService } from './inquiries';
 import { createItHelpService } from './it-help';
-import { createNaviMcpRead, inquireLinkHandler } from './mcp-read';
+import { createNaviMcpRead, inquireLinkHandler, leaveLinkHandler } from './mcp-read';
 import * as repo from './repo';
 import { registerNaviRoutes } from './routes';
 import { createNaviService } from './service';
@@ -24,8 +24,8 @@ export function createNaviModule(ctx: AppContext): DeskModule {
   return {
     kind: 'navi',
     ask: (input) => navi.ask(input),
-    // MCP 문의 양식 앱 링크 토큰(열어 보기만, 실행 없음)
-    planHandlers: [inquireLinkHandler as PlanHandler<unknown>],
+    // MCP 문의 양식·휴가 준비 앱 링크 토큰(열어 보기만, 실행 없음)
+    planHandlers: [inquireLinkHandler as PlanHandler<unknown>, leaveLinkHandler as PlanHandler<unknown>],
     register: (app) => registerNaviRoutes(app, ctx, navi, inquiries, itHelp),
     async seed() {
       await navi.seed();

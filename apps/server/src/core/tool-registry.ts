@@ -5,7 +5,7 @@ import type { McpScope, ModuleKind, OpsSettings } from '@one-line-desk/shared';
 // MCP 도구를 더할 때(11/2 정리): 여기에 mcp 칸을 적고, modules/mcp/tools.ts의 MCP_TOOL_IMPLS에 입력·출력·실행을 하나 더해요.
 // 범위 이름은 shared MCP_SCOPES에 먼저 적어요. 그 밖에 고칠 곳은 없어요(시험이 둘이 맞는지 봐요).
 export interface ToolField {
-  type: 'string' | 'integer' | 'string[]';
+  type: 'string' | 'integer' | 'string[]' | 'object[]';
   description: string;
   optional?: boolean;
   maxLength?: number;
@@ -126,14 +126,59 @@ export const TOOLS: ToolDef[] = [
       '문의·답장 글은 없어서 내용은 앱에서 확인하라고 안내해 주세요. 취소·답장은 앱에서 해요.',
     input: {},
   },
+  // 11/3 확인 링크 넓히기(ADR-14 개정, 사용자 요청): 휴가 준비·탕비실·장비 대여. 모두 읽기와 링크만이고 LLM을 부르지 않아요.
+  // 링크(봉인 제안 토큰)에는 날짜·종류·카드 ID·장비 종류·시각 같은 구조 값만 넣어요. 사람이 쓴 글(사유·품목 이름)은 넣지 않아요.
+  {
+    name: 'leave_prepare',
+    module: 'navi',
+    access: 'read',
+    mcpExposed: true,
+    mcp: {
+      scope: 'leave.prepare',
+      title: '휴가 신청 준비',
+      withheld: ['남은 연차', '올해 병가 쓴 날', '사유(앱에서 직접 골라요)', '받는 팀 담당자 이름'],
+    },
+    description:
+      '휴가 신청 양식을 고른 날짜·종류로 채워 여는 앱 링크를 돌려줘요. 서버는 날짜 형식·주말·신청할 수 있는 기간만 확인해요. ' +
+      '남은 연차나 병가 쓴 날 같은 숫자는 돌려주지 않으니, 숫자를 물으면 앱에서 보라고 안내해 주세요. ' +
+      '사유는 링크에 담지 않아서 사람이 앱 양식에서 직접 고르거나 써요. 보내기는 앱 확인 시트에서 한 번이에요. 링크를 여는 것만으로는 아무것도 보내지 않아요.',
+    input: {
+      days: { type: 'object[]', description: '쓸 날 목록. 날마다 date(YYYY-MM-DD)와 kind(full 하루 · half 반차)' },
+      type: { type: 'string', description: '종류: annual(연차) · official(공가) · sick(병가)' },
+    },
+  },
   {
     name: 'pantry_find_similar',
     module: 'pantry',
     access: 'read',
-    mcpExposed: false,
-    // R15
-    description: '같은 층 열린 품목 중 같은 상품 같아 보이는 것을 찾아요.',
-    input: { itemName: { type: 'string', description: '사용자가 확인한 품목 이름', maxLength: 60 } },
+    mcpExposed: true,
+    mcp: {
+      scope: 'pantry.read',
+      title: '탕비실 요청 찾기',
+      withheld: ['표를 준 사람', '요청을 올린 사람', '찾은 품목 이름(어디에도 남지 않아요)', '다른 층 판'],
+    },
+    // R15. 묻기(LLM 허용 목록)와 MCP가 같이 써요. MCP 경로는 이름 규칙만 쓰고 LLM을 부르지 않아요.
+    description:
+      '연결한 사람 층의 탕비실 요청판에서 같은 상품 같아 보이는 열린 품목을 최대 3개(이름·지금 표 수) 돌려줘요. 누가 표를 줬는지는 없어요. ' +
+      '품목마다 [여기에 +1] 앱 링크가 있고, +1은 사람이 앱에서 직접 눌러요. 찾는 품목이 없으면 새 요청 쓰기 앱 링크를 줘요. ' +
+      '링크에는 품목 이름을 담지 않아서 새 요청은 사람이 앱에서 직접 써요. 링크를 여는 것만으로는 아무것도 바뀌지 않아요.',
+    input: { itemName: { type: 'string', description: '찾을 품목 이름(예: 제로콜라)', maxLength: 60 } },
+  },
+  {
+    name: 'rooms_find_equipment',
+    module: 'rooms',
+    access: 'read',
+    mcpExposed: true,
+    mcp: { scope: 'rooms.read', title: '장비 대여 확인', withheld: ['빌린 사람', '장비별 대여 일정', '장비 보관 위치'] },
+    description:
+      '그 시간에 이동식 장비를 빌릴 수 있는지(남은 수·전체 수)와 대여 확인 앱 링크를 돌려줘요. 누가 빌렸는지는 없어요. ' +
+      '빌리기는 사람이 링크를 열어 앱 확인 시트에서 한 번 눌러요. 링크를 여는 것만으로는 빌리지 않아요. 빌릴 수 없으면 emptyReason에 까닭이 있어요.',
+    input: {
+      kind: { type: 'string', description: '정해진 장비 종류 중에서' },
+      date: { type: 'string', description: 'YYYY-MM-DD' },
+      start: { type: 'string', description: 'HH:MM' },
+      minutes: { type: 'integer', description: '빌릴 시간(분). 비우면 운영 설정 기본 회의 길이', optional: true },
+    },
   },
 ];
 

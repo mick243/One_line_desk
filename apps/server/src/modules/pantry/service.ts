@@ -800,6 +800,7 @@ export function createBoardService(ctx: AppContext) {
 
   return {
     readOnly,
+    openBundlesOn,
     ask,
     draftFromText,
     draftForName,

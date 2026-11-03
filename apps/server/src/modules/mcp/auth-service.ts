@@ -57,6 +57,8 @@ const accessPayloadSchema = z.object({
   gid: z.string(),
   iat: z.number(),
   exp: z.number(),
+  /** 연결한 사람의 층(11/3, 탕비실 요청 찾기). 발급·갱신 때 디렉터리에서 읽어 봉인해요. 못 읽으면 없어요. */
+  fl: z.string().max(10).optional(),
 });
 export type AccessPayload = z.infer<typeof accessPayloadSchema>;
 
@@ -70,6 +72,7 @@ interface PendingCode {
   scopes: McpScope[];
   pseudonymId: string;
   idpSubject: string;
+  floor?: string;
   exp: number;
 }
 
@@ -78,6 +81,8 @@ export interface McpPrincipal {
   clientId: string;
   scopes: McpScope[];
   grantId: string;
+  /** 연결한 사람의 층. 접근 토큰 안에 봉인돼 있어요(탕비실 요청 찾기가 그 층 판만 읽어요). */
+  floor?: string;
 }
 
 export interface TokenResponse {
@@ -155,7 +160,7 @@ export class McpAuth {
   }
 
   /** [연결 허락] 뒤 짧은 인가 코드를 줘요. DB에는 쓰지 않아요. */
-  issueCode(request: ConsentRequest, user: { pseudonymId: string; idpSubject: string }, scopes: McpScope[]): string {
+  issueCode(request: ConsentRequest, user: { pseudonymId: string; idpSubject: string; floor?: string }, scopes: McpScope[]): string {
     this.sweepCodes();
     const code = randomToken(32);
     this.codes.set(code, {
@@ -166,6 +171,7 @@ export class McpAuth {
       scopes,
       pseudonymId: user.pseudonymId,
       idpSubject: user.idpSubject,
+      ...(user.floor ? { floor: user.floor } : {}),
       exp: this.ctx.now() + AUTH_CODE_TTL_MS,
     });
     return code;
@@ -203,7 +209,10 @@ export class McpAuth {
     await this.ctx.audit.record({ pseudonymId: pending.pseudonymId, channel: 'mcp', action: 'token', clientId: client.clientId, result: 'issued' });
     return {
       ok: true,
-      body: this.tokenResponse({ pseudonymId: pending.pseudonymId, clientId: client.clientId, scopes: pending.scopes, grantId }, refreshToken),
+      body: this.tokenResponse(
+        { pseudonymId: pending.pseudonymId, clientId: client.clientId, scopes: pending.scopes, grantId, ...(pending.floor ? { floor: pending.floor } : {}) },
+        refreshToken,
+      ),
     };
   }
 
@@ -237,7 +246,15 @@ export class McpAuth {
       return deny('refresh token is revoked');
     }
     await this.ctx.audit.record({ pseudonymId: grant.pseudonymId, channel: 'mcp', action: 'token', clientId: client.clientId, result: 'refreshed' });
-    return { ok: true, body: this.tokenResponse({ pseudonymId: grant.pseudonymId, clientId: client.clientId, scopes, grantId: grant.grantId }, refreshToken) };
+    // 층은 갱신 때마다 디렉터리에서 다시 읽어요(자리를 옮기면 다음 갱신부터 새 층). 못 읽으면 넣지 않아요.
+    const floor = await this.floorOf(payload.data.sub);
+    return {
+      ok: true,
+      body: this.tokenResponse(
+        { pseudonymId: grant.pseudonymId, clientId: client.clientId, scopes, grantId: grant.grantId, ...(floor ? { floor } : {}) },
+        refreshToken,
+      ),
+    };
   }
 
   /** RFC 7009. 갱신 토큰이든 접근 토큰이든 그 기기의 승인만 지워요. 모르는 토큰도 성공으로 답해요. */
@@ -275,7 +292,7 @@ export class McpAuth {
     if (!(await repo.grantExists(this.ctx.db, t.sub, t.cid, t.gid))) return { ok: false, error: 'invalid_token' };
     const client = await repo.findClient(this.ctx.db, t.cid);
     if (!client || !this.isClientAllowed(client)) return { ok: false, error: 'invalid_token' };
-    return { ok: true, principal: { pseudonymId: t.sub, clientId: t.cid, scopes: t.scope, grantId: t.gid } };
+    return { ok: true, principal: { pseudonymId: t.sub, clientId: t.cid, scopes: t.scope, grantId: t.gid, ...(t.fl ? { floor: t.fl } : {}) } };
   }
 
   // ── 재직·폐기 ─────────────────────────────────────────
@@ -302,6 +319,11 @@ export class McpAuth {
 
   // ── 안쪽 ─────────────────────────────────────────────
 
+  private async floorOf(idpSubject: string): Promise<string | undefined> {
+    const floor = (await this.ctx.adapters.directory.getProfile(idpSubject).catch(() => null))?.floor;
+    return floor && floor.length <= 10 ? floor : undefined;
+  }
+
   private newRefreshToken(idpSubject: string, clientId: string): string {
     return this.tokens.seal('refresh', { sub: idpSubject, cid: clientId, n: randomToken(16) });
   }
@@ -318,6 +340,7 @@ export class McpAuth {
       gid: principal.grantId,
       iat: now,
       exp: now + ttl,
+      ...(principal.floor ? { fl: principal.floor } : {}),
     });
     return { access_token: access, token_type: 'Bearer', expires_in: Math.floor(ttl / 1000), refresh_token: refreshToken, scope: principal.scopes.join(' ') };
   }

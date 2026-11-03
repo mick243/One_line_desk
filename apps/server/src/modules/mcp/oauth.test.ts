@@ -50,7 +50,7 @@ describe('메타데이터', () => {
       expect(res.json()).toMatchObject({
         resource: MCP_URL,
         authorization_servers: [BASE],
-        scopes_supported: ['rooms.read', 'notices.read', 'navi.read', 'mine.read'],
+        scopes_supported: ['rooms.read', 'notices.read', 'navi.read', 'mine.read', 'leave.prepare', 'pantry.read'],
       });
     }
   });
@@ -91,7 +91,7 @@ describe('authorize와 동의 시트', () => {
       status: 'ready',
       appName: 'Claude',
       redirectHost: 'claude.ai',
-      tools: ['rooms.read', 'notices.read', 'navi.read', 'mine.read'],
+      tools: ['rooms.read', 'notices.read', 'navi.read', 'mine.read', 'leave.prepare', 'pantry.read'],
       roomsWrite: true,
     });
   });
@@ -189,6 +189,7 @@ describe('authorize와 동의 시트', () => {
 
     await t.ctx.ops.setFlag('p_op', 'mcp', true);
     await t.ctx.ops.setModule('p_op', 'navi', 'link');
+    await t.ctx.ops.setModule('p_op', 'pantry', 'link');
     await t.ctx.ops.setModule('p_op', 'rooms', 'link');
     expect((await user.call('GET', `/api/mcp/consent?req=${req}`)).body).toMatchObject({ status: 'ready', tools: ['notices.read'] });
     await t.ctx.ops.setModule('p_op', 'notices', 'off');
@@ -200,11 +201,14 @@ describe('token', () => {
   it('[MCP 시연] 동의 → 코드 교환으로 짧은 접근 토큰과 갱신 토큰을 받고, 승인 표에는 해시만 남아요', async () => {
     const t = await setup();
     const { tokens } = await connect(t, MOCK.staff);
-    expect(tokens).toMatchObject({ token_type: 'Bearer', expires_in: 150, scope: 'rooms.read notices.read navi.read mine.read' });
+    expect(tokens).toMatchObject({ token_type: 'Bearer', expires_in: 150, scope: 'rooms.read notices.read navi.read mine.read leave.prepare pantry.read' });
     expect(tokens.expires_in).toBeLessThanOrEqual(t.ctx.ops.get().values.employmentRecheckSeconds);
     const grants = await grantsOf(t);
     expect(grants).toHaveLength(1);
-    expect(grants[0]).toMatchObject({ client_id: DEMO_CLIENT.clientId, scopes: ['rooms.read', 'notices.read', 'navi.read', 'mine.read'] });
+    expect(grants[0]).toMatchObject({
+      client_id: DEMO_CLIENT.clientId,
+      scopes: ['rooms.read', 'notices.read', 'navi.read', 'mine.read', 'leave.prepare', 'pantry.read'],
+    });
     expect(JSON.stringify(grants)).not.toContain(tokens.refresh_token);
     expect(JSON.stringify(grants)).not.toContain(MOCK.staff);
   });

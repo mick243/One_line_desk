@@ -1,4 +1,4 @@
-import type { MyReservationsResponse, NoticeHit, RoomQuery, RoomSearchResult } from '@one-line-desk/shared';
+import type { Card, CardAction, LeaveDay, LeaveType, LoanKind, MyReservationsResponse, NoticeHit, RoomQuery, RoomSearchResult } from '@one-line-desk/shared';
 import type { DeskUser } from './user';
 
 // 모듈 사이에 필요한 기능은 이 인터페이스로만 주고받아요(ADR-01 모듈 경계).
@@ -11,6 +11,24 @@ export interface RoomsService {
   proposeReservation(user: Pick<DeskUser, 'pseudonymId'>, candidate: { roomId: string; start: string; end: string; query: RoomQuery }): string;
   /** 본인의 다가오는 예약(MCP 내 요청 상태, 11/3). 쓰는 쪽은 방·시간만 골라 내보내요. */
   myReservations?(user: Pick<DeskUser, 'pseudonymId'>): Promise<MyReservationsResponse>;
+  /** MCP 장비 대여 확인(11/3 확인 링크 넓히기). rooms 모듈의 equipment.ts가 채워요. */
+  equipment?: RoomsEquipmentRead;
+}
+
+/** 장비 대여 링크 값. 장비 종류와 하루 안의 한 구간(KST ISO)만이에요. */
+export interface RentLink {
+  kind: LoanKind;
+  start: string;
+  end: string;
+}
+
+export interface RoomsEquipmentRead {
+  /** 그 구간에 그 종류의 남은 수·전체 수. 누가 빌렸는지는 없어요. */
+  stock(kind: LoanKind, from: number, to: number): Promise<{ free: number; total: number }>;
+  /** 장비 대여 앱 링크용 봉인 제안 토큰. 열어 보기만 되고 plan 만들기·바로 실행은 막혀요. */
+  proposeRentLink(user: Pick<DeskUser, 'pseudonymId'>, link: RentLink): string;
+  /** 링크를 열 때: 지금 다시 확인한 남은 수 카드. 빌릴 수 있으면 [빌리기](확인 시트)가 붙어요. */
+  linkCards(user: Pick<DeskUser, 'pseudonymId'>, link: RentLink): Promise<Card[]>;
 }
 
 export interface NoticesService {
@@ -59,6 +77,36 @@ export interface NaviMcpRead {
   proposeInquiry(user: Pick<DeskUser, 'pseudonymId'>, rowId: string | null): string;
   /** 링크를 열 때: 그 행이 아직 있으면 받는 곳, 없으면 null */
   inquiryTarget(rowId: string | null): Promise<Pick<NaviTeamRow, 'rowId' | 'team' | 'task'> | null>;
+  /**
+   * 휴가 준비 링크(11/3 확인 링크 넓히기): 날짜 형식·주말·기간만 검사해 맞으면 봉인 제안 토큰을 줘요.
+   * 연차 자료(등급 2)는 읽지 않아요. 토큰에는 날짜·하루/반차·종류만 들어가고 사유는 없어요.
+   */
+  prepareLeave(
+    user: Pick<DeskUser, 'pseudonymId'>,
+    link: LeaveLink,
+  ): { ok: true; token: string; days: LeaveDay[] } | { ok: false; code: string; message: string };
+  /** 링크를 열 때(앱, 본인 로그인): 그 날짜·종류로 채운 휴가 신청 양식 행동. 앱에서 휴가를 신청할 수 없으면 null이에요. */
+  leaveTarget(user: DeskUser, link: LeaveLink): Promise<Extract<CardAction, { type: 'leave-request' }> | null>;
+}
+
+/** 휴가 준비 링크 값. 날짜·하루/반차·종류만이에요. */
+export interface LeaveLink {
+  days: LeaveDay[];
+  type: LeaveType;
+}
+
+export interface PantryService {
+  /** MCP 탕비실 요청 찾기(11/3 확인 링크 넓히기). pantry 모듈이 채워요. */
+  mcp?: PantryMcpRead;
+}
+
+export interface PantryMcpRead {
+  /** 그 층 열린 품목 중 같은 상품 같아 보이는 것(이름 규칙, LLM 없음). 이름은 메모리에서만 쓰고 저장하지 않아요. 공통 검사에 걸리면 locked예요. */
+  findSimilar(floor: string, itemName: string): Promise<{ locked?: string; items: { cardId: number; name: string; votes: number }[] }>;
+  /** 판 앱 링크용 봉인 제안 토큰. 카드 ID만 담아요(null이면 새 요청 쓰기). 열어 보기만 돼요. */
+  proposeBoardLink(user: Pick<DeskUser, 'pseudonymId'>, cardId: number | null): string;
+  /** 링크를 열 때: 내 층 열린 묶음이면 지금 다시 읽은 품목 카드([여기에 +1] 고정 버튼), 아니면 null이에요. */
+  linkCards(user: DeskUser, cardId: number): Promise<Card[] | null>;
 }
 
 export interface McpService {
@@ -72,5 +120,6 @@ export interface Services {
   rooms?: RoomsService;
   notices?: NoticesService;
   navi?: NaviService;
+  pantry?: PantryService;
   mcp?: McpService;
 }
