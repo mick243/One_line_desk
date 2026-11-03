@@ -30,6 +30,9 @@ export const OPS_VALUE_RANGE: Record<keyof OpsValues, readonly [number, number]>
   // 3시간까지만 받아요. 안내서 74쪽은 "통상적이며 합리적인 수준"을 요구하고, 오래 늘린 채 두는 것을 미조치 예로 들어요.
   idleTimeoutMinutes: [5, 180],
   rateLimitPerMinute: [1, 600],
+  // 0은 한도 없음이에요(11/3 병가).
+  sickLeaveYearDays: [0, 365],
+  sickNoteOverDays: [1, 30],
 };
 
 export const NAVI_OFF_ONLY_STANDALONE = '담당 찾기는 공지·회의실이 모두 꺼진 같이 채워요 단독 모드에서만 끌 수 있어요';

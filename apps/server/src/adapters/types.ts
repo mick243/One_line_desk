@@ -84,8 +84,8 @@ export interface LeaveUse {
   /** YYYY-MM-DD(한국 날짜). 앞으로 쓸 예정인 날도 들어 있어요. */
   date: string;
   kind: 'full' | 'half';
-  /** 없으면 연차예요. 공가(official)는 남은 연차 계산에서 빼지 않아요(11/1). */
-  type?: 'annual' | 'official';
+  /** 없으면 연차예요. 공가(official, 11/1)·병가(sick, 11/3)는 남은 연차 계산에서 빼지 않아요. 병가 사유는 받지 않아요. */
+  type?: 'annual' | 'official' | 'sick';
 }
 
 /** 인사 근태 시스템의 본인 연차 자료(등급 2). 그 사람 화면에만 보이고, AI·로그·DB에는 넣지 않아요(ADR-18). */
