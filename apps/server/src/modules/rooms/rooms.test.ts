@@ -132,12 +132,14 @@ describe('F2 회의실 찾기(읽기만)', () => {
     });
   });
 
-  it('[F2-1] 날짜·시작 시각·인원이 빠지면 무엇이 빠졌는지 되묻고, 길이는 운영 설정 기본값이에요', async () => {
+  it('[F2-1] 날짜·시작 시각이 빠지면 무엇이 빠졌는지 되묻고, 길이는 운영 설정 기본값이에요. 인원이 빠지면 내 팀 인원이에요(11/4)', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.staff);
     const res = await ask(me, '내일 회의실 잡아 주세요');
     expect(res.cards).toHaveLength(1);
-    expect(res.cards[0]).toMatchObject({ variant: 'rooms-conditions', label: '안내', headline: '빠진 조건이 있어요: 시작 시각·인원' });
+    expect(res.cards[0]).toMatchObject({ variant: 'rooms-conditions', label: '안내', headline: '빠진 조건이 있어요: 시작 시각' });
+    // 재무팀(모의 명단 2명)
+    expect(res.cards[0]!.fields).toContainEqual({ name: '인원', value: '2명' });
     expect(res.cards[0]!.fields).toContainEqual({ name: '시작', value: '알려 주세요' });
     expect(res.cards[0]!.fields).toContainEqual({ name: '길이', value: '60분' });
 
