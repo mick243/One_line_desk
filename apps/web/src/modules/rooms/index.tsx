@@ -7,6 +7,7 @@ import { RoomConditionsCard } from './RoomConditionsCard';
 import { RoomOverviewCard } from './RoomOverviewCard';
 
 export { DemoInbox, InvitedMeetings } from './Invited';
+export { JointRequests, TeamDelegates } from './JointMeeting';
 export { InviteSheet } from './InviteSheet';
 export { RoomDirectory } from './RoomDirectory';
 export { MyLoans, RoomChat } from './RoomChat';

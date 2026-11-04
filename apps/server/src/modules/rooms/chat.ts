@@ -24,7 +24,7 @@ import { chatHelpCard, dayText, equipmentOverviewCard, loanCard, myReservationCa
 import type { RentParams, RoomEquipment } from './equipment';
 import { listRooms, myLoans, myUpcoming, type ReservationRow, type RoomRow } from './repo';
 import { checkQuery, kstIso, MINUTE } from './search';
-import { JOINT_MEETING_HEADLINE, type RoomDesk, roomsWriteEnabled, slotsToQuery, teamCountText, teamSizeHeadline } from './service';
+import { JOINT_MEETING_HEADLINE, jointHeadline, type RoomDesk, roomsWriteEnabled, slotsToQuery, teamCountText, teamSizeHeadline } from './service';
 
 // 회의실 채팅(10/28, ADR-19). 한 줄을 읽고 예약·대여·내 예약·현황·장비 현황으로 답해요.
 // - AI는 문장 해석(무엇을 하려는지·명령인지·장비 종류)만 해요. 날짜·시각 계산, 회의실 고르기, 실행은 서버 규칙이 해요.
@@ -218,8 +218,9 @@ export class RoomChat {
     // 장비도 같이 빌리는 문장이면 장비 이름은 회의실 조건에서 빼요.
     const rentToo = it.kinds.length > 0 && RENT_VERB.test(text);
     const slots = parseSlots(rentToo ? withoutLoanWords(text) : text, now);
-    // 인원을 말하지 않으면 내 팀에서 그 시간에 휴가·자리비움인 사람을 뺀 수로 찾고 잡아요(11/4). 여러 팀 회의면 인원을 물어요.
-    const { query, team, joint } = await this.desk.withTeamSize(slotsToQuery(slots, this.ctx.ops.get().values.defaultMeetingMinutes), user, text, {
+    // 인원을 말하지 않으면 내 팀에서 그 시간에 휴가·자리비움인 사람을 뺀 수로 찾고 잡아요(11/4).
+    // 여러 팀 회의면 말한 팀 인원까지 더해 짐작하고 카드에서 확인해요. 예약하면 팀마다 참석자 고르기가 가요(ADR-28). 팀 이름이 없으면 물어요.
+    const { query, team, joint, teams } = await this.desk.withTeamSize(slotsToQuery(slots, this.ctx.ops.get().values.defaultMeetingMinutes), user, text, {
       requestId,
     });
     const teamNote = team ? ` · 인원은 ${teamCountText(team)}으로 봤어요` : '';
@@ -229,9 +230,10 @@ export class RoomChat {
           query,
           user,
           {
-            headline: team ? teamSizeHeadline(team) : joint && !query.people ? JOINT_MEETING_HEADLINE : headline,
+            headline: team ? teamSizeHeadline(team) : teams ? jointHeadline(teams) : joint ? JOINT_MEETING_HEADLINE : headline,
             evidence: '채팅에서 읽은 조건 · 칩을 고치면 다시 찾아요',
             aiSummarized: it.byModel,
+            ...(teams ? { joint: teams } : {}),
           },
           now,
         )
@@ -241,7 +243,8 @@ export class RoomChat {
     if (!check.ok) {
       // 채팅은 앞 문장을 기억하지 않아요. 빠진 조건만 따로 보내면 이어 붙지 않아서, 한 문장으로 다시 말해 달라고 해요(QA D-B02).
       if (joint && check.missing.includes('인원')) {
-        const reply = '여러 팀이 함께하는 회의라 인원을 짐작하지 않아요. "내일 3시 12명 회의실 잡아 줘"처럼 인원을 넣어 다시 말해 주세요';
+        const reply =
+          '여러 팀이 함께하는 회의라 어느 팀인지 알아야 해요. "내일 3시 디자인팀이랑 회의실 잡아 줘"처럼 팀 이름을 넣거나 "12명"처럼 인원을 넣어 다시 말해 주세요';
         return { reply, cards: await cards('이 조건으로 찾았어요'), changed: false, code: 'reask-joint' };
       }
       const reply = check.missing.length
@@ -256,6 +259,11 @@ export class RoomChat {
         changed: false,
         code: 'write-off',
       };
+    }
+    if (teams) {
+      // 다른 팀은 명단 인원(최대)이라 바로 잡지 않고, 확인 시트에서 고르기 요청까지 한 번에 확인해요.
+      const found = await cards('이 조건으로 찾았어요');
+      return { reply: `${jointHeadline(teams)}. [이 회의실로 예약]을 누르면 한 번 더 확인해요`, cards: found, changed: false, code: 'joint' };
     }
     if (!it.command) {
       const found = await cards('이 조건으로 찾았어요');

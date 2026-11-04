@@ -19,13 +19,14 @@ const person = (n: number, displayName: string, id: string, department: string, 
 // 로그인 고르기 목록에는 앞의 다섯 명과 IT지원팀 하린만 보이고, 나머지는 참석자 검색에서만 찾을 수 있어요.
 const EMPLOYEES: MockEmployee[] = [
   person(1, '가상 직원 하늘', 'haneul', '재무팀', '3층', [], true),
-  person(2, '가상 직원 도윤', 'doyun', '개발팀', '5층', [], true),
+  person(2, '가상 직원 도윤', 'doyun', '개발팀', '5층', ['team-lead'], true),
   person(3, '가상 총무 서연', 'seoyeon', '총무팀', '2층', ['facilities'], true),
   person(4, '가상 인사 지후', 'jihu', '인사팀', '2층', [], true),
   person(5, '가상 운영자 민준', 'minjun', '정보보안팀', '4층', ['operator'], true),
   person(6, '가상 직원 서준', 'seojun', '개발팀', '5층'),
   person(7, '가상 직원 하은', 'haeun', '개발팀', '5층'),
-  person(8, '가상 직원 지우', 'jiwoo', '디자인팀', '5층'),
+  // 디자인팀장(11/4, ADR-28). 여러 팀 회의 참석자 고르기를 시연하려고 로그인 목록에 보여요.
+  person(8, '가상 직원 지우', 'jiwoo', '디자인팀', '5층', ['team-lead'], true),
   person(9, '가상 직원 예준', 'yejun', '영업팀', '3층'),
   person(10, '가상 직원 수아', 'sua', '재무팀', '3층'),
   person(11, '가상 직원 은우', 'eunwoo', '인사팀', '2층'),

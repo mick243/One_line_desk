@@ -21,7 +21,7 @@ import type { AccessEntry } from '../../core/access-record';
 import type { Queryable } from '../../core/db';
 import { DeskError } from '../../core/errors';
 import type { PlanHandler } from '../../core/module';
-import { isJointMeeting, type TeamPresence, teamPresence } from '../../core/home-team';
+import { isJointMeeting, otherTeamsIn, type TeamPresence, teamPresence } from '../../core/home-team';
 import { linkCard } from '../../core/router';
 import type { DeskUser } from '../../core/user';
 import {
@@ -41,6 +41,7 @@ import {
   whenText,
 } from './cards';
 import { type CancelFollowUp, createInviteService, type InviteService } from './invites';
+import { createJointService, type JointService, type JointTeam } from './joint';
 import type { MockRoomLedger } from './ledger-adapter';
 import {
   type BusyRow,
@@ -99,8 +100,23 @@ export function teamSizeHeadline(t: TeamPresence): string {
   return `인원을 말하지 않아 ${teamCountText(t)}으로 찾았어요`;
 }
 
-/** 여러 팀이 함께하는 회의는 팀 인원으로 짐작하지 않고 물어요(11/4). */
+/** 여러 팀이 함께하는 회의인데 팀 이름이 없으면("합동 회의") 짐작하지 않고 물어요(11/4). */
 export const JOINT_MEETING_HEADLINE = '여러 팀이 함께하는 회의는 인원을 알려 주세요';
+
+/** "개발팀 4명 + 디자인팀 최대 3명 = 7명". 다른 팀은 근태를 읽지 않아 명단 인원(최대)이에요(ADR-28). */
+export function jointCountText(teams: JointTeam[]): string {
+  const parts = teams.map((t, i) => (i === 0 ? `${t.department} ${t.estimate}명` : `${t.department} 최대 ${t.estimate}명`));
+  return `${parts.join(' + ')} = ${teams.reduce((n, t) => n + t.estimate, 0)}명`;
+}
+
+/** 여러 팀 회의 머리줄(ADR-28) */
+export function jointHeadline(teams: JointTeam[]): string {
+  return `여러 팀 회의라 ${jointCountText(teams)}으로 찾았어요. 예약하면 팀마다 회의 담당자에게 참석자를 골라 달라고 보내요`;
+}
+
+function jointSheetLine(teams: JointTeam[]): string {
+  return `예약하면 ${teams.map((t) => t.department).join('·')} 팀장·회의 담당자에게 참석자를 골라 달라고 보내요`;
+}
 
 /** 라우터 슬롯 → 조건. 길이가 없으면 운영 설정 기본값이에요(F2-1). */
 export function slotsToQuery(slots: Slots, defaultMinutes: number): Partial<RoomQuery> {
@@ -196,6 +212,8 @@ interface CardsOptions {
   evidence: string;
   aiSummarized: boolean;
   wrong?: boolean;
+  /** 여러 팀 회의면 예약 제안에 팀 목록을 담아요(ADR-28). */
+  joint?: JointTeam[];
 }
 
 /** 빠진 조건 되묻기 · 고칠 조건 안내. 조건 칩 카드에 빠진 칸을 "알려 주세요"로 보여 줘요(F2-1). */
@@ -207,12 +225,15 @@ function askAgainCard(check: Extract<QueryCheck, { ok: false }>, o: CardsOptions
 export class RoomDesk {
   /** 회의 참석자 초대(ADR-17) */
   readonly invites: InviteService;
+  /** 여러 팀 회의 참석자 고르기(ADR-28) */
+  readonly joint: JointService;
 
   constructor(
     private readonly ctx: AppContext,
     readonly ledger: MockRoomLedger,
   ) {
     this.invites = createInviteService(ctx);
+    this.joint = createJointService(ctx);
   }
 
   /** 비어 있을 때만 모의 장부를 넣어요. 이미 있으면 비어 있는 사진·설비만 채워요. */
@@ -234,10 +255,20 @@ export class RoomDesk {
   }
 
   /** 카드 주 버튼. 쓰기가 꺼졌으면 그룹웨어 링크예요. 제안 토큰은 서명만 하고 DB에 쓰지 않아요. */
-  private primaryFor(user: Owner, slot: Slot, query: RoomQuery, text: string): CardAction {
+  private primaryFor(user: Owner, slot: Slot, query: RoomQuery, text: string, joint?: JointTeam[]): CardAction {
     const s = this.ctx.ops.get();
     if (!s.roomsWrite) return { type: 'link', text: '그룹웨어에서 예약하기', href: s.links.rooms };
-    return { type: 'propose', text, proposalToken: this.propose(user, { roomId: slot.room.id, start: kstIso(slot.start), end: kstIso(slot.end), query }) };
+    return {
+      type: 'propose',
+      text,
+      proposalToken: this.propose(user, {
+        roomId: slot.room.id,
+        start: kstIso(slot.start),
+        end: kstIso(slot.end),
+        query,
+        ...(joint?.length ? { joint } : {}),
+      }),
+    };
   }
 
   private propose(user: Owner, params: ReserveParams): string {
@@ -246,9 +277,19 @@ export class RoomDesk {
     return this.ctx.plans.propose(user, 'rooms', 'reserve', parsed.data);
   }
 
-  private slotCards(user: Owner, slots: Slot[], query: RoomQuery, o: { checkedAt: number; aiSummarized: boolean; alternative: boolean; text: string }): Card[] {
+  private slotCards(
+    user: Owner,
+    slots: Slot[],
+    query: RoomQuery,
+    o: { checkedAt: number; aiSummarized: boolean; alternative: boolean; text: string; joint?: JointTeam[] },
+  ): Card[] {
     return slots.map((slot) =>
-      slotCard(slot, { checkedAt: o.checkedAt, aiSummarized: o.aiSummarized, alternative: o.alternative, primary: this.primaryFor(user, slot, query, o.text) }),
+      slotCard(slot, {
+        checkedAt: o.checkedAt,
+        aiSummarized: o.aiSummarized,
+        alternative: o.alternative,
+        primary: this.primaryFor(user, slot, query, o.text, o.joint),
+      }),
     );
   }
 
@@ -283,6 +324,7 @@ export class RoomDesk {
             aiSummarized: o.aiSummarized,
             alternative: false,
             text: '이 회의실로 예약',
+            joint: o.joint,
           }),
           cond,
         ]),
@@ -293,7 +335,13 @@ export class RoomDesk {
       checkedAt: now,
       cards: await this.withOverlap(user, check.start, check.end, now, [
         noFreeCard(check.start, check.end, found.alternatives.length, now),
-        ...this.slotCards(user, found.alternatives, check.query, { checkedAt: now, aiSummarized: o.aiSummarized, alternative: true, text: '이 회의실로 예약' }),
+        ...this.slotCards(user, found.alternatives, check.query, {
+          checkedAt: now,
+          aiSummarized: o.aiSummarized,
+          alternative: true,
+          text: '이 회의실로 예약',
+          joint: o.joint,
+        }),
         cond,
       ]),
       found: false,
@@ -310,15 +358,41 @@ export class RoomDesk {
     user: DeskUser,
     text: string,
     from: Pick<AccessEntry, 'ip' | 'requestId'> = {},
-  ): Promise<{ query: Partial<RoomQuery>; team: TeamPresence | null; joint: boolean }> {
-    if (partial.people || !user.department) return { query: partial, team: null, joint: false };
+  ): Promise<{ query: Partial<RoomQuery>; team: TeamPresence | null; joint: boolean; teams: JointTeam[] | null }> {
+    const none = { team: null, joint: false, teams: null };
+    if (partial.people || !user.department) return { query: partial, ...none };
     const departments = await this.ctx.adapters.directory.departments().catch(() => [] as string[]);
-    if (isJointMeeting(text, user.department, departments)) return { query: partial, team: null, joint: true };
     const start = partial.date && partial.start ? kstToEpoch(partial.date, partial.start) : NaN;
     const meeting = Number.isNaN(start) || !partial.minutes ? null : { date: partial.date!, start, end: start + partial.minutes * MINUTE };
+    if (isJointMeeting(text, user.department, departments)) {
+      // 여러 팀 회의(ADR-28): 말한 팀이 있으면 우리 팀(올 사람) + 그 팀(명단 인원, 최대)으로 짐작하고, 예약하면 팀마다 고르기를 보내요.
+      const others = otherTeamsIn(text, user.department, departments);
+      if (!others.length) return { query: partial, team: null, joint: true, teams: null };
+      const own = await teamPresence(this.ctx, user, meeting, from);
+      const sizes = await Promise.all(
+        others.map((d) =>
+          this.ctx.adapters.directory
+            .departmentMembers(d, 200)
+            .then((m) => m.length)
+            .catch(() => 0),
+        ),
+      );
+      const teams: JointTeam[] = [
+        { department: user.department, estimate: own?.present ?? 1 },
+        ...others.map((d, i) => ({ department: d, estimate: sizes[i]! })),
+      ];
+      const people = Math.min(
+        200,
+        Math.max(
+          1,
+          teams.reduce((n, t) => n + t.estimate, 0),
+        ),
+      );
+      return { query: { ...partial, people }, team: null, joint: true, teams };
+    }
     const team = await teamPresence(this.ctx, user, meeting, from);
-    if (!team) return { query: partial, team: null, joint: false };
-    return { query: { ...partial, people: team.present }, team, joint: false };
+    if (!team) return { query: partial, ...none };
+    return { query: { ...partial, people: team.present }, team, joint: false, teams: null };
   }
 
   // ── 둘러보기(10/26): 회의실 카드 목록 · 회의실 자세히 · 이 회의실 이 시간(읽기만) ──────────
@@ -532,6 +606,7 @@ export class RoomDesk {
             room ? `${room.name} · ${room.floor}` : p.roomId,
             whenText(start, end),
             ...mine.map((r) => `이 시간에 이미 내 예약이 있어요: ${r.roomName} · ${r.floor} ${whenText(r.start, r.end)}`),
+            ...(p.joint?.length ? [jointSheetLine(p.joint)] : []),
             CONFIRM_LINE,
           ],
           confirmLabel: '예약하기',
@@ -547,6 +622,8 @@ export class RoomDesk {
           room && start >= ex.now ? await insertReservation(ex.q, { roomId: room.id, start, end, pseudonymId: ex.user.pseudonymId, planId: ex.planId }) : null;
         if (room && id) {
           const row: ReservationRow = { id, roomId: room.id, roomName: room.name, floor: room.floor, start, end };
+          // 여러 팀 회의면 같은 트랜잭션에서 팀마다 참석자 고르기 요청을 보내요(ADR-28).
+          if (p.joint?.length) await this.joint.open(ex.q, ex.user, id, p.joint, { start, end, roomName: room.name }, ex.now);
           return { status: 'done', card: confirmedCard(row, ex.now) };
         }
         const { rooms, busy } = await this.load(ex.q, p.query.date);
@@ -564,7 +641,13 @@ export class RoomDesk {
         return {
           status: 'blocked',
           card: blockedCard(room, start, end, alternatives.length, ex.now),
-          alternatives: this.slotCards(ex.user, alternatives, p.query, { checkedAt: ex.now, aiSummarized: false, alternative: true, text: '대안으로 예약' }),
+          alternatives: this.slotCards(ex.user, alternatives, p.query, {
+            checkedAt: ex.now,
+            aiSummarized: false,
+            alternative: true,
+            text: '대안으로 예약',
+            joint: p.joint,
+          }),
         };
       },
       reSearch: async (p, user) =>
@@ -573,6 +656,7 @@ export class RoomDesk {
             headline: '같은 조건으로 다시 찾았어요',
             evidence: '처음 찾은 조건 · 칩을 고치면 다시 찾아요',
             aiSummarized: false,
+            joint: p.joint,
           })
         ).cards,
     };
