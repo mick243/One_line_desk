@@ -30,6 +30,9 @@ kill_timeout = 60
   DESK_AI_MODEL = "claude-haiku-5-5"
   # 무보관 계약을 했다고 가정한 시연이에요(11/3 사용자 결정). 사람이 쓴 질문 글(등급 1)이 모델로 가요. 자료는 모두 가상이에요.
   NO_RETENTION_CONTRACT_CONFIRMED = "true"
+  # 시연에서 처음부터 켜 둘 운영 스위치(11/4 사용자 결정). 디스크가 배포마다 비워져 운영자가 켠 값이 사라져서 여기서 켜요.
+  # 회의실 예약·여러 팀 회의(roomsWrite), 채팅 "잡아 줘" 바로 예약(autoActions), 같은 팀 일정·휴가 반영 인원(teamSchedule). MCP는 넣지 않아요.
+  DESK_DEMO_SWITCHES = "roomsWrite,autoActions,teamSchedule"
 
 [http_service]
   internal_port = 3190

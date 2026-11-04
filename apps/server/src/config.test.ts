@@ -76,6 +76,28 @@ describe('운영 설정이 실수하면 닫혀요(L-15)', () => {
     expect(problemsOf({ ...demo, SESSION_SECRET: 'change-me-session-secret-at-least-32-chars' })).toContain('개발용 값');
   });
 
+  it('시연 배포는 DESK_DEMO_SWITCHES로 고른 운영 스위치만 켜서 시작해요. 정한 목록 밖이면 막고, 운영 배포는 무시해요(11/4)', async () => {
+    const demo = { NODE_ENV: 'production', DESK_MOCK_LOGIN: 'true', PUBLIC_BASE_URL: 'https://demo.example.com', ...SECRETS };
+    expect(loadConfig({ ...demo, DESK_DEMO_SWITCHES: 'roomsWrite,autoActions,teamSchedule' }).demoSwitches).toEqual([
+      'roomsWrite',
+      'autoActions',
+      'teamSchedule',
+    ]);
+    expect(problemsOf({ ...demo, DESK_DEMO_SWITCHES: 'roomsWrite,mcp' })).toContain(
+      'DESK_DEMO_SWITCHES에는 roomsWrite·autoActions·teamSchedule만 넣을 수 있어요(mcp)',
+    );
+    expect(loadConfig({ ...PROD, DESK_DEMO_SWITCHES: 'roomsWrite' }).demoSwitches).toEqual([]);
+
+    const db = await createTestDb();
+    try {
+      const built = await buildApp({ config: loadConfig({ ...demo, DESK_DEMO_SWITCHES: 'roomsWrite,teamSchedule' }), db, seed: true });
+      expect(built.ctx.ops.get()).toMatchObject({ roomsWrite: true, teamSchedule: true, autoActions: false, mcp: false });
+      await built.app.close();
+    } finally {
+      await db.close();
+    }
+  });
+
   it('개발은 개발용 값으로 떠요', () => {
     expect(loadConfig({})).toMatchObject({ production: false, demo: true, seedDemo: true });
   });

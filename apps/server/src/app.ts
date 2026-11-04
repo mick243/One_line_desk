@@ -68,7 +68,9 @@ export async function buildApp(opts: BuildOptions) {
 
   const audit = new AuditLog(db);
   // 운영(production)은 출시 기본값(회의실 쓰기·MCP 끔)에서 시작해요. 개발·시연은 모두 켠 기본값이에요. 바꾼 값은 표에서 읽어요.
-  const ops = new OpsSettingsStore(audit, db, config.production ? LAUNCH_OPS_SETTINGS : DEFAULT_OPS_SETTINGS);
+  // 운영은 출시 기본값이에요. 시연 배포는 DESK_DEMO_SWITCHES로 고른 스위치만 켜서 시작해요(배포마다 PGlite가 비워져서, 11/4).
+  const launch = { ...LAUNCH_OPS_SETTINGS, ...Object.fromEntries(config.demoSwitches.map((s) => [s, true])) };
+  const ops = new OpsSettingsStore(audit, db, config.production ? launch : DEFAULT_OPS_SETTINGS);
   await ops.load();
   const settings = () => ops.get();
   // AI 공급자(11/3): Anthropic·Gemini 중 하나로 고정해요. 기본은 Anthropic이고, 비우면 모델을 부르지 않아요.

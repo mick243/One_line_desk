@@ -9,6 +9,10 @@ if (process.env.NODE_ENV !== 'production' && existsSync(rootEnv)) process.loadEn
 /** 운영에서 서버가 내보낼 웹 화면 파일(npm run build 결과) 기본 위치 */
 export const DEFAULT_WEB_DIST = fileURLToPath(new URL('../../web/dist', import.meta.url));
 
+/** 시연 배포에서 처음부터 켜 둘 수 있는 운영 스위치(DESK_DEMO_SWITCHES, 11/4). 회의실 쓰기·채팅 자동 실행·같은 팀 일정만이에요. */
+export const DEMO_SWITCHES = ['roomsWrite', 'autoActions', 'teamSchedule'] as const;
+export type DemoSwitch = (typeof DEMO_SWITCHES)[number];
+
 export interface ServerConfig {
   port: number;
   /** 웹 앱 주소. MCP 앱 확인 링크와 인가 리디렉트에 써요. */
@@ -66,6 +70,11 @@ export interface ServerConfig {
    * 참이면 문의를 저장하지 않고(남이 쓴 글이 다른 방문자에게 보이지 않게), 운영 설정을 바꾸지 못해요(누구나 가상 운영자로 들어와서요).
    */
   demoWide: boolean;
+  /**
+   * 시연 배포가 처음 뜰 때 켜 둘 운영 스위치(DESK_DEMO_SWITCHES, 11/4 사용자 결정). 시연 PGlite는 배포마다 비워져서 운영자가 켠 값이 사라지기 때문이에요.
+   * 출시 기본값(LAUNCH_OPS_SETTINGS) 위에 이 스위치만 켜요. 고를 수 있는 것은 DEMO_SWITCHES뿐이에요(MCP처럼 바깥과 닿는 스위치는 넣지 않아요).
+   */
+  demoSwitches: DemoSwitch[];
   /**
    * 시연 비밀번호(DESK_DEMO_PASSWORD, 10/30 Vercel 배포 회의). 넣으면 모의 로그인에 이 비밀번호가 있어야 들어와요.
    * 웹 화면만 Vercel(공개 주소)에 올린 시연에서 자료·API를 비밀번호 뒤에 둬요. 시연 배포에서만 써요.
@@ -148,6 +157,8 @@ function productionProblems(env: NodeJS.ProcessEnv, config: ServerConfig, runtim
     const real = [env.DESK_IDP && 'DESK_IDP', env.SLACK_BOT_TOKEN && 'SLACK_BOT_TOKEN'].filter((x): x is string => Boolean(x));
     if (real.length)
       problems.push(`시연 배포(DESK_MOCK_LOGIN=true)에 실제 연결 설정이 있어요(${real.join('·')}). 운영 배포에서는 DESK_MOCK_LOGIN을 지워 주세요`);
+    const unknown = config.demoSwitches.filter((s) => !(DEMO_SWITCHES as readonly string[]).includes(s));
+    if (unknown.length) problems.push(`DESK_DEMO_SWITCHES에는 ${DEMO_SWITCHES.join('·')}만 넣을 수 있어요(${unknown.join('·')})`);
     if (config.demoPassword !== undefined && config.demoPassword.length < DEMO_PASSWORD_MIN)
       problems.push(`DESK_DEMO_PASSWORD는 ${DEMO_PASSWORD_MIN}자 이상이어야 해요`);
     if (config.databaseUrl && env.DESK_DEMO_DATABASE !== 'true')
@@ -258,6 +269,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, runtime: Runtim
     webDist: env.DESK_WEB_DIST === 'none' ? undefined : env.DESK_WEB_DIST || (production ? DEFAULT_WEB_DIST : undefined),
     build: env.DESK_BUILD || 'dev',
     demoWide: demo && env.DESK_DEMO_WIDE === 'true',
+    demoSwitches: demo ? (list(env.DESK_DEMO_SWITCHES) as DemoSwitch[]) : [],
     demoPassword: demo ? env.DESK_DEMO_PASSWORD || undefined : undefined,
   };
   // 응답 머리에 그대로 실어서 글자를 좁혀 둬요.
