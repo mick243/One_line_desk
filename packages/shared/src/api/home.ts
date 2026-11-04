@@ -158,11 +158,5 @@ export interface AwaySetRequest {
   requestId: string;
 }
 
-/** GET /api/home/today: 홈 첫 화면 "오늘·이번 주 내 일". 열 때 한 번 불러요(폴링 아님). */
-export interface HomeTodayResponse {
-  enabled: boolean;
-  items: HomeItem[];
-}
-
 /** 홈 칸 아래 문구(D8 조건) */
 export const HOME_ASK_NOTE = '나에게 해당하는 일을 찾아요. 여기서는 예약·신청을 하지 않아요';

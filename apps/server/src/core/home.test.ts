@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { AskResponse, Card, HomeAskResponse, HomeTodayResponse, InquiryListResponse, PeopleSearchResponse } from '@one-line-desk/shared';
+import type { AskResponse, Card, HomeAskResponse, InquiryListResponse, PeopleSearchResponse } from '@one-line-desk/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { postActionOf } from '../modules/pantry/test-kit';
 import { createTestApp, MOCK } from '../testing';
@@ -106,6 +106,8 @@ describe('홈 질문 규칙 해석기(ADR-27)', () => {
     ['우리 부서 받은 문의 몇 건이야?', { intent: 'mine', period: 'recent', kinds: ['inbox'], moveTo: null }],
     ['내 문의 답장 왔어?', { intent: 'mine', period: 'recent', kinds: ['invites', 'inquiries', 'leave', 'inbox'], moveTo: null }],
     ['탕비실 내 요청 결과', { intent: 'mine', period: 'recent', kinds: ['pantry'], moveTo: null }],
+    ['내가 보낸 요청 어떻게 됐어?', { intent: 'mine', period: 'recent', kinds: ['inquiries', 'leave', 'pantry'], moveTo: null }],
+    ['나한테 온 요청 있어?', { intent: 'mine', period: 'recent', kinds: ['invites', 'inbox'], moveTo: null }],
     ['내일 3시 회의실 잡아 줘', { intent: 'move', period: 'tomorrow', kinds: [], moveTo: 'rooms' }],
     ['빔프로젝터 빌려 줘', { intent: 'move', period: 'recent', kinds: [], moveTo: 'rooms' }],
     ['빈 회의실 있어?', { intent: 'move', period: 'recent', kinds: [], moveTo: 'rooms' }],
@@ -159,9 +161,8 @@ describe('홈 AI 채팅: 나에게 해당하는 일(ADR-27)', () => {
     });
     expect(JSON.stringify(invited)).not.toMatch(/"type":"(fixed|propose|post|invite)"/);
 
-    // 홈 첫 화면 "오늘·이번 주 내 일"
-    const today = (await doyun.call('GET', '/api/home/today')).body as HomeTodayResponse;
-    expect(today).toMatchObject({ enabled: true, items: [{ kind: 'reservations', title: `회의실 예약 · ${room}` }] });
+    // 홈 예시 칩 "내가 보낸 요청"(11/4): 내 예약은 섞이지 않고 보낸 것(문의·휴가·같이 채워요)만 모아요.
+    expect((await home(doyun, '내가 보낸 요청 어떻게 됐어?')).items.map((i) => i.kind)).not.toContain('reservations');
   });
 
   it('[ADR-27 시험] 남의 일은 섞이지 않아요: 다른 사람 예약·문의·휴가가 0건이에요', async () => {
@@ -171,7 +172,14 @@ describe('홈 AI 채팅: 나에게 해당하는 일(ADR-27)', () => {
     const room = await reserveAndInvite(doyun);
     expect((await sendLeave(haneul)).status).toBe(200);
 
-    for (const text of ['이번 주 내 일정 뭐 있어?', '내 휴가 어떻게 됐어?', '오늘 나한테 온 거 있어?', '내 문의 답장 왔어?']) {
+    for (const text of [
+      '이번 주 내 일정 뭐 있어?',
+      '내 휴가 어떻게 됐어?',
+      '오늘 나한테 온 거 있어?',
+      '내 문의 답장 왔어?',
+      '내가 보낸 요청 어떻게 됐어?',
+      '나한테 온 요청 있어?',
+    ]) {
       const body = JSON.stringify(await home(haneul, text));
       expect(body, text).not.toContain(room);
       expect(body, text).not.toContain('도윤');
@@ -179,7 +187,6 @@ describe('홈 AI 채팅: 나에게 해당하는 일(ADR-27)', () => {
     const doyunView = JSON.stringify(await home(doyun, '내 휴가 어떻게 됐어?'));
     expect(doyunView).not.toContain('11월 3일');
     expect(doyunView).not.toContain('하늘');
-    expect(JSON.stringify((await haneul.call('GET', '/api/home/today')).body)).not.toContain(room);
   });
 
   it('[ADR-27·ADR-18 시험] 휴가는 본인 요청의 종류·상태·날만 보이고, 연차 숫자는 0건이에요. "남은 연차 보기"는 본인 휴가 카드로 가는 버튼이에요', async () => {
@@ -295,7 +302,6 @@ describe('홈 AI 채팅: 나에게 해당하는 일(ADR-27)', () => {
     expect(unknown).toMatchObject({ intent: 'unknown', headline: '문의하기에서 물어보세요' });
     expect(unknown.cards[0]!.actions.primary).toEqual({ type: 'reask', text: '문의하기로 옮기기', kind: 'navi' });
     for (const text of ['이번 주 내 일정 뭐 있어?', '내 휴가 어떻게 됐어?', '오늘 나한테 온 거 있어?']) await home(doyun, text);
-    await doyun.call('GET', '/api/home/today');
     expect(await rowCounts(t)).toEqual(before);
     // 쓰기 행동(확인 시트·고정 버튼·게시)은 어떤 응답에도 없어요.
     expect(JSON.stringify(move)).not.toMatch(/proposalToken|"type":"(fixed|propose|post)"/);
@@ -308,7 +314,6 @@ describe('홈 AI 채팅: 나에게 해당하는 일(ADR-27)', () => {
     expect((await home(doyun, '이번 주 내 일정 뭐 있어?')).items).toHaveLength(1);
     await t.ctx.ops.setModule('p_op', 'rooms', 'off');
     expect((await home(doyun, '이번 주 내 일정 뭐 있어?')).items).toEqual([]);
-    expect(((await doyun.call('GET', '/api/home/today')).body as HomeTodayResponse).items).toEqual([]);
     // 꺼진 기능으로는 옮기지 않고 모름 카드예요.
     expect((await home(doyun, '내일 3시 회의실 잡아 줘')).intent).toBe('unknown');
     await t.ctx.ops.setModule('p_op', 'rooms', 'link');
@@ -322,7 +327,6 @@ describe('홈 AI 채팅: 나에게 해당하는 일(ADR-27)', () => {
     const op = await t.loginAs(MOCK.operator);
     expect((await op.call('PUT', '/api/ops/flag', { flag: 'homeAsk', value: false })).status).toBe(200);
     expect((await doyun.call('POST', '/api/home/ask', { text: '이번 주 내 일정' })).status).toBe(409);
-    expect((await doyun.call('GET', '/api/home/today')).body).toEqual({ enabled: false, items: [] });
     expect((await t.app.inject({ method: 'GET', url: '/api/config/public' })).json()).toMatchObject({ homeAsk: false });
   });
 

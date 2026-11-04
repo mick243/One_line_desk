@@ -4,6 +4,7 @@
 // 겹치는 작은 카드(내 예약·내 문의 요약)는 빼고, 그 카드에 없는 같이 채워요 내 요청만 남겨요.
 // 11/4(홈 메뉴 회의, docs/홈메뉴회의_2026-11-03.md): 홈 채팅이 켜져 있으면 "할 수 있는 일" 목록도 숨겨요. 아래 탭과
 // 같은 기능을 같은 조건으로 보여 줘서 겹치기 때문이에요. 채팅을 끈 회사에서는 홈이 비지 않게 목록을 그대로 보여 줘요.
+// 11/4 사용자 결정: 같이 채워요 내 요청도 채팅("내가 보낸 요청")과 겹쳐서 채팅이 켜져 있으면 숨겨요.
 import type { AppDestination, ModuleKind, ModuleSwitch } from '@one-line-desk/shared';
 import type { Me } from '../api';
 import { Icon } from '../components/Icon';
@@ -66,7 +67,7 @@ export function Home({
       )}
 
       {!homeAsk && modules.rooms !== 'off' && <MyReservations compact />}
-      {modules.pantry !== 'off' && <MyRequests compact />}
+      {!homeAsk && modules.pantry !== 'off' && <MyRequests compact />}
       {!homeAsk && modules.navi === 'on' && <MyInquiries compact />}
     </div>
   );
