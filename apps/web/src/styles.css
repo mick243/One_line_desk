@@ -596,7 +596,8 @@ button.chip:active {
   gap: 8px;
 }
 
-/* 아래 탭: 아이콘 + 짧은 이름. 지금 탭은 진한 글자예요. */
+/* 아래 탭: 아이콘 + 짧은 이름. 지금 탭은 진한 글자예요.
+   11/4: 홈 목록이 숨으면 탭이 유일한 입구라, 좁은 화면·큰 글자에서 이름이 겹치지 않게 낱말 단위로 줄을 바꿔요. */
 .tabbar {
   position: fixed;
   bottom: 0;
@@ -624,7 +625,10 @@ button.chip:active {
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: -0.02em;
-  white-space: nowrap;
+  line-height: 1.2;
+  text-align: center;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 .tab .icon {
   transition: transform 0.15s var(--ease);

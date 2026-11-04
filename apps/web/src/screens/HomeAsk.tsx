@@ -135,7 +135,7 @@ export function HomeAsk({ onOpen, teamSchedule = false }: { onOpen: Open; teamSc
   );
 }
 
-/** "오늘·이번 주 내 일". 열 때 한 번 불러요. 불러오지 못하면 조용히 숨겨요(홈 메뉴는 그대로예요). */
+/** "오늘·이번 주 내 일". 열 때 한 번 불러요. 불러오지 못하면 조용히 숨겨요(다른 일은 아래 탭으로 가요). */
 function TodayCard({ onOpen }: { onOpen: (open: HomeOpen) => void }) {
   const [data, setData] = useState<HomeTodayResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -155,7 +155,7 @@ function TodayCard({ onOpen }: { onOpen: (open: HomeOpen) => void }) {
     <section className='card home-today' aria-label='오늘·이번 주 내 일'>
       <h2>오늘·이번 주 내 일</h2>
       {data.items.length === 0 ? (
-        <p className='empty'>이번 주에 나에게 해당하는 일이 없어요.</p>
+        <p className='empty'>이번 주에 나에게 해당하는 일이 없어요. 다른 일은 아래 탭에서 고를 수 있어요.</p>
       ) : (
         <HomeItemList items={data.items} onOpen={onOpen} label='오늘·이번 주 내 일' />
       )}
