@@ -24,7 +24,7 @@ import { chatHelpCard, dayText, equipmentOverviewCard, loanCard, myReservationCa
 import type { RentParams, RoomEquipment } from './equipment';
 import { listRooms, myLoans, myUpcoming, type ReservationRow, type RoomRow } from './repo';
 import { checkQuery, kstIso, MINUTE } from './search';
-import { type RoomDesk, roomsWriteEnabled, slotsToQuery } from './service';
+import { type RoomDesk, roomsWriteEnabled, slotsToQuery, teamSizeHeadline } from './service';
 
 // 회의실 채팅(10/28, ADR-19). 한 줄을 읽고 예약·대여·내 예약·현황·장비 현황으로 답해요.
 // - AI는 문장 해석(무엇을 하려는지·명령인지·장비 종류)만 해요. 날짜·시각 계산, 회의실 고르기, 실행은 서버 규칙이 해요.
@@ -218,9 +218,17 @@ export class RoomChat {
     // 장비도 같이 빌리는 문장이면 장비 이름은 회의실 조건에서 빼요.
     const rentToo = it.kinds.length > 0 && RENT_VERB.test(text);
     const slots = parseSlots(rentToo ? withoutLoanWords(text) : text, now);
-    const query = slotsToQuery(slots, this.ctx.ops.get().values.defaultMeetingMinutes);
+    // 인원을 말하지 않으면 내 팀 인원으로 찾아요(11/4). 사람이 말한 조건이 아니라서 바로 잡지 않고 카드에서 확인해요.
+    const { query, teamSize } = await this.desk.withTeamSize(slotsToQuery(slots, this.ctx.ops.get().values.defaultMeetingMinutes), user);
     const cards = async (headline: string) =>
-      (await this.desk.cards(query, user, { headline, evidence: '채팅에서 읽은 조건 · 칩을 고치면 다시 찾아요', aiSummarized: it.byModel }, now)).cards;
+      (
+        await this.desk.cards(
+          query,
+          user,
+          { headline: teamSize ? teamSizeHeadline(teamSize) : headline, evidence: '채팅에서 읽은 조건 · 칩을 고치면 다시 찾아요', aiSummarized: it.byModel },
+          now,
+        )
+      ).cards;
 
     const check = checkQuery(query, now);
     if (!check.ok) {
@@ -236,6 +244,16 @@ export class RoomChat {
         cards: await cards('이 조건으로 찾았어요'),
         changed: false,
         code: 'write-off',
+      };
+    }
+    if (teamSize) {
+      const found = await cards('이 조건으로 찾았어요');
+      if (it.held) return { reply: it.held, cards: found, changed: false, code: 'held' };
+      return {
+        reply: `${teamSizeHeadline(teamSize)}. 정원 ${teamSize}명 이상인 회의실만 보여요. 맞으면 [이 회의실로 예약]을 누르고, 인원이 다르면 "3명"처럼 넣어 다시 말해 주세요`,
+        cards: found,
+        changed: false,
+        code: 'team-size',
       };
     }
     if (!it.command) {
