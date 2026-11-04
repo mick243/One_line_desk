@@ -227,6 +227,81 @@ export async function gatherTeamSchedule(
   };
 }
 
+/** 오전 반차는 13시 전, 오후 반차는 13시부터로 봐요(회의 시간과 겹치는지만 봐요). */
+const NOON = '13:00';
+
+export interface TeamPresence {
+  /** 같은 부서 재직자(나 포함) */
+  total: number;
+  /** 그 시간에 올 사람(나 포함, 1명 이상) */
+  present: number;
+  /** 휴가로 빠진 수 */
+  leave: number;
+  /** 외근·출장·재택·자리비움으로 빠진 수 */
+  away: number;
+}
+
+/**
+ * 회의실 인원을 말하지 않았을 때(11/4 사용자 결정): 같은 부서 재직자에서 그 회의 시간에 휴가(승인된 근태 기록)·자리비움인 사람을 빼고 세요.
+ * 수만 돌려주고 이름·종류·사유는 돌려주지 않아요. AI에는 보내지 않아요(ADR-18). 같은 팀 일정 스위치(teamSchedule)가 꺼져 있으면
+ * 근태·자리비움을 읽지 않고 부서 인원만 세요. 회의 시간을 모를 때도 부서 인원만 세요. 읽었으면 빠진 사람의 가명 ID로 접속기록(team.headcount) 한 줄을 남겨요(0명이어도).
+ * 반나절(오전·오후를 모르는 반차)은 올 수도 있어서 빼지 않아요(회의실이 모자라는 쪽보다 넉넉한 쪽이 나아요).
+ */
+export async function teamPresence(
+  ctx: AppContext,
+  user: DeskUser,
+  meeting: { date: string; start: number; end: number } | null,
+  from: Pick<AccessEntry, 'ip' | 'requestId'> = {},
+): Promise<TeamPresence | null> {
+  if (!user.department) return null;
+  const all = await ctx.adapters.directory.departmentMembers(user.department, TEAM_MAX + 1).catch(() => [] as EmployeeProfile[]);
+  if (!all.length) return null;
+  const total = Math.max(1, all.length);
+  const settings = ctx.ops.get();
+  // 스위치가 꺼졌거나 회의 시간을 모르면(날짜·시각이 빠짐) 근태·자리비움을 읽지 않아요.
+  if (!settings.teamSchedule || !meeting) return { total, present: total, leave: 0, away: 0 };
+
+  const others = all.filter((p) => p.idpSubject !== user.idpSubject).slice(0, TEAM_MAX);
+  const ids = others.map((p) => pseudonymize(ctx.config.pseudonymSecret, p.idpSubject));
+  const away = settings.modules.navi === 'on' ? ctx.services.navi?.away : undefined;
+  const [records, aways] = await Promise.all([
+    mapLimited(others, LEAVE_CONCURRENCY, (p) =>
+      ctx.adapters.leave.leaveOf({ idpSubject: p.idpSubject, ...(p.email ? { email: p.email } : {}) }).catch(() => null),
+    ),
+    away ? away.ofPeople(ids, meeting.start, meeting.end).catch(() => [] as TeamAway[]) : Promise.resolve([] as TeamAway[]),
+  ]);
+  const noon = Date.parse(`${meeting.date}T${NOON}:00${KST_OFFSET}`);
+  const morning = meeting.start < noon;
+  const afternoon = meeting.end > noon;
+  const out = new Set<number>();
+  let leave = 0;
+  let awayCount = 0;
+  others.forEach((_p, i) => {
+    const uses = (records[i]?.uses ?? []).filter((u) => u.date === meeting.date);
+    const part = uses.length ? partOf(uses) : null;
+    const onLeave = part === 'full' || (part === 'am' && morning && !afternoon) || (part === 'pm' && afternoon && !morning);
+    if (onLeave) {
+      leave += 1;
+      out.add(i);
+      return;
+    }
+    if (aways.some((a) => a.pseudonymId === ids[i] && a.start < meeting.end && meeting.start < a.end)) {
+      awayCount += 1;
+      out.add(i);
+    }
+  });
+  await ctx.access.record({ pseudonymId: user.pseudonymId, action: 'team.headcount', subjectRefs: [...out].map((i) => `person:${ids[i]}`), ...from });
+  return { total, present: Math.max(1, total - leave - awayCount), leave, away: awayCount };
+}
+
+/** 여러 팀이 함께하는 회의를 가리키는 말(11/4). 이때는 팀 인원으로 짐작하지 않고 인원을 물어요. */
+const JOINT_WORDS = /합동|연합|여러\s?팀|타\s?팀|다른\s?팀|팀\s?(끼리|간|들)|부서\s?간|유관\s?부서|전사|전체\s?회의|타\s?부서|다른\s?부서|협업\s?회의/;
+
+/** 여러 팀이 함께하는 회의인지: 말("합동·다른 팀·부서 간")이나 내 부서가 아닌 부서 이름이 있으면요. 부서 이름 대조는 서버 안에서만 해요. */
+export function isJointMeeting(text: string, own: string, departments: string[]): boolean {
+  return JOINT_WORDS.test(text) || mentionsOtherTeam(text, own, departments);
+}
+
 const PART_TEXT: Record<AbsencePart, string> = { full: '하루 부재', am: '오전 부재', pm: '오후 부재', half: '반나절 부재' };
 
 /** 한 칸 글: "10:00–11:00 회의(회의실 4A)" · "14:00–18:00 외근" · "오후 부재" */

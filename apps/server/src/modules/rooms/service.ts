@@ -15,11 +15,13 @@ import type {
   RoomSearchResult,
   Slots,
 } from '@one-line-desk/shared';
-import { kstDate, kstTime } from '@one-line-desk/shared';
+import { kstDate, kstTime, kstToEpoch } from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
+import type { AccessEntry } from '../../core/access-record';
 import type { Queryable } from '../../core/db';
 import { DeskError } from '../../core/errors';
 import type { PlanHandler } from '../../core/module';
+import { isJointMeeting, type TeamPresence, teamPresence } from '../../core/home-team';
 import { linkCard } from '../../core/router';
 import type { DeskUser } from '../../core/user';
 import {
@@ -65,6 +67,7 @@ import {
   isFree,
   kstIso,
   makeSlot,
+  MINUTE,
   type QueryCheck,
   RoomQuerySchema,
   type ReserveParams,
@@ -77,8 +80,6 @@ import {
 // 쓰기는 'rooms:reserve' plan(확인 시트 한 번)과 [취소] 고정 버튼뿐이에요.
 
 type Owner = Pick<DeskUser, 'pseudonymId'>;
-/** 팀 인원은 찾기 조건 상한(200명)까지만 세요. */
-const TEAM_SIZE_MAX = 200;
 /** 찾는 사람: 내 층에서 가까운 회의실부터 보여 주고(home), 겹치는 내 예약을 알려 줘요(10/28). */
 type Seeker = Pick<DeskUser, 'pseudonymId' | 'floor'>;
 
@@ -87,10 +88,19 @@ export function roomsWriteEnabled(s: OpsSettings): boolean {
   return s.modules.rooms === 'on' && s.roomsWrite;
 }
 
-/** 인원을 말하지 않아 팀 인원으로 찾았을 때 머리줄(11/4). */
-export function teamSizeHeadline(teamSize: number): string {
-  return `인원을 말하지 않아 우리 팀 ${teamSize}명으로 찾았어요`;
+/** "우리 팀 4명(6명 중 휴가 1명·자리비움 1명 빼고)". 수만 쓰고 이름은 쓰지 않아요(11/4). */
+export function teamCountText(t: TeamPresence): string {
+  const out = [t.leave ? `휴가 ${t.leave}명` : '', t.away ? `자리비움 ${t.away}명` : ''].filter(Boolean);
+  return out.length ? `우리 팀 ${t.present}명(${t.total}명 중 ${out.join('·')} 빼고)` : `우리 팀 ${t.present}명`;
 }
+
+/** 인원을 말하지 않아 팀 인원으로 찾았을 때 머리줄(11/4). */
+export function teamSizeHeadline(t: TeamPresence): string {
+  return `인원을 말하지 않아 ${teamCountText(t)}으로 찾았어요`;
+}
+
+/** 여러 팀이 함께하는 회의는 팀 인원으로 짐작하지 않고 물어요(11/4). */
+export const JOINT_MEETING_HEADLINE = '여러 팀이 함께하는 회의는 인원을 알려 주세요';
 
 /** 라우터 슬롯 → 조건. 길이가 없으면 운영 설정 기본값이에요(F2-1). */
 export function slotsToQuery(slots: Slots, defaultMinutes: number): Partial<RoomQuery> {
@@ -291,15 +301,24 @@ export class RoomDesk {
   }
 
   /**
-   * 인원을 말하지 않으면 내 팀(직원 명단의 같은 부서 재직자, 나 포함) 인원으로 찾아요(11/4 사용자 결정, 모든 팀).
-   * 그래서 팀이 5명이면 정원 4명 이하 회의실은 후보에서 빠져요. 이름은 쓰지 않고 수만 세요(ADR-06).
-   * 부서를 모르거나 명단을 못 읽으면 그대로 두고, 지금처럼 인원을 되물어요.
+   * 인원을 말하지 않으면(11/4 사용자 결정, 모든 팀) 내 팀(같은 부서 재직자, 나 포함)에서 그 회의 시간에 휴가·자리비움인 사람을 뺀 수로 찾아요.
+   * 그래서 올 사람이 5명이면 정원 4명 이하 회의실은 후보에서 빠져요. 수만 세고 이름·종류는 쓰지 않아요(core/home-team.ts teamPresence).
+   * 여러 팀이 함께하는 회의(말·다른 부서 이름)는 짐작하지 않고 인원을 되물어요(joint). 명단을 못 읽으면 그대로 두고 되물어요.
    */
-  async withTeamSize(partial: Partial<RoomQuery>, user: Pick<DeskUser, 'department'>): Promise<{ query: Partial<RoomQuery>; teamSize: number | null }> {
-    if (partial.people || !user.department) return { query: partial, teamSize: null };
-    const members = await this.ctx.adapters.directory.departmentMembers(user.department, TEAM_SIZE_MAX).catch(() => []);
-    if (!members.length) return { query: partial, teamSize: null };
-    return { query: { ...partial, people: members.length }, teamSize: members.length };
+  async withTeamSize(
+    partial: Partial<RoomQuery>,
+    user: DeskUser,
+    text: string,
+    from: Pick<AccessEntry, 'ip' | 'requestId'> = {},
+  ): Promise<{ query: Partial<RoomQuery>; team: TeamPresence | null; joint: boolean }> {
+    if (partial.people || !user.department) return { query: partial, team: null, joint: false };
+    const departments = await this.ctx.adapters.directory.departments().catch(() => [] as string[]);
+    if (isJointMeeting(text, user.department, departments)) return { query: partial, team: null, joint: true };
+    const start = partial.date && partial.start ? kstToEpoch(partial.date, partial.start) : NaN;
+    const meeting = Number.isNaN(start) || !partial.minutes ? null : { date: partial.date!, start, end: start + partial.minutes * MINUTE };
+    const team = await teamPresence(this.ctx, user, meeting, from);
+    if (!team) return { query: partial, team: null, joint: false };
+    return { query: { ...partial, people: team.present }, team, joint: false };
   }
 
   // ── 둘러보기(10/26): 회의실 카드 목록 · 회의실 자세히 · 이 회의실 이 시간(읽기만) ──────────
