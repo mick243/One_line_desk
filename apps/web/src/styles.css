@@ -2233,3 +2233,24 @@ select {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* 여러 팀 회의(11/4, ADR-28): 마이 페이지 참석자 고르기·팀 회의 담당자 */
+.joint-request {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.joint-members {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.joint-delegates {
+  margin: 0;
+  padding-left: 20px;
+}

@@ -96,6 +96,11 @@
           "name": "operator",
           "path": "/역할/operator",
           "subGroups": []
+        },
+        {
+          "name": "team-lead",
+          "path": "/역할/team-lead",
+          "subGroups": []
         }
       ]
     }
@@ -182,7 +187,7 @@
           "temporary": false
         }
       ],
-      "groups": ["/부서/개발팀", "/층/5층"],
+      "groups": ["/부서/개발팀", "/층/5층", "/역할/team-lead"],
       "requiredActions": []
     },
     {
@@ -290,7 +295,7 @@
           "temporary": false
         }
       ],
-      "groups": ["/부서/디자인팀", "/층/5층"],
+      "groups": ["/부서/디자인팀", "/층/5층", "/역할/team-lead"],
       "requiredActions": []
     },
     {

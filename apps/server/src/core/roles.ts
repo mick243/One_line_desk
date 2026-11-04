@@ -7,5 +7,6 @@ export function computeRoles(profile: EmployeeProfile, chartOwnerDepartments: Se
   if (profile.groups.includes('facilities')) roles.push('facilities');
   if (chartOwnerDepartments.has(profile.department)) roles.push('chart-owner');
   if (profile.groups.includes('operator')) roles.push('operator');
+  if (profile.groups.includes('team-lead')) roles.push('team-lead');
   return roles;
 }

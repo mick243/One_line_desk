@@ -7,7 +7,8 @@ export const MODULES = ['navi', 'notices', 'rooms', 'pantry'] as const;
 export type ModuleKind = (typeof MODULES)[number];
 
 // 역할(R7). 세션에는 누구인지만 담고, 역할은 요청마다 다시 계산해요(ADR-13).
-const ROLES = ['employee', 'facilities', 'chart-owner', 'operator'] as const;
+// team-lead(11/4, ADR-28): 팀장. 여러 팀 회의 참석자를 고르고, 마이 페이지에서 팀 회의 담당자를 정해요.
+const ROLES = ['employee', 'facilities', 'chart-owner', 'operator', 'team-lead'] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -15,4 +16,5 @@ export const ROLE_LABEL: Record<Role, string> = {
   facilities: '총무',
   'chart-owner': '분장표 주인',
   operator: '운영자',
+  'team-lead': '팀장',
 };

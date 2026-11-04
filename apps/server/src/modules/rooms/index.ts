@@ -6,7 +6,7 @@ import { RoomEquipment, rentLinkHandler } from './equipment';
 import { MockRoomLedger } from './ledger-adapter';
 import * as repo from './repo';
 import { registerRoomRoutes } from './routes';
-import { JOINT_MEETING_HEADLINE, RoomDesk, slotsToQuery, teamSizeHeadline } from './service';
+import { JOINT_MEETING_HEADLINE, jointHeadline, RoomDesk, slotsToQuery, teamSizeHeadline } from './service';
 
 // F2 회의실 찾고 확인 예약(ADR-03·05·06·14).
 // - 찾기(/ask, 조건 칩 다시 찾기, 앱 확인 링크)는 읽기만 하고 제안 토큰만 붙여요.
@@ -33,9 +33,10 @@ export function createRoomsModule(ctx: AppContext): DeskModule {
   return {
     kind: 'rooms',
     async ask({ text, slots, aiParsed, user }) {
-      const { query, team, joint } = await desk.withTeamSize(slotsToQuery(slots, ctx.ops.get().values.defaultMeetingMinutes), user, text);
+      const { query, team, joint, teams } = await desk.withTeamSize(slotsToQuery(slots, ctx.ops.get().values.defaultMeetingMinutes), user, text);
       const { cards, found } = await desk.cards(query, user, {
-        headline: team ? teamSizeHeadline(team) : joint && !query.people ? JOINT_MEETING_HEADLINE : '이 조건으로 찾았어요',
+        headline: team ? teamSizeHeadline(team) : teams ? jointHeadline(teams) : joint ? JOINT_MEETING_HEADLINE : '이 조건으로 찾았어요',
+        ...(teams ? { joint: teams } : {}),
         evidence: '내가 쓴 문장에서 뽑은 조건 · 칩을 고치면 다시 찾아요',
         aiSummarized: aiParsed,
         wrong: true,
@@ -53,6 +54,10 @@ export function createRoomsModule(ctx: AppContext): DeskModule {
     },
     adapters: () => [ledger.capabilities],
     // 보관 기간(7일, 10/28): 끝난 예약·대여, 취소 이력
-    retention: () => repo.purgeRecords(ctx.db, recordCutoff(ctx.now())),
+    // 여러 팀 회의 고르기 요청(ADR-28): 시간이 지난 요청은 닫고 알리고, 7일 지난 요청은 지워요.
+    retention: async () => {
+      await repo.purgeRecords(ctx.db, recordCutoff(ctx.now()));
+      await desk.joint.sweep(ctx.now());
+    },
   };
 }

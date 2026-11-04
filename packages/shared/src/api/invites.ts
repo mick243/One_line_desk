@@ -75,3 +75,52 @@ export interface DemoInboxResponse {
   calendar: { uid: string; title: string; when: string; location: string; cancelled: boolean }[];
   messages: { id: string; text: string; sentAt: string }[];
 }
+
+// ── 여러 팀 회의 참석자 고르기(11/4 사용자 결정, ADR-28) ─────────────────────────
+// 여러 팀 회의를 예약하면 팀마다 그 팀 팀장·회의 담당자에게 "참석자를 골라 주세요"가 가요. 먼저 고른 사람의 선택이 초대가 돼요.
+
+/** 팀장이 마이 페이지에서 정하는 회의 담당자 수 상한(팀장 다음 순서) */
+export const TEAM_DELEGATE_MAX = 2;
+
+/** 고르는 사람(팀장·담당자)에게 보이는 요청 하나. 같은 부서 사람 목록(이름·고르기용 ref)이 같이 와요. */
+export interface JointPickRequest {
+  id: string;
+  /** 부른 사람 이름(부서). 초대처럼 고르는 사람에게만 보여요(ADR-17). */
+  requester: string;
+  department: string;
+  /** "11월 5일(수) 15:00~16:00" */
+  when: string;
+  /** "회의실 5C · 5층" */
+  room: string;
+  /** 예약할 때 짐작한 이 팀 인원 */
+  estimate: number;
+  /** 이때까지 고르지 않으면 짐작한 인원 그대로예요(한국 시각 ISO). */
+  deadline: string;
+  members: { ref: string; name: string }[];
+}
+
+export interface JointRequestsResponse {
+  items: JointPickRequest[];
+}
+
+export interface JointPickBody {
+  /** 같은 부서 사람 ref(이 요청 목록에서 받은 것). 비우면 "우리 팀은 안 가요"예요. */
+  people: string[];
+  /** 그룹웨어 캘린더 초대·Slack DM도 보낼지(공개 설정의 알릴 길이 있을 때만). 앱 알림은 늘 가요. */
+  calendar?: boolean;
+  slack?: boolean;
+  requestId: string;
+}
+
+/** 마이 페이지 "팀 회의 담당자". 팀장에게만 와요. */
+export interface TeamDelegatesResponse {
+  isLead: boolean;
+  department: string;
+  delegates: { position: number; name: string }[];
+}
+
+export interface TeamDelegatesBody {
+  /** 직원 검색 ref, 순서대로 최대 TEAM_DELEGATE_MAX명. 비우면 모두 지워요. */
+  people: string[];
+  requestId: string;
+}

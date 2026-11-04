@@ -36,6 +36,12 @@ export const ReserveParamsSchema = z
     start: z.string().regex(KST_ISO),
     end: z.string().regex(KST_ISO),
     query: RoomQuerySchema,
+    /** 여러 팀 회의(11/4, ADR-28): 예약하면 팀마다 참석자 고르기 요청을 보내요. 부서 이름과 짐작한 인원뿐이에요. */
+    joint: z
+      .array(z.strictObject({ department: z.string().min(1).max(40), estimate: z.number().int().min(0).max(200) }))
+      .min(1)
+      .max(6)
+      .optional(),
   })
   .refine(
     (p) => {

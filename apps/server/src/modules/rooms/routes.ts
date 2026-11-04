@@ -3,6 +3,11 @@ import {
   EQUIPMENT,
   INVITE_MAX,
   type InviteRequest,
+  type JointPickBody,
+  type JointRequestsResponse,
+  TEAM_DELEGATE_MAX,
+  type TeamDelegatesBody,
+  type TeamDelegatesResponse,
   type RoomCardsResponse,
   type RoomChatRequest,
   type RoomChatResponse,
@@ -58,6 +63,48 @@ export function registerRoomRoutes(app: FastifyInstance, ctx: AppContext, desk: 
       });
       return { checkedAt: kstIso(found.checkedAt), cards: found.cards };
     },
+  );
+
+  // 여러 팀 회의 참석자 고르기(11/4, ADR-28). 고르는 사람은 그 팀 팀장·회의 담당자뿐이고, 같은 부서 사람만 골라요.
+  const PEOPLE = { type: 'array', maxItems: 100, uniqueItems: true, items: { type: 'string', maxLength: 2048 } } as const;
+  const REQUEST_ID = { type: 'string', minLength: 1, maxLength: 64 } as const;
+  app.get('/api/rooms/joint/requests', { preHandler: ctx.guards.user }, async (req): Promise<JointRequestsResponse> => desk.joint.mine(req.deskUser!));
+  app.post<{ Params: { id: string }; Body: JointPickBody }>(
+    '/api/rooms/joint/requests/:id/pick',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        params: { type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 20 } } },
+        body: {
+          type: 'object',
+          required: ['people', 'requestId'],
+          additionalProperties: false,
+          properties: { people: PEOPLE, calendar: { type: 'boolean' }, slack: { type: 'boolean' }, requestId: REQUEST_ID },
+        },
+      },
+    },
+    async (req) =>
+      desk.joint.pick(req.deskUser!, req.params.id, req.body.people, req.body.requestId, {
+        calendar: req.body.calendar === true,
+        slack: req.body.slack === true,
+      }),
+  );
+  // 마이 페이지 "팀 회의 담당자"(팀장만 정해요).
+  app.get('/api/rooms/joint/delegates', { preHandler: ctx.guards.user }, async (req): Promise<TeamDelegatesResponse> => desk.joint.delegates(req.deskUser!));
+  app.post<{ Body: TeamDelegatesBody }>(
+    '/api/rooms/joint/delegates',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['people', 'requestId'],
+          additionalProperties: false,
+          properties: { people: { ...PEOPLE, maxItems: TEAM_DELEGATE_MAX }, requestId: REQUEST_ID },
+        },
+      },
+    },
+    async (req): Promise<TeamDelegatesResponse> => desk.joint.setDelegates(req.deskUser!, req.body.people, req.body.requestId),
   );
 
   // 앱 확인 링크(M3). 토큰 주인만 열고, 연 것만으로는 아무것도 쓰지 않아요.
@@ -142,6 +189,19 @@ export function registerRoomRoutes(app: FastifyInstance, ctx: AppContext, desk: 
     additionalProperties: false,
     properties: { id: { type: 'string', pattern: '^[0-9]{1,18}$' } },
   } as const;
+
+  // 회의실 옮기기(ADR-28): 여러 팀 회의 참석자가 정해진 뒤 내 예약의 [작은/더 큰 회의실로 옮기기]. 화면이 확인을 먼저 띄워요.
+  app.post<{ Params: { id: string }; Body: { roomId: string } }>(
+    '/api/rooms/reservations/:id/move',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        params: ID_PARAMS,
+        body: { type: 'object', required: ['roomId'], additionalProperties: false, properties: { roomId: { type: 'string', pattern: '^[a-z0-9-]{1,40}$' } } },
+      },
+    },
+    async (req) => desk.move(req.deskUser!, req.params.id, req.body.roomId),
+  );
   app.post<{ Params: { id: string }; Body: InviteRequest }>(
     '/api/rooms/reservations/:id/invites',
     {

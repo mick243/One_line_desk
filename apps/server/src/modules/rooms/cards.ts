@@ -28,7 +28,7 @@ export function whenText(start: number, end: number): string {
   return `${formatKstDateTime(start)}~${kstTime(end)}`;
 }
 
-const roomLine = (room: { name: string; floor: string }) => `${room.name} · ${room.floor}`;
+export const roomLine = (room: { name: string; floor: string }) => `${room.name} · ${room.floor}`;
 const statusAt = (at: number) => `현황 ${kstTime(at)} 기준`;
 
 /**

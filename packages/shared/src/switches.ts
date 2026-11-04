@@ -49,6 +49,8 @@ export interface OpsSettings {
     sickLeaveYearDays: number;
     /** 병가 요청이 이 일수를 넘으면 "진단서는 인사팀에 따로 내 주세요"를 보여요(11/3, 기본 3일). */
     sickNoteOverDays: number;
+    /** 여러 팀 회의 참석자 고르기 마감: 회의 시작 이만큼(분) 전까지(11/4, ADR-28, 기본 60분). 지나면 짐작한 인원 그대로예요. */
+    jointPickLeadMinutes: number;
   };
 }
 
@@ -80,6 +82,7 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     // 회사 병가 규정이 정해지기 전에는 한도 없음(0)이에요.
     sickLeaveYearDays: 0,
     sickNoteOverDays: 3,
+    jointPickLeadMinutes: 60,
   },
 };
 

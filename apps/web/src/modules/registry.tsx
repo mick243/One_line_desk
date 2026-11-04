@@ -2,7 +2,18 @@ import { lazyPart } from '../components/LazyPart';
 import { ConnectedApps } from './mcp';
 import { InquiryInbox, InquirySheet, MyAway, MyInquiries } from './navi';
 import { BoardScreen, MyRequests, pantryCardRenderers } from './pantry';
-import { DemoInbox, InvitedMeetings, InviteSheet, MyLoans, MyReservations, RoomChat, RoomDirectory, roomsCardRenderers } from './rooms';
+import {
+  DemoInbox,
+  InvitedMeetings,
+  InviteSheet,
+  JointRequests,
+  MyLoans,
+  MyReservations,
+  RoomChat,
+  RoomDirectory,
+  roomsCardRenderers,
+  TeamDelegates,
+} from './rooms';
 import type { WebModules } from './types';
 
 // 역할이 있는 사람이나 바깥 주소로 들어온 사람만 보는 화면은 처음 열 때 따로 불러요(첫 화면 JS를 줄여요).
@@ -35,6 +46,8 @@ export const webModules: WebModules = {
   RoomDirectory,
   InviteSheet,
   InvitedMeetings,
+  JointRequests,
+  TeamDelegates,
   DemoInbox,
   MyRequests,
   ConnectedApps,

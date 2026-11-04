@@ -44,7 +44,9 @@ export function Mine({
   const { modules } = switches;
   const retention = retentionLines(switches);
   const [confirmAll, setConfirmAll] = useState(false);
-  const { MyReservations, MyRequests, MyInquiries, MyAway, ConnectedApps, InvitedMeetings, DemoInbox } = webModules;
+  const { MyReservations, MyRequests, MyInquiries, MyAway, ConnectedApps, InvitedMeetings, JointRequests, TeamDelegates, DemoInbox } = webModules;
+  // 여러 팀 회의(ADR-28): 회의실 쓰기가 켜졌을 때만이에요.
+  const joint = modules.rooms === 'on' && switches.roomsWrite;
 
   async function logout(all: boolean) {
     await api.logout(all);
@@ -73,11 +75,13 @@ export function Mine({
         </div>
       </section>
 
+      {joint && <JointRequests />}
       <MyReservations />
       <InvitedMeetings />
       <MyRequests />
       {switches.modules.navi === 'on' && <MyInquiries />}
       {switches.modules.navi === 'on' && <MyAway />}
+      {joint && <TeamDelegates />}
 
       {(hasFacilities || hasChart) && (
         <section className='card'>

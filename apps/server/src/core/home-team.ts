@@ -294,6 +294,20 @@ export async function teamPresence(
   return { total, present: Math.max(1, total - leave - awayCount), leave, away: awayCount };
 }
 
+/** 질문에 나온 내 부서가 아닌 부서 이름들(명단에 있는 이름만, 긴 이름 먼저). 여러 팀 회의에서 어느 팀에 고르기를 보낼지 정해요(ADR-28). */
+export function otherTeamsIn(text: string, own: string, departments: string[]): string[] {
+  let rest = squash(text);
+  const mine = squash(own);
+  const out: string[] = [];
+  for (const name of [...new Set(departments.filter(Boolean))].sort((a, b) => squash(b).length - squash(a).length)) {
+    const key = squash(name);
+    if (!key || !rest.includes(key)) continue;
+    rest = rest.split(key).join(' ');
+    if (key !== mine) out.push(name);
+  }
+  return out;
+}
+
 /** 여러 팀이 함께하는 회의를 가리키는 말(11/4). 이때는 팀 인원으로 짐작하지 않고 인원을 물어요. */
 const JOINT_WORDS = /합동|연합|여러\s?팀|타\s?팀|다른\s?팀|팀\s?(끼리|간|들)|부서\s?간|유관\s?부서|전사|전체\s?회의|타\s?부서|다른\s?부서|협업\s?회의/;
 

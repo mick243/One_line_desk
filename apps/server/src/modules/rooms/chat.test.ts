@@ -200,7 +200,8 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
 
   it.each([
     ['묻는 문장', '내일 3시 6명 빈 방 있어?', 'cards'],
-    ['여러 팀 회의인데 인원이 빠짐(11/4)', '내일 3시 디자인팀이랑 회의실 잡아 줘', 'reask-joint'],
+    ['여러 팀 회의인데 팀 이름·인원이 빠짐(11/4)', '내일 3시 합동 회의 회의실 잡아 줘', 'reask-joint'],
+    ['여러 팀 회의는 카드에서 확인(ADR-28)', '내일 3시 디자인팀이랑 회의실 잡아 줘', 'joint'],
     ['시작 시각이 빠짐', '내일 6명 회의실 잡아 줘', 'reask'],
     ['4시간 넘음', '내일 1시부터 6시까지 6명 잡아 줘', 'too-long'],
     ['취소는 자동으로 하지 않음', '내일 3시 예약 취소해 줘', 'cancel'],
@@ -273,19 +274,6 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
     const two = await chat(me, '내일 4시 2명 빈 회의실 있어?');
     expect(two.reply).not.toContain('우리 팀');
     expect(capacities(two)).toContain(4);
-  });
-
-  it('여러 팀이 함께하는 회의는 팀 인원으로 짐작하지 않고 인원을 물어요(11/4)', async () => {
-    const t = await setup();
-    const me = await t.loginAs(MOCK.dev);
-    for (const text of ['내일 3시 디자인팀이랑 회의실 잡아 줘', '내일 3시 합동 회의 회의실 잡아 줘', '내일 3시 다른 팀이랑 같이 회의실 잡아 줘']) {
-      const out = await chat(me, text);
-      expect(out.changed, text).toBe(false);
-      expect(out.reply, text).toContain('여러 팀이 함께하는 회의라 인원을 짐작하지 않아요');
-    }
-    expect(await appReservations(t)).toHaveLength(0);
-    // 인원을 말하면 그대로 잡아요.
-    expect((await chat(me, '내일 3시 디자인팀이랑 8명 회의실 잡아 줘')).changed).toBe(true);
   });
 
   it('묻는 문장은 후보 카드와 [이 회의실로 예약](확인 시트)이에요', async () => {

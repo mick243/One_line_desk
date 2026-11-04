@@ -54,6 +54,9 @@ export interface WebModules {
   InviteSheet: ComponentType<{ action: Extract<CardAction, { type: 'invite' }>; channels: PublicConfig['inviteChannels']; onClose: () => void }>;
   /** 회의실·마이 페이지의 "나를 부른 회의" 칸 */
   InvitedMeetings: ComponentType;
+  /** 여러 팀 회의(ADR-28): 참석자 고르기 요청 · 팀 회의 담당자 */
+  JointRequests: ComponentType;
+  TeamDelegates: ComponentType;
   /** 마이 페이지의 시연 받은편지함(모의 그룹웨어 캘린더·모의 Slack) */
   DemoInbox: ComponentType;
   /** 홈·회의실·마이 페이지의 "내 예약" 칸 */

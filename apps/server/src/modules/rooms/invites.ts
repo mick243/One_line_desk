@@ -114,6 +114,58 @@ export function createInviteService(ctx: AppContext) {
     return out;
   }
 
+  /**
+   * 앱 알림 뒤 바깥으로 알리기(트랜잭션이 끝난 뒤). 예약한 사람이 직접 고른 초대와 여러 팀 회의에서 팀장·담당자가 고른 초대(ADR-28)가 같이 써요.
+   * - 그룹웨어 캘린더: 지금 참석자 모두로 일정을 만들거나 고쳐요(초대 메일은 그룹웨어가 보내요). 주최자는 예약한 사람이에요.
+   * - Slack DM: 이번에 새로 부른 사람에게만 보내요.
+   */
+  async function deliver(
+    meeting: Meeting,
+    reservationId: string,
+    inviter: { displayName: string; email?: string },
+    added: EmployeeProfile[],
+    opts: { calendar: boolean; slack: boolean },
+  ): Promise<{ calendar: number | null; slack: { sent: number; missing: number; failed: number } | null }> {
+    const profile = lookup();
+    let calendar: number | null = null;
+    if (opts.calendar && added.length) {
+      calendar = 0;
+      const all = await invitesOf(ctx.db, reservationId);
+      const emails = (await Promise.all(all.map((i) => profile(i.attendeeSubject)))).flatMap((p) => (p?.email ? [p.email] : []));
+      if (inviter.email && emails.length) {
+        try {
+          await ctx.adapters.calendar.upsertEvent({
+            uid: calendarUid(reservationId),
+            title: `회의 · ${meeting.roomName}`,
+            start: new Date(meeting.start).toISOString(),
+            end: new Date(meeting.end).toISOString(),
+            location: `${meeting.roomName} (${meeting.floor})`,
+            organizerEmail: inviter.email,
+            attendeeEmails: emails,
+          });
+          const addedEmails = new Set(added.flatMap((p) => (p.email ? [p.email] : [])));
+          calendar = addedEmails.size;
+          await ctx.db.query('update room_invites set via_calendar = true where reservation_id = $1 and attendee_subject = any($2)', [
+            reservationId,
+            added.filter((p) => p.email).map((p) => p.idpSubject),
+          ]);
+        } catch {
+          calendar = -1;
+        }
+      }
+    }
+    let slack: { sent: number; missing: number; failed: number } | null = null;
+    if (opts.slack && added.length) {
+      const text = `${inviter.displayName}님이 회의에 불렀어요 · ${whenText(meeting.start, meeting.end)} · ${meeting.roomName}(${meeting.floor}) · 한 줄 데스크에서 보기: ${appUrl}`;
+      const r = await outboundSlack(added, text);
+      slack = { sent: r.sent, missing: r.missing, failed: r.failed };
+      const sentSubjects = added.filter((p) => p.email && r.sentTo.has(p.email)).map((p) => p.idpSubject);
+      if (sentSubjects.length)
+        await ctx.db.query('update room_invites set via_slack = true where reservation_id = $1 and attendee_subject = any($2)', [reservationId, sentSubjects]);
+    }
+    return { calendar, slack };
+  }
+
   return {
     /** 참석자 초대 보내기. 같은 requestId로 두 번 와도 한 번만 보내요. */
     async send(user: DeskUser, reservationId: string, req: InviteRequest): Promise<{ status: 'done'; card: Card }> {
@@ -165,48 +217,7 @@ export function createInviteService(ctx: AppContext) {
       const added = fresh as EmployeeProfile[] | null;
       if (!added) return result; // 같은 요청이 다시 왔어요. 바깥으로 다시 보내지 않아요.
 
-      // 그룹웨어 캘린더 초대: 지금 참석자 모두로 일정을 만들거나 고쳐요(초대 메일은 그룹웨어가 보내요).
-      let calendar: number | null = null;
-      if (req.calendar && added.length) {
-        calendar = 0;
-        const all = await invitesOf(ctx.db, reservationId);
-        const emails = (await Promise.all(all.map((i) => profile(i.attendeeSubject)))).flatMap((p) => (p?.email ? [p.email] : []));
-        if (user.email && emails.length) {
-          try {
-            await ctx.adapters.calendar.upsertEvent({
-              uid: calendarUid(reservationId),
-              title: `회의 · ${meeting.roomName}`,
-              start: new Date(meeting.start).toISOString(),
-              end: new Date(meeting.end).toISOString(),
-              location: `${meeting.roomName} (${meeting.floor})`,
-              organizerEmail: user.email,
-              attendeeEmails: emails,
-            });
-            const addedEmails = new Set(added.flatMap((p) => (p.email ? [p.email] : [])));
-            calendar = addedEmails.size;
-            await ctx.db.query('update room_invites set via_calendar = true where reservation_id = $1 and attendee_subject = any($2)', [
-              reservationId,
-              added.filter((p) => p.email).map((p) => p.idpSubject),
-            ]);
-          } catch {
-            calendar = -1;
-          }
-        }
-      }
-
-      // Slack DM: 이번에 새로 부른 사람에게만 보내요.
-      let slack: { sent: number; missing: number; failed: number } | null = null;
-      if (req.slack && added.length) {
-        const text = `${user.displayName}님이 회의에 불렀어요 · ${whenText(meeting.start, meeting.end)} · ${meeting.roomName}(${meeting.floor}) · 한 줄 데스크에서 보기: ${appUrl}`;
-        const r = await outboundSlack(added, text);
-        slack = { sent: r.sent, missing: r.missing, failed: r.failed };
-        const sentSubjects = added.filter((p) => p.email && r.sentTo.has(p.email)).map((p) => p.idpSubject);
-        if (sentSubjects.length)
-          await ctx.db.query('update room_invites set via_slack = true where reservation_id = $1 and attendee_subject = any($2)', [
-            reservationId,
-            sentSubjects,
-          ]);
-      }
+      const { calendar, slack } = await deliver(meeting, reservationId, user, added, { calendar: req.calendar, slack: req.slack });
 
       await ctx.audit.record({
         pseudonymId: user.pseudonymId,
@@ -216,6 +227,54 @@ export function createInviteService(ctx: AppContext) {
         result: `app:${added.length},calendar:${calendar ?? 'no'},slack:${slack ? `${slack.sent}/${added.length}` : 'no'}`,
       });
       return { status: 'done', card: invitedCard(meeting, { app: added.length, calendar, slack }) };
+    },
+
+    /**
+     * 여러 팀 회의에서 팀장·담당자가 고른 사람에게 바깥으로 알려요(ADR-28, 트랜잭션이 끝난 뒤). 부른 사람(주최자)은 예약한 사람이에요.
+     * 감사에는 고른 사람(by) 이름 없이 동작·수만 남겨요.
+     */
+    async deliverPicked(by: DeskUser, reservationId: string, subjects: string[], opts: { calendar: boolean; slack: boolean }) {
+      const meeting = await findMeeting(ctx.db, reservationId);
+      if (!meeting || !subjects.length) return { calendar: null, slack: null };
+      const owner = (await invitesOf(ctx.db, reservationId)).find((i) => subjects.includes(i.attendeeSubject));
+      const profile = lookup();
+      const inviter = owner ? await profile(owner.inviterSubject) : null;
+      const added = (await Promise.all(subjects.map((s) => profile(s)))).filter((p): p is EmployeeProfile => Boolean(p));
+      const out = await deliver(
+        meeting,
+        reservationId,
+        { displayName: inviter?.displayName ?? '예약한 사람', ...(inviter?.email ? { email: inviter.email } : {}) },
+        added,
+        opts,
+      );
+      await ctx.audit.record({
+        pseudonymId: by.pseudonymId,
+        channel: 'write',
+        module: 'rooms',
+        action: 'invite.outbound',
+        result: `app:${added.length},calendar:${out.calendar ?? 'no'},slack:${out.slack ? `${out.slack.sent}/${added.length}` : 'no'}`,
+      });
+      return out;
+    },
+
+    /** 회의실을 옮긴 뒤(ADR-28) 그룹웨어 캘린더 일정이 있으면 장소를 고쳐요. 실패해도 옮기기는 그대로예요. */
+    async relocated(user: DeskUser, reservationId: string): Promise<void> {
+      const meeting = await findMeeting(ctx.db, reservationId);
+      const all = await invitesOf(ctx.db, reservationId);
+      if (!meeting || !user.email || !all.some((i) => i.viaCalendar)) return;
+      const profile = lookup();
+      const emails = (await Promise.all(all.map((i) => profile(i.attendeeSubject)))).flatMap((p) => (p?.email ? [p.email] : []));
+      await ctx.adapters.calendar
+        .upsertEvent({
+          uid: calendarUid(reservationId),
+          title: `회의 · ${meeting.roomName}`,
+          start: new Date(meeting.start).toISOString(),
+          end: new Date(meeting.end).toISOString(),
+          location: `${meeting.roomName} (${meeting.floor})`,
+          organizerEmail: user.email,
+          attendeeEmails: emails,
+        })
+        .catch(() => undefined);
     },
 
     /** 예약한 사람이 보는 참석자와 답(내 예약 칸) */
