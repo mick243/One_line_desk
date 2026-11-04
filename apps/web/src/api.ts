@@ -1,7 +1,6 @@
 import type {
   AskResponse,
   HomeAskResponse,
-  HomeTodayResponse,
   Kind,
   LockKind,
   ModuleKind,
@@ -209,10 +208,6 @@ export const api = {
     if (status === 200) return { status: 'ok', response: data };
     if (status === 422 && data.locks) return { status: 'locked', locks: data.locks };
     return { status: 'failed', message: data.message ?? '지금 답을 만들지 못했어요' };
-  },
-  /** 홈 "오늘·이번 주 내 일". 홈을 열 때 한 번 불러요(폴링 아님). */
-  homeToday(): Promise<HomeTodayResponse> {
-    return apiRequest('GET', '/api/home/today');
   },
   createPlan(proposalToken: string): Promise<PlanCreateResponse> {
     return apiRequest('POST', '/api/plans', { proposalToken });

@@ -1,4 +1,4 @@
-import { checkInput, HOME_ASK_MAX, type HomeAskResponse, type HomeTodayResponse } from '@one-line-desk/shared';
+import { checkInput, HOME_ASK_MAX, type HomeAskResponse } from '@one-line-desk/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context';
 import { accessFrom } from '../core/access-record';
@@ -6,8 +6,7 @@ import { HomeDesk } from '../core/home';
 
 // 홈 AI 채팅 "나에게 해당하는 일"(ADR-27, 개선 회의 D8 해제).
 // - POST /api/home/ask: 질문 글은 POST 본문과 이 요청 메모리에서만 다뤄요. DB·로그·감사·응답에 넣지 않아요(ADR-10, R13).
-// - GET /api/home/today: 홈을 열 때 한 번 부르는 "오늘·이번 주 내 일". 칸이 없고 AI를 부르지 않아요.
-// 두 경로 모두 읽기만 해요. 예약·신청·표 만들기는 하지 않고, 다른 일이면 옮기기 카드만 줘요(D8 조건).
+// 읽기만 해요. 예약·신청·표 만들기는 하지 않고, 다른 일이면 옮기기 카드만 줘요(D8 조건).
 const HOME_OFF = { error: 'home-off', message: '지금은 홈에서 찾지 않아요. 기능 페이지에서 찾아 주세요' };
 
 export function registerHomeRoutes(app: FastifyInstance, ctx: AppContext) {
@@ -42,6 +41,4 @@ export function registerHomeRoutes(app: FastifyInstance, ctx: AppContext) {
       return home.ask(user, checked.text, accessFrom(req));
     },
   );
-
-  app.get('/api/home/today', { preHandler: ctx.guards.user }, async (req): Promise<HomeTodayResponse> => home.today(req.deskUser!));
 }
