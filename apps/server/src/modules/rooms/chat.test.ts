@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Card, CardAction, PlanConfirmResponse, PlanCreateResponse, RoomChatResponse, RoomListResponse } from '@one-line-desk/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AiGateway, type LlmProvider, type ProviderResult, type StructuredRequest } from '../../core/ai/gateway';
@@ -199,7 +200,7 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
 
   it.each([
     ['묻는 문장', '내일 3시 6명 빈 방 있어?', 'cards'],
-    ['인원이 빠짐(팀 인원으로 찾고 바로 잡지 않음, 11/4)', '내일 3시 회의실 잡아 줘', 'team-size'],
+    ['여러 팀 회의인데 인원이 빠짐(11/4)', '내일 3시 디자인팀이랑 회의실 잡아 줘', 'reask-joint'],
     ['시작 시각이 빠짐', '내일 6명 회의실 잡아 줘', 'reask'],
     ['4시간 넘음', '내일 1시부터 6시까지 6명 잡아 줘', 'too-long'],
     ['취소는 자동으로 하지 않음', '내일 3시 예약 취소해 줘', 'cancel'],
@@ -214,32 +215,77 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
     expect(audit[0]).toMatchObject({ channel: 'ask', action: 'chat', result: code });
   });
 
-  it('인원을 말하지 않으면 내 팀 인원으로 찾아요: 팀이 5명이면 정원 4명 이하 회의실은 후보에서 빠져요(11/4 사용자 결정, 모든 팀)', async () => {
+  it('인원을 말하지 않으면 내 팀에서 그 시간에 휴가·자리비움인 사람을 뺀 수로 찾고, 시킨 말이면 그 인원에 맞는 회의실로 바로 잡아요(11/4 사용자 결정, 모든 팀)', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.dev);
     const directory = t.ctx.adapters.directory;
     const real = directory.departmentMembers.bind(directory);
-    // 개발팀을 5명으로 가정해요(모의 명단은 4명).
+    // 개발팀을 6명으로 가정해요(모의 명단은 4명: 도윤·서준·하은·주원).
     directory.departmentMembers = async (department, limit) => {
       const got = await real(department, limit);
-      return [...got, { ...got[0]!, idpSubject: 'mock|emp-099', displayName: '가상 직원 다섯째' }].slice(0, limit);
+      const extra = [7, 8].map((n) => ({ ...got[0]!, idpSubject: 'mock|emp-09' + n, displayName: '가상 직원 추가' + n }));
+      return [...got, ...extra].slice(0, limit);
     };
     const rooms = await listRooms(t.db);
     const capacities = (out: RoomChatResponse) =>
-      out.cards.filter((c) => c.actions.primary?.type === 'propose').map((c) => rooms.find((r) => c.id.startsWith(`rooms-slot-${r.id}-`))?.capacity ?? 0);
+      out.cards.filter((c) => c.actions.primary?.type === 'propose').map((c) => rooms.find((r) => c.id.startsWith('rooms-slot-' + r.id + '-'))?.capacity ?? 0);
 
-    const team = await chat(me, '내일 3시 회의실 잡아 줘');
-    expect(team.reply).toContain('우리 팀 5명으로 찾았어요');
-    expect(team.changed).toBe(false);
-    expect(capacities(team).length).toBeGreaterThan(0);
-    expect(capacities(team).every((n) => n >= 5)).toBe(true);
-    expect(JSON.stringify(team)).not.toMatch(/서준|하은|주원|다섯째/);
-    expect(await appReservations(t)).toHaveLength(0);
+    // 휴가·자리비움이 없으면 6명이라 정원 4명 회의실은 후보에서 빠져요.
+    const six = await chat(me, '내일 3시 빈 회의실 있어?');
+    expect(six.reply).toContain('인원은 우리 팀 6명으로 봤어요');
+    expect(capacities(six).length).toBeGreaterThan(0);
+    expect(capacities(six).every((n) => n >= 6)).toBe(true);
+
+    // 내일 서준은 하루 휴가(승인된 근태 기록), 하은은 오후 외근이라 15시 회의는 4명이에요. 주원은 오전 반차라 15시에는 와요.
+    await t.ctx.adapters.leave.recordUses({ idpSubject: 'mock|emp-006', email: 'seojun@corp.example' }, [{ date: '2026-10-27', kind: 'full' }]);
+    await t.ctx.adapters.leave.recordUses({ idpSubject: 'mock|emp-015', email: 'juwon@corp.example' }, [{ date: '2026-10-27', kind: 'half', half: 'am' }]);
+    const haeun = await t.loginAs('mock|emp-007');
+    const away = await haeun.call('POST', '/api/navi/away', {
+      kind: 'outside',
+      start: '2026-10-27T13:00:00+09:00',
+      end: '2026-10-27T18:00:00+09:00',
+      requestId: randomUUID(),
+    });
+    expect(away.status).toBe(200);
+
+    const four = await chat(me, '내일 3시 회의실 잡아 줘');
+    expect(four.changed).toBe(true);
+    expect(four.reply).toContain('인원은 우리 팀 4명(6명 중 휴가 1명·자리비움 1명 빼고)으로 봤어요');
+    // 이름·휴가 종류는 답에 없어요.
+    expect(JSON.stringify(four)).not.toMatch(/서준|하은|주원|추가7|외근|연차/);
+    const [booked] = await appReservations(t);
+    expect(rooms.find((r) => r.id === booked!.room_id)!.capacity).toBeGreaterThanOrEqual(4);
+
+    // 빠진 사람만 가명 ID로 접속기록(team.headcount)에 남아요.
+    const access = await t.db.query<{ subject_refs: string[] }>("select subject_refs from access_log where action = 'team.headcount' order by id");
+    expect(access.rows.at(-1)!.subject_refs.sort()).toEqual(
+      ['mock|emp-006', 'mock|emp-007'].map((s) => 'person:' + pseudonymize(t.ctx.config.pseudonymSecret, s)).sort(),
+    );
+
+    // 같은 팀 일정 스위치를 끄면 근태·자리비움을 읽지 않고 부서 인원만 세요(접속기록도 더 안 남아요).
+    await t.ctx.ops.setFlag('p_op', 'teamSchedule', false);
+    const before = access.rows.length;
+    const off = await chat(me, '내일 5시 빈 회의실 있어?');
+    expect(off.reply).toContain('인원은 우리 팀 6명으로 봤어요');
+    expect((await t.db.query("select 1 from access_log where action = 'team.headcount'")).rows).toHaveLength(before);
 
     // 인원을 말하면 그 수가 먼저예요. 2명이면 정원 4명 회의실도 후보예요.
-    const two = await chat(me, '내일 3시 2명 빈 회의실 있어?');
+    const two = await chat(me, '내일 4시 2명 빈 회의실 있어?');
     expect(two.reply).not.toContain('우리 팀');
     expect(capacities(two)).toContain(4);
+  });
+
+  it('여러 팀이 함께하는 회의는 팀 인원으로 짐작하지 않고 인원을 물어요(11/4)', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.dev);
+    for (const text of ['내일 3시 디자인팀이랑 회의실 잡아 줘', '내일 3시 합동 회의 회의실 잡아 줘', '내일 3시 다른 팀이랑 같이 회의실 잡아 줘']) {
+      const out = await chat(me, text);
+      expect(out.changed, text).toBe(false);
+      expect(out.reply, text).toContain('여러 팀이 함께하는 회의라 인원을 짐작하지 않아요');
+    }
+    expect(await appReservations(t)).toHaveLength(0);
+    // 인원을 말하면 그대로 잡아요.
+    expect((await chat(me, '내일 3시 디자인팀이랑 8명 회의실 잡아 줘')).changed).toBe(true);
   });
 
   it('묻는 문장은 후보 카드와 [이 회의실로 예약](확인 시트)이에요', async () => {

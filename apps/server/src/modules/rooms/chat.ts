@@ -24,7 +24,7 @@ import { chatHelpCard, dayText, equipmentOverviewCard, loanCard, myReservationCa
 import type { RentParams, RoomEquipment } from './equipment';
 import { listRooms, myLoans, myUpcoming, type ReservationRow, type RoomRow } from './repo';
 import { checkQuery, kstIso, MINUTE } from './search';
-import { type RoomDesk, roomsWriteEnabled, slotsToQuery, teamSizeHeadline } from './service';
+import { JOINT_MEETING_HEADLINE, type RoomDesk, roomsWriteEnabled, slotsToQuery, teamCountText, teamSizeHeadline } from './service';
 
 // 회의실 채팅(10/28, ADR-19). 한 줄을 읽고 예약·대여·내 예약·현황·장비 현황으로 답해요.
 // - AI는 문장 해석(무엇을 하려는지·명령인지·장비 종류)만 해요. 날짜·시각 계산, 회의실 고르기, 실행은 서버 규칙이 해요.
@@ -218,14 +218,21 @@ export class RoomChat {
     // 장비도 같이 빌리는 문장이면 장비 이름은 회의실 조건에서 빼요.
     const rentToo = it.kinds.length > 0 && RENT_VERB.test(text);
     const slots = parseSlots(rentToo ? withoutLoanWords(text) : text, now);
-    // 인원을 말하지 않으면 내 팀 인원으로 찾아요(11/4). 사람이 말한 조건이 아니라서 바로 잡지 않고 카드에서 확인해요.
-    const { query, teamSize } = await this.desk.withTeamSize(slotsToQuery(slots, this.ctx.ops.get().values.defaultMeetingMinutes), user);
+    // 인원을 말하지 않으면 내 팀에서 그 시간에 휴가·자리비움인 사람을 뺀 수로 찾고 잡아요(11/4). 여러 팀 회의면 인원을 물어요.
+    const { query, team, joint } = await this.desk.withTeamSize(slotsToQuery(slots, this.ctx.ops.get().values.defaultMeetingMinutes), user, text, {
+      requestId,
+    });
+    const teamNote = team ? ` · 인원은 ${teamCountText(team)}으로 봤어요` : '';
     const cards = async (headline: string) =>
       (
         await this.desk.cards(
           query,
           user,
-          { headline: teamSize ? teamSizeHeadline(teamSize) : headline, evidence: '채팅에서 읽은 조건 · 칩을 고치면 다시 찾아요', aiSummarized: it.byModel },
+          {
+            headline: team ? teamSizeHeadline(team) : joint && !query.people ? JOINT_MEETING_HEADLINE : headline,
+            evidence: '채팅에서 읽은 조건 · 칩을 고치면 다시 찾아요',
+            aiSummarized: it.byModel,
+          },
           now,
         )
       ).cards;
@@ -233,6 +240,10 @@ export class RoomChat {
     const check = checkQuery(query, now);
     if (!check.ok) {
       // 채팅은 앞 문장을 기억하지 않아요. 빠진 조건만 따로 보내면 이어 붙지 않아서, 한 문장으로 다시 말해 달라고 해요(QA D-B02).
+      if (joint && check.missing.includes('인원')) {
+        const reply = '여러 팀이 함께하는 회의라 인원을 짐작하지 않아요. "내일 3시 12명 회의실 잡아 줘"처럼 인원을 넣어 다시 말해 주세요';
+        return { reply, cards: await cards('이 조건으로 찾았어요'), changed: false, code: 'reask-joint' };
+      }
       const reply = check.missing.length
         ? `빠진 조건이 있어요(${check.missing.join('·')}). 조건을 모두 넣어 한 번에 다시 말해 주세요. 예: "내일 3시 6명 회의실 잡아 줘"`
         : (check.problem ?? '조건을 다시 알려 주세요');
@@ -246,20 +257,10 @@ export class RoomChat {
         code: 'write-off',
       };
     }
-    if (teamSize) {
-      const found = await cards('이 조건으로 찾았어요');
-      if (it.held) return { reply: it.held, cards: found, changed: false, code: 'held' };
-      return {
-        reply: `${teamSizeHeadline(teamSize)}. 정원 ${teamSize}명 이상인 회의실만 보여요. 맞으면 [이 회의실로 예약]을 누르고, 인원이 다르면 "3명"처럼 넣어 다시 말해 주세요`,
-        cards: found,
-        changed: false,
-        code: 'team-size',
-      };
-    }
     if (!it.command) {
       const found = await cards('이 조건으로 찾았어요');
       if (it.held) return { reply: it.held, cards: found, changed: false, code: 'held' };
-      return { reply: '이 조건으로 찾았어요. [이 회의실로 예약]을 누르면 한 번 더 확인하고 예약해요', cards: found, changed: false, code: 'cards' };
+      return { reply: `이 조건으로 찾았어요${teamNote}. [이 회의실로 예약]을 누르면 한 번 더 확인하고 예약해요`, cards: found, changed: false, code: 'cards' };
     }
     if (!this.autoOn()) {
       return {
@@ -305,7 +306,7 @@ export class RoomChat {
     const end = Date.parse(params.end);
     const booked = (await myUpcoming(this.ctx.db, user.pseudonymId, now)).find((r) => r.roomId === params.roomId && r.start === start);
     const picked = room ? '말한 회의실' : booked?.floor === user.floor ? '내 층에서 조건에 맞는 회의실' : '내 층에 맞는 회의실이 없어 가까운 층';
-    let reply = `예약했어요: ${booked ? `${booked.roomName} · ${booked.floor}` : params.roomId}, ${whenText(start, end)} (${picked})`;
+    let reply = `예약했어요: ${booked ? `${booked.roomName} · ${booked.floor}` : params.roomId}, ${whenText(start, end)} (${picked})${teamNote}`;
     const extra: Card[] = [];
     if (rentToo && booked) {
       const rented = await this.rentKinds(user, requestId, it.kinds, { start, end, reservationId: booked.id });

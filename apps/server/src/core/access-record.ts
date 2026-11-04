@@ -10,6 +10,7 @@ import type { Queryable } from './db';
  * 다른 사람의 개인정보를 보거나 바꾸는 동작과 로그인·로그아웃. 새 동작은 여기에 먼저 적어요.
  * mcp.*: 바깥 AI 앱이 사내 자료에 닿는 길(11/2, MCP 통합 회의 0단계). 연결 허락·도구 호출·끊기를 1년 남겨요.
  * team.schedule: 홈 채팅 "같은 팀 일정"(11/3). 같은 부서 사람의 근태 기록·회의·자리비움을 읽어 보여 준 일이에요. 보여 준 사람의 가명 ID만 남겨요.
+ * team.headcount: 회의실 인원을 말하지 않았을 때 같은 부서 사람의 근태 기록·자리비움을 읽어 참석할 수를 센 일(11/4). 빠진 사람의 가명 ID만 남겨요.
  */
 const ACCESS_ACTIONS = [
   'login',
@@ -21,6 +22,7 @@ const ACCESS_ACTIONS = [
   'mcp.call',
   'mcp.disconnect',
   'team.schedule',
+  'team.headcount',
 ] as const;
 type AccessAction = (typeof ACCESS_ACTIONS)[number];
 
