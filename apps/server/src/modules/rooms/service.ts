@@ -1,6 +1,7 @@
 import type {
   Card,
   CardAction,
+  MyReservation,
   MyReservationsResponse,
   OpsSettings,
   RoomCancelResponse,
@@ -36,6 +37,7 @@ import {
   roomTakenCard,
   icsPath,
   inviteAction,
+  roomLine,
   roomTimeCard,
   slotCard,
   whenText,
@@ -165,6 +167,9 @@ function emptyReasonOf(rooms: RoomRow[], q: RoomQuery, alternatives: number): No
   return { code: 'all-booked', message: `조건에 맞는 회의실이 그 시간에 모두 예약돼 있어요.${tail}` };
 }
 
+/** 두 회의실이 몇 층 떨어졌는지 */
+const floorGap = (a: RoomRow, b: RoomRow) => Math.abs(parseInt(a.floor, 10) - parseInt(b.floor, 10)) || 0;
+
 /** 층 번호 순, 같은 층이면 회의실 번호(ID) 순 */
 function byFloorThenId(a: RoomRow, b: RoomRow): number {
   return parseInt(a.floor, 10) - parseInt(b.floor, 10) || a.id.localeCompare(b.id);
@@ -233,7 +238,7 @@ export class RoomDesk {
     readonly ledger: MockRoomLedger,
   ) {
     this.invites = createInviteService(ctx);
-    this.joint = createJointService(ctx);
+    this.joint = createJointService(ctx, this.invites);
   }
 
   /** 비어 있을 때만 모의 장부를 넣어요. 이미 있으면 비어 있는 사진·설비만 채워요. */
@@ -684,9 +689,82 @@ export class RoomDesk {
         attendees: await this.invites.attendees(r.id),
         icsPath: icsPath(r.id),
         loans: loans.get(r.id) ?? [],
+        ...(await this.resizeOf(r)),
       });
     }
     return { enabled, items };
+  }
+
+  /**
+   * 여러 팀 회의(ADR-28) 참석자가 다 정해졌으면 나 + 못 간다고 하지 않은 초대 수로 세요. 정원보다 많거나 절반이 안 되면
+   * 같은 시간에 빈 회의실 중 맞는 곳(인원 이상, 작게 옮길 땐 지금보다 작은 곳, 작은 정원 먼저·내 층 가까운 곳 먼저)으로 옮기는 버튼을 붙여요.
+   */
+  private async resizeOf(r: ReservationRow): Promise<{ resize?: NonNullable<MyReservation['resize']> }> {
+    const state = await this.joint.closedCount(r.id);
+    if (state === null) return {};
+    const room = await getRoom(this.ctx.db, r.roomId);
+    if (!room) return {};
+    const attendees = state;
+    const bigger = attendees > room.capacity;
+    if (!bigger && attendees * 2 >= room.capacity) return {};
+    const { rooms, busy } = await this.load(this.ctx.db, kstDate(r.start));
+    const target = rooms
+      .filter((x) => x.id !== room.id && x.capacity >= attendees && (bigger || x.capacity < room.capacity) && isFree(busy, x.id, r.start, r.end))
+      .sort((a, b) => a.capacity - b.capacity || floorGap(a, room) - floorGap(b, room) || a.id.localeCompare(b.id))[0];
+    const line = bigger
+      ? `참석자가 ${attendees}명이라 정원(${room.capacity}명)보다 많아요`
+      : `참석자가 ${attendees}명이에요. 작은 회의실로 옮기면 이 회의실을 다른 팀이 쓸 수 있어요`;
+    const text = bigger ? '더 큰 회의실로 옮기기' : '작은 회의실로 옮기기';
+    const action: CardAction | null = target
+      ? {
+          type: 'fixed',
+          text,
+          method: 'POST',
+          path: `/api/rooms/reservations/${r.id}/move`,
+          body: { roomId: target.id },
+          confirm: {
+            title: '회의실을 옮길까요?',
+            lines: [`${roomLine(room)} → ${roomLine(target)}(정원 ${target.capacity}명)`, whenText(r.start, r.end), '참석자에게 바뀐 회의실을 알려요'],
+            confirmLabel: '옮기기',
+            note: '[옮기기]를 누르는 순간 빈 회의실인지 다시 확인해요',
+          },
+        }
+      : null;
+    return { resize: { attendees, capacity: room.capacity, line: target ? line : `${line} · 지금 옮길 빈 회의실이 없어요`, action } };
+  }
+
+  /** 회의실 옮기기(고정 버튼, ADR-28). 내 예약만, 같은 시간 그대로 회의실만 바꿔요. 겹치면 DB 제약 전에 다시 확인해서 막아요. */
+  async move(user: DeskUser, id: string, roomId: string): Promise<RoomCancelResponse> {
+    if (!/^\d{1,18}$/.test(id) || !/^[a-z0-9-]{1,40}$/.test(roomId)) throw new DeskError('not-found', 404, '내 예약을 찾지 못했어요');
+    let moved = false;
+    const result = await this.ctx.fixed.run<RoomCancelResponse>(user, {
+      module: 'rooms',
+      action: 'move',
+      idempotencyKey: `move:${id}:${roomId}`,
+      enabled: roomsWriteEnabled,
+      run: async (q, now) => {
+        const mine = (await myUpcoming(q, user.pseudonymId, now)).find((x) => x.id === id);
+        if (!mine) throw new DeskError('not-found', 404, '내 예약을 찾지 못했어요');
+        const target = await getRoom(q, roomId);
+        if (!target || target.id === mine.roomId) throw new DeskError('bad-request', 400, '옮길 회의실을 다시 골라 주세요');
+        const busy = await busyBetween(q, mine.start, mine.end);
+        if (!isFree(busy, target.id, mine.start, mine.end))
+          throw new DeskError('conflict', 409, '그 회의실은 방금 다른 예약이 생겼어요. 내 예약에서 다시 확인해 주세요');
+        await q.query('update room_reservations set room_id = $2 where id = $1 and pseudonym_id = $3', [id, target.id, user.pseudonymId]);
+        const when = whenText(mine.start, mine.end);
+        const { rows } = await q.query<{ p: string }>("select attendee_pseudonym as p from room_invites where reservation_id = $1 and response <> 'declined'", [
+          id,
+        ]);
+        for (const r of rows)
+          await this.ctx.notify.toUser(q, r.p, { module: 'rooms', title: `회의실이 바뀌었어요 · ${when} · ${roomLine(target)}`, page: 'rooms' });
+        moved = true;
+        const row: ReservationRow = { ...mine, roomId: target.id, roomName: target.name, floor: target.floor };
+        return { status: 'done', card: confirmedCard(row, now) };
+      },
+    });
+    // 그룹웨어 캘린더 일정이 있으면 장소를 고쳐요(트랜잭션이 끝난 뒤).
+    if (moved) await this.invites.relocated(user, id);
+    return result;
   }
 
   /** 취소(고정 버튼, 확인 시트 뒤). 내 예약만, 예약 표에서 이력 표로 옮겨요(ADR-06). */

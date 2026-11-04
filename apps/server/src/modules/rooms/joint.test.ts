@@ -5,6 +5,7 @@ import type {
   PeopleSearchResponse,
   PlanConfirmResponse,
   PlanCreateResponse,
+  MyReservationsResponse,
   RoomChatResponse,
   TeamDelegatesResponse,
 } from '@one-line-desk/shared';
@@ -148,5 +149,76 @@ describe('여러 팀 회의(ADR-28)', () => {
     const done = await chat(doyun, '내일 3시 디자인팀이랑 8명 회의실 잡아 줘');
     expect(done.changed).toBe(true);
     expect((await t.db.query('select 1 from room_joint_requests')).rows).toHaveLength(0);
+  });
+
+  it('고른 사람에게 그룹웨어 캘린더 초대·Slack DM도 가요(주최자는 예약한 사람)', async () => {
+    const t = await setup();
+    const doyun = await t.loginAs(MOCK.dev);
+    await reserveJoint(doyun);
+    const jiwoo = await t.loginAs(JIWOO);
+    const [req] = await requests(jiwoo);
+    const yuna = req!.members.find((m) => m.name === '가상 직원 유나')!.ref;
+    const res = await jiwoo.call('POST', '/api/rooms/joint/requests/' + req!.id + '/pick', {
+      people: [yuna],
+      calendar: true,
+      slack: true,
+      requestId: randomUUID(),
+    });
+    expect(res.status).toBe(200);
+    const event = (
+      await t.db.query<{ organizer_email: string; attendee_emails: string[] }>('select organizer_email, attendee_emails from mock_calendar_events')
+    ).rows;
+    expect(event).toEqual([{ organizer_email: 'doyun@corp.example', attendee_emails: ['yuna@corp.example'] }]);
+    const dm = (await t.db.query<{ to_email: string; text: string }>('select to_email, text from mock_messenger_messages')).rows;
+    expect(dm).toEqual([expect.objectContaining({ to_email: 'yuna@corp.example', text: expect.stringContaining('가상 직원 도윤님이 회의에 불렀어요') })]);
+  });
+
+  it('다 고른 뒤 정원의 절반이 안 되면 내 예약에 [작은 회의실로 옮기기]가 붙고, 옮기면 참석자에게 알리고 캘린더 장소도 고쳐요', async () => {
+    const t = await setup();
+    const doyun = await t.loginAs(MOCK.dev);
+    await reserveJoint(doyun);
+    const jiwoo = await t.loginAs(JIWOO);
+    const [designReq] = await requests(jiwoo);
+    expect((await pick(jiwoo, designReq!.id, [])).status).toBe(200); // 디자인팀은 안 가요
+    const [devReq] = await requests(doyun);
+    const seojun = devReq!.members.find((m) => m.name === '가상 직원 서준')!.ref;
+    expect(
+      (await doyun.call('POST', '/api/rooms/joint/requests/' + devReq!.id + '/pick', { people: [seojun], calendar: true, requestId: randomUUID() })).status,
+    ).toBe(200);
+
+    const [mine] = ((await doyun.call('GET', '/api/rooms/my-reservations')).body as MyReservationsResponse).items;
+    expect(mine!.resize).toMatchObject({ attendees: 2, line: expect.stringContaining('참석자가 2명이에요. 작은 회의실로 옮기면') });
+    const action = mine!.resize!.action as Extract<CardAction, { type: 'fixed' }>;
+    expect(action).toMatchObject({ text: '작은 회의실로 옮기기', method: 'POST', confirm: { title: '회의실을 옮길까요?' } });
+    const roomId = (action.body as { roomId: string }).roomId;
+    const before = (
+      await t.db.query<{ capacity: number }>('select r.capacity from room_reservations x join rooms r on r.id = x.room_id where x.source = $1', ['app'])
+    ).rows[0]!.capacity;
+
+    expect((await doyun.call(action.method, action.path, action.body)).status).toBe(200);
+    const after = (
+      await t.db.query<{ room_id: string; capacity: number; name: string }>(
+        'select x.room_id, r.capacity, r.name from room_reservations x join rooms r on r.id = x.room_id where x.source = $1',
+        ['app'],
+      )
+    ).rows[0]!;
+    expect(after.room_id).toBe(roomId);
+    expect(after.capacity).toBeLessThan(before);
+    expect(after.capacity).toBeGreaterThanOrEqual(2);
+    expect(await titles(await t.loginAs(SEOJUN))).toContainEqual(expect.stringContaining('회의실이 바뀌었어요'));
+    expect((await t.db.query<{ location: string }>('select location from mock_calendar_events')).rows[0]!.location).toContain(after.name);
+    // 같은 버튼을 다시 눌러도 한 번만 옮겨요.
+    expect((await doyun.call(action.method, action.path, action.body)).status).toBe(200);
+  });
+
+  it('마감은 운영 값(jointPickLeadMinutes)이에요. 0이면 회의 시작 때까지 골라요', async () => {
+    const t = await setup();
+    t.ctx.ops.patchValues({ jointPickLeadMinutes: 0 });
+    const doyun = await t.loginAs(MOCK.dev);
+    await reserveJoint(doyun);
+    const [row] = (
+      await t.db.query<{ deadline: string }>("select to_char(deadline_at at time zone 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') as deadline from room_joint_requests")
+    ).rows;
+    expect(row!.deadline).toBe('2026-10-27 15:00');
   });
 });

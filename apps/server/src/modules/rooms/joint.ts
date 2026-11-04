@@ -14,6 +14,7 @@ import { personRef, readPersonRef } from '../../core/person-ref';
 import { pseudonymize } from '../../core/pseudonym';
 import type { DeskUser } from '../../core/user';
 import { roomLine, whenText } from './cards';
+import type { InviteService } from './invites';
 import { kstIso, MINUTE } from './search';
 
 // 여러 팀 회의 참석자 고르기(11/4 사용자 결정, ADR-28).
@@ -23,8 +24,6 @@ import { kstIso, MINUTE } from './search';
 // - 다 고르면(또는 시간이 지나면) 참석 인원을 다시 세서 회의실 정원보다 많거나 절반이 안 되면 예약한 사람에게 알려요. 회의실을 옮기지는 않아요.
 // - 알림 글에는 부른 사람 이름·팀·시간·회의실만 넣어요. LLM은 부르지 않아요.
 
-/** 회의 시작 이만큼 전까지 고르지 않으면 짐작한 인원 그대로예요(11/4, 회의 1시간 전). */
-const PICK_LEAD_MINUTES = 60;
 /** 고르는 사람에게 보여 주는 같은 부서 사람 수 상한 */
 const MEMBERS_MAX = 100;
 
@@ -57,7 +56,7 @@ export interface JointTeam {
   estimate: number;
 }
 
-export function createJointService(ctx: AppContext) {
+export function createJointService(ctx: AppContext, invites: InviteService) {
   const pseudo = (subject: string) => pseudonymize(ctx.config.pseudonymSecret, subject);
 
   /** 그 부서의 재직자(디렉터리). 못 읽으면 빈 목록이에요. */
@@ -111,7 +110,9 @@ export function createJointService(ctx: AppContext) {
       meeting: { start: number; end: number; roomName: string },
       now: number,
     ) {
-      const deadline = Math.max(now, meeting.start - PICK_LEAD_MINUTES * MINUTE);
+      // 마감은 운영 값(jointPickLeadMinutes, 기본 60분) 만큼 회의 전이에요. 그보다 가까운 회의는 바로 마감이 아니라 지금부터 회의 시작까지 골라요.
+      const lead = ctx.ops.get().values.jointPickLeadMinutes * MINUTE;
+      const deadline = meeting.start - lead > now ? meeting.start - lead : meeting.start;
       const when = whenText(meeting.start, meeting.end);
       for (const team of teams) {
         const pickers = await pickersOf(q, team.department);
@@ -148,6 +149,22 @@ export function createJointService(ctx: AppContext) {
       await recount(q, reservationId);
     },
 
+    /** 여러 팀 회의 예약이고 고르기가 모두 끝났으면 참석 인원(나 + 못 간다고 하지 않은 초대), 아니면 null이에요. */
+    async closedCount(reservationId: string): Promise<number | null> {
+      const { rows } = await ctx.db.query<{ open: number; n: number; requester: string }>(
+        `select count(*) filter (where status = 'open')::int as open, count(*)::int as n, min(requester_pseudonym) as requester
+           from room_joint_requests where reservation_id = $1`,
+        [reservationId],
+      );
+      const r = rows[0];
+      if (!r || Number(r.n) === 0 || Number(r.open) > 0) return null;
+      const invited = await ctx.db.query<{ n: number }>(
+        "select count(*)::int as n from room_invites where reservation_id = $1 and response <> 'declined' and attendee_pseudonym <> $2",
+        [reservationId, r.requester],
+      );
+      return 1 + Number(invited.rows[0]!.n);
+    },
+
     /** 내가 고를 요청(마이 페이지). 내 부서 요청 중 아직 열린 것, 내가 팀장·담당자일 때만이에요. */
     async mine(user: DeskUser): Promise<JointRequestsResponse> {
       if (!writeOn(ctx.ops.get()) || !user.department) return { items: [] };
@@ -179,7 +196,13 @@ export function createJointService(ctx: AppContext) {
     },
 
     /** 참석자 고르기(고정 버튼). 먼저 고른 사람만 돼요. 고른 사람에게 부른 사람 이름으로 초대가 가요. */
-    async pick(user: DeskUser, id: string, people: string[], requestId: string): Promise<{ ok: true; invited: number }> {
+    async pick(
+      user: DeskUser,
+      id: string,
+      people: string[],
+      requestId: string,
+      channels: { calendar: boolean; slack: boolean } = { calendar: false, slack: false },
+    ): Promise<{ ok: true; invited: number }> {
       if (!writeOn(ctx.ops.get())) throw new DeskError('feature-off', 409, '지금은 이 기능이 꺼져 있어요');
       if (!/^\d{1,18}$/.test(id)) throw new DeskError('not-found', 404, '그 요청을 찾지 못했어요');
       const now = ctx.now();
@@ -189,7 +212,9 @@ export function createJointService(ctx: AppContext) {
       const chosen = (subjects as string[]).map((s) => team.get(s));
       if (chosen.some((m) => !m)) throw new DeskError('bad-request', 400, '우리 팀 사람만 고를 수 있어요');
 
-      return ctx.fixed.run(user, {
+      // 이번에 새로 초대한 사람(같은 요청이 다시 오면 비어 있어서 바깥으로 다시 보내지 않아요).
+      let fresh: { reservationId: string; subjects: string[] } | null = null;
+      const result = await ctx.fixed.run<{ ok: true; invited: number }>(user, {
         module: 'rooms',
         action: 'joint.pick',
         idempotencyKey: requestId,
@@ -207,6 +232,7 @@ export function createJointService(ctx: AppContext) {
           const requester = await ctx.adapters.directory.getProfile(r.requesterSubject).catch(() => null);
           const by = requester?.displayName ?? '예약한 사람';
           let invited = 0;
+          const subjectsAdded: string[] = [];
           for (const m of chosen as EmployeeProfile[]) {
             if (m.idpSubject === r.requesterSubject) continue;
             const p = pseudo(m.idpSubject);
@@ -217,6 +243,7 @@ export function createJointService(ctx: AppContext) {
             );
             if (!added.rows.length) continue;
             invited += 1;
+            subjectsAdded.push(m.idpSubject);
             await ctx.notify.toUser(q, p, { module: 'rooms', title: `${by}님이 회의에 불렀어요 · ${when}`, page: 'rooms' });
           }
           await q.query("update room_joint_requests set status = 'picked', picked_by_pseudonym = $2, picked_count = $3, picked_at = $4 where id = $1", [
@@ -231,9 +258,14 @@ export function createJointService(ctx: AppContext) {
             page: 'rooms',
           });
           await recount(q, r.reservationId);
+          fresh = { reservationId: r.reservationId, subjects: subjectsAdded };
           return { ok: true as const, invited };
         },
       });
+      // 그룹웨어 캘린더·Slack(고르는 사람이 고른 길)은 트랜잭션이 끝난 뒤 보내요. 주최자는 예약한 사람이에요.
+      const done = fresh as { reservationId: string; subjects: string[] } | null;
+      if (done && done.subjects.length && (channels.calendar || channels.slack)) await invites.deliverPicked(user, done.reservationId, done.subjects, channels);
+      return result;
     },
 
     /** 마이 페이지 "팀 회의 담당자"(팀장만). */

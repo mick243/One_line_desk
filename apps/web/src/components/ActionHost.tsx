@@ -39,6 +39,8 @@ interface ActionsApi {
   writes: number;
   /** 카드 버튼 밖에서 쓰기가 끝났을 때(회의실 채팅 자동 실행, ADR-19) 목록을 다시 불러요. */
   refresh(): void;
+  /** 초대 알릴 길(공개 설정). 여러 팀 회의 참석자 고르기(ADR-28)도 같은 길을 보여 줘요. */
+  inviteChannels: PublicConfig['inviteChannels'];
   /**
    * 남이 한 일(새 알림)로 목록만 다시 불러요. 열린 양식은 그대로예요.
    * background: 폴링이 부른 거라 목록 요청도 쉬는 시간을 늘리지 않아요(ADR-20). 사람이 누른 거면 빼요.
@@ -183,8 +185,8 @@ export function ActionHost({
     setVersion((v) => v + 1);
   }, []);
   const value = useMemo<ActionsApi>(
-    () => ({ run, show: setShown, version, quiet, writes, refresh: wrote, reload }),
-    [run, version, quiet, writes, wrote, reload],
+    () => ({ run, show: setShown, version, quiet, writes, refresh: wrote, reload, inviteChannels }),
+    [run, version, quiet, writes, wrote, reload, inviteChannels],
   );
 
   return (

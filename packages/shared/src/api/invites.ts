@@ -106,6 +106,9 @@ export interface JointRequestsResponse {
 export interface JointPickBody {
   /** 같은 부서 사람 ref(이 요청 목록에서 받은 것). 비우면 "우리 팀은 안 가요"예요. */
   people: string[];
+  /** 그룹웨어 캘린더 초대·Slack DM도 보낼지(공개 설정의 알릴 길이 있을 때만). 앱 알림은 늘 가요. */
+  calendar?: boolean;
+  slack?: boolean;
   requestId: string;
 }
 

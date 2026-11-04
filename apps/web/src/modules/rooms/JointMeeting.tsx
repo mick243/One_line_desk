@@ -43,8 +43,13 @@ export function JointRequests() {
 }
 
 function PickOne({ request }: { request: JointPickRequest }) {
-  const { run } = useActions();
+  const { run, inviteChannels } = useActions();
   const [chosen, setChosen] = useState<Set<string>>(new Set());
+  // 알릴 길: 앱 알림은 늘 가고, 그룹웨어 캘린더·Slack은 공개 설정에 있을 때만 골라요(초대 양식과 같아요).
+  const [calendar, setCalendar] = useState(true);
+  const [slack, setSlack] = useState(false);
+  const useCalendar = calendar && Boolean(inviteChannels.calendar);
+  const useSlack = slack && Boolean(inviteChannels.slack);
   const requestId = useMemo(() => newRequestId(), []);
   const names = request.members.filter((m) => chosen.has(m.ref)).map((m) => m.name);
 
@@ -54,13 +59,15 @@ function PickOne({ request }: { request: JointPickRequest }) {
       text: '보내기',
       method: 'POST',
       path: `/api/rooms/joint/requests/${request.id}/pick`,
-      body: { people: [...chosen], requestId },
+      body: { people: [...chosen], calendar: useCalendar, slack: useSlack, requestId },
       confirm: {
         title: names.length ? `${names.length}명에게 초대를 보낼까요?` : '우리 팀은 안 간다고 보낼까요?',
         lines: [
           `${request.room} · ${request.when}`,
           names.length ? names.join(', ') : '우리 팀에서는 아무도 가지 않아요',
           `고른 사람에게 ${request.requester}님이 부른 회의로 초대가 가요`,
+          ...(names.length && useCalendar ? [`${inviteChannels.calendar}로 초대가 가요`] : []),
+          ...(names.length && useSlack ? [`${inviteChannels.slack} DM이 가요. 글은 Slack 보관 설정을 따라요`] : []),
         ],
         confirmLabel: '보내기',
       },
@@ -96,6 +103,24 @@ function PickOne({ request }: { request: JointPickRequest }) {
           </li>
         ))}
       </ul>
+      {(inviteChannels.calendar || inviteChannels.slack) && (
+        <fieldset className='channel-list'>
+          <legend>알릴 길</legend>
+          <label>
+            <input type='checkbox' checked disabled /> 앱 안 알림(늘 가요)
+          </label>
+          {inviteChannels.calendar && (
+            <label>
+              <input type='checkbox' checked={calendar} onChange={(e) => setCalendar(e.target.checked)} /> {inviteChannels.calendar} 초대
+            </label>
+          )}
+          {inviteChannels.slack && (
+            <label>
+              <input type='checkbox' checked={slack} onChange={(e) => setSlack(e.target.checked)} /> {inviteChannels.slack} DM
+            </label>
+          )}
+        </fieldset>
+      )}
       <button type='button' className='primary small' onClick={send}>
         {chosen.size ? `${chosen.size}명 보내기` : '우리 팀은 안 가요'}
       </button>

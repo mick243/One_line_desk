@@ -75,12 +75,18 @@ export function MyReservations({ compact }: { compact?: boolean }) {
                 </p>
                 <p className='hint'>{r.when} · 내 예약</p>
                 {r.loans.length > 0 && <p className='hint'>같이 빌린 장비: {r.loans.join(' · ')}</p>}
+                {r.resize && <p className='hint resize-line'>{r.resize.line}</p>}
                 {r.attendees.length > 0 && (
                   <p className='hint'>{r.attendees.map((a) => `${a.name.split(' ').at(-1)}(${INVITE_RESPONSE_LABEL[a.response]})`).join(' · ')}</p>
                 )}
               </div>
               {!compact && (
                 <div className='row-actions'>
+                  {r.resize?.action && (
+                    <button type='button' className='primary small' onClick={() => void run(r.resize!.action!)}>
+                      {r.resize.action.text}
+                    </button>
+                  )}
                   <button type='button' className='secondary small' onClick={() => void run(r.invite)}>
                     {r.invite.text}
                   </button>

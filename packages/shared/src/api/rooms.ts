@@ -74,6 +74,11 @@ export interface MyReservation {
   icsPath: string;
   /** 이 회의에 붙여 빌린 장비 종류(ADR-19). 회의를 취소하면 함께 취소돼요. */
   loans: string[];
+  /**
+   * 여러 팀 회의 참석자가 다 정해졌는데 정원보다 많거나 절반이 안 될 때(ADR-28). action은 [작은 회의실로 옮기기]·[더 큰 회의실로 옮기기]
+   * 고정 버튼(확인 한 번)이고, 옮길 빈 회의실이 없으면 null이에요.
+   */
+  resize?: { attendees: number; capacity: number; line: string; action: CardAction | null };
 }
 
 /** GET /api/rooms/my-reservations. enabled가 거짓이면(회의실 끔·링크만·쓰기 끔) 내 예약 칸을 숨겨요(R4). */
