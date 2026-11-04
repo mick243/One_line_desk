@@ -110,6 +110,9 @@ describe('운영 설정 저장(L-14)', () => {
     for (const url of ['http://groupware.example.com', 'javascript:alert(1)', 'https://user:pw@groupware.example.com', 'groupware']) {
       expect((await op.call('PUT', '/api/ops/link', { module: 'rooms', url })).status, url).toBe(400);
     }
+    // 빈 글로 지울 수 있는 건 그룹웨어 팀 일정 주소뿐이에요(11/4).
+    expect((await op.call('PUT', '/api/ops/link', { module: 'rooms', url: '' })).status).toBe(400);
+    expect((await op.call('PUT', '/api/ops/link', { module: 'teamSchedule', url: 'http://groupware.example.com' })).status).toBe(400);
     const staff = await t.loginAs(MOCK.staff);
     expect((await staff.call('PUT', '/api/ops/values', { rateLimitPerMinute: 30 })).status).toBe(403);
     expect((await staff.call('PUT', '/api/ops/link', { module: 'rooms', url: 'https://example.com' })).status).toBe(403);

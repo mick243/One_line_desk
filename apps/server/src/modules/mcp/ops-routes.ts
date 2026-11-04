@@ -90,7 +90,7 @@ export function registerMcpOpsRoutes(app: FastifyInstance, ctx: AppContext, mcp:
     admin.revokeClient(deps, actor(req), req.params.clientId),
   );
 
-  // 사람별 강제 끊기: 직원 검색(POST /api/people/search)이 이 운영자에게 준 ref를 받아요. ref는 검색한 사람에 묶이고 30분 뒤 버려져요.
+  // 사람별 강제 끊기: 운영자 직원 검색(POST /api/ops/people/search, 11/4)이나 초대용 직원 검색이 이 운영자에게 준 ref를 받아요. ref는 검색한 사람에 묶이고 30분 뒤 버려져요.
   // 서버가 ref를 열어 IdP 주체를 얻고 가명 ID를 계산해요. IdP 주체·가명 ID·이름은 응답·감사 로그에 나가지 않아요.
   app.post<{ Body: McpPersonDisconnectRequest }>(
     '/api/ops/mcp/people/disconnect',

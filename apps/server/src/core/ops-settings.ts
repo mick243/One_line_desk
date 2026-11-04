@@ -1,4 +1,4 @@
-import { DEFAULT_OPS_SETTINGS, isPantryStandalone, type ModuleKind, type ModuleSwitch, type OpsSettings } from '@one-line-desk/shared';
+import { DEFAULT_OPS_SETTINGS, isPantryStandalone, type ModuleKind, type ModuleSwitch, type OpsLinkKey, type OpsSettings } from '@one-line-desk/shared';
 import type { AuditEntry, AuditLog } from './audit';
 import type { Db } from './db';
 import { DeskError } from './errors';
@@ -19,7 +19,7 @@ interface Overrides {
   autoActions?: boolean;
   homeAsk?: boolean;
   teamSchedule?: boolean;
-  links?: Partial<Record<ModuleKind, string>>;
+  links?: Partial<Record<OpsLinkKey, string>>;
   values?: Partial<OpsValues>;
 }
 
@@ -123,8 +123,14 @@ export class OpsSettingsStore {
     );
   }
 
-  /** "링크만"일 때 보내는 그룹웨어 주소(CD-4). https 주소만 받아요. */
-  async setLink(operatorId: string, module: ModuleKind, url: string): Promise<OpsSettings> {
+  /** "링크만"일 때 보내는 그룹웨어 주소(CD-4)와 그룹웨어 팀 일정 주소(11/4). https 주소만 받아요. */
+  async setLink(operatorId: string, module: OpsLinkKey, url: string): Promise<OpsSettings> {
+    // 팀 일정 주소(11/4)는 빈 글로 지울 수 있어요. 지우면 버튼 없이 글 안내만 해요.
+    if (module === 'teamSchedule' && url === '')
+      return this.save(
+        { ...this.overrides, links: { ...this.overrides.links, teamSchedule: '' } },
+        { pseudonymId: operatorId, channel: 'ops', module, action: 'link.set', result: 'cleared' },
+      );
     let parsed: URL;
     try {
       parsed = new URL(url);

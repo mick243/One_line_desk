@@ -1,4 +1,4 @@
-import { isPantryStandalone, MODULES, type ModuleKind, type ModuleSwitch, RULES_VERSION } from '@one-line-desk/shared';
+import { isPantryStandalone, MODULES, type ModuleKind, type ModuleSwitch, OPS_LINK_KEYS, type OpsLinkKey, RULES_VERSION } from '@one-line-desk/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AdapterCapabilities } from '../adapters/types';
 import type { AppContext, PreHandler } from '../context';
@@ -146,7 +146,7 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
   );
 
   // "링크만"일 때 보내는 그룹웨어 주소(CD-4). https 주소만 받아요.
-  app.put<{ Body: { module: ModuleKind; url: string } }>(
+  app.put<{ Body: { module: OpsLinkKey; url: string } }>(
     '/api/ops/link',
     {
       preHandler: opsWrite,
@@ -155,7 +155,7 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
           type: 'object',
           required: ['module', 'url'],
           additionalProperties: false,
-          properties: { module: { enum: [...MODULES] }, url: { type: 'string', maxLength: 500 } },
+          properties: { module: { enum: [...OPS_LINK_KEYS] }, url: { type: 'string', maxLength: 500 } },
         },
       },
     },

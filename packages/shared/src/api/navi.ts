@@ -141,8 +141,11 @@ export const OFFICIAL_LEAVE_REASON_LABEL: Record<OfficialLeaveReason, string> = 
  * 병가 사유(11/3, 사용자 결정 1: 정해진 선택지만, 자유 글 없음). 건강 정보를 드러내지 않는 일반 표현이고 코드로 저장해요.
  * 병명·증상은 받지 않아요. 진단서는 앱이 받지 않고 인사팀에 따로 내요(진료확인서 올려 받기는 보류).
  */
-export const SICK_LEAVE_REASONS = ['unwell', 'clinic', 'family'] as const;
-export type SickLeaveReason = (typeof SICK_LEAVE_REASONS)[number];
+const SICK_LEAVE_REASON_CODES = ['unwell', 'clinic', 'family'] as const;
+/** 저장된 병가 사유 코드. 'family'는 11/4에 뺀 사유라 그 전에 보낸 요청(7일 보관)을 보여 줄 때만 와요. */
+export type SickLeaveReason = (typeof SICK_LEAVE_REASON_CODES)[number];
+/** 고를 수 있는 병가 사유(11/4 사용자 결정: "가족 돌봄"은 병가보다 가족돌봄휴가에 가까워 뺐어요). */
+export const SICK_LEAVE_REASONS: readonly SickLeaveReason[] = ['unwell', 'clinic'];
 export const SICK_LEAVE_REASON_LABEL: Record<SickLeaveReason, string> = {
   unwell: '몸이 안 좋아요',
   clinic: '병원 진료',

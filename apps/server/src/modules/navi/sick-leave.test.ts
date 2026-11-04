@@ -88,7 +88,7 @@ describe('병가 카드(담당 찾기)', () => {
     expect(cards.find((c) => c.id === 'navi-my-leave')).toBeUndefined();
     expect(card).toMatchObject({ label: '안내', headline: '병가는 연차에서 빠지지 않아요', evidence: { aiSummarized: false } });
     expect(field(card, '올해 병가')).toBe('올해 병가 1.5일 썼어요');
-    expect(field(card, '병가 사유')).toBe('몸이 안 좋아요 · 병원 진료 · 가족 돌봄 중에서 골라요');
+    expect(field(card, '병가 사유')).toBe('몸이 안 좋아요 · 병원 진료 중에서 골라요');
     expect(field(card, '진단서')).toBe('3일을 넘게 쉬면 진단서는 인사팀에 따로 내 주세요');
     expect(field(card, '유급·무급')).toBe('회사 규정에 따라 인사팀이 처리해요');
     expect(card.tail).toBe('나에게만 보여요. 병가 기록은 저장하지 않고 AI로 보내지 않아요');
@@ -268,14 +268,20 @@ describe('병가 요청(ADR-24 개정)', () => {
 
   it('[병가-감사] 감사 로그·알림에 병가 사유 코드·사유 이름·날짜가 없어요', async () => {
     const { t, haneul, jihu } = await setup();
-    await sendSick(haneul, [{ date: '2026-10-27', kind: 'full' }], 'family');
+    await sendSick(haneul, [{ date: '2026-10-27', kind: 'full' }], 'clinic');
     const [item] = await inbox(jihu);
     await jihu.call('POST', `/api/navi/inquiries/${item!.id}/decision`, { decision: 'approved' });
     const audit = await t.db.query<{ row: string }>("select (to_jsonb(a) - 'at')::text as row from audit_log a");
     const text = audit.rows.map((r) => r.row).join('\n');
     expect(text).toContain('leave.request');
-    expect(text).not.toMatch(/family|가족 돌봄|2026-10-27|10월 27일|sick/);
-    expect(JSON.stringify([...(await notes(jihu)), ...(await notes(haneul))])).not.toMatch(/family|가족 돌봄|10월 27일|2026-10-27/);
+    expect(text).not.toMatch(/clinic|병원 진료|2026-10-27|10월 27일|sick/);
+    expect(JSON.stringify([...(await notes(jihu)), ...(await notes(haneul))])).not.toMatch(/clinic|병원 진료|10월 27일|2026-10-27/);
+  });
+
+  it('[병가-사유] "가족 돌봄"은 11/4에 뺐어요: 고를 수 없고 보내면 400이에요', async () => {
+    const { haneul } = await setup();
+    expect((await sendSick(haneul, [{ date: '2026-10-27', kind: 'full' }], 'family')).status).toBe(400);
+    expect((await sendSick(haneul, [{ date: '2026-10-27', kind: 'full' }], 'unwell')).status).toBe(200);
   });
 
   it('[병가-DB] DB도 모양을 지켜요: 병가는 병가 사유만, 공가는 공가 사유만, 일반 문의는 사유 코드 없이만 들어가요', async () => {

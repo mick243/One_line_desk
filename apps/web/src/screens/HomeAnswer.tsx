@@ -82,13 +82,18 @@ export function HomeAnswer({ answer, onOpen, cards }: { answer: HomeAskResponse;
       )}
       {answer.team && <TeamScheduleList team={answer.team} oneDay={answer.period === 'today' || answer.period === 'tomorrow'} />}
       {answer.items.length > 0 && <HomeItemList items={answer.items} onOpen={onOpen} label={answer.headline} />}
-      {answer.links.length > 0 && (
+      {(answer.links.length > 0 || answer.team?.link) && (
         <div className='home-links'>
           {answer.links.map((l) => (
             <button key={l.text} type='button' className='secondary small' onClick={() => onOpen(l)}>
               {l.text}
             </button>
           ))}
+          {answer.team?.link && (
+            <a className='secondary small' href={answer.team.link} target='_blank' rel='noopener noreferrer'>
+              그룹웨어 팀 일정 열기
+            </a>
+          )}
         </div>
       )}
       {cards}
