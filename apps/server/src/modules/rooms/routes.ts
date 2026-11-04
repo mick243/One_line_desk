@@ -2,6 +2,7 @@ import {
   checkInput,
   EQUIPMENT,
   INVITE_MAX,
+  type InviteDeclineBody,
   type InviteRequest,
   type JointPickBody,
   type JointRequestsResponse,
@@ -226,16 +227,42 @@ export function registerRoomRoutes(app: FastifyInstance, ctx: AppContext, desk: 
 
   app.get('/api/rooms/invites', { preHandler: ctx.guards.user }, async (req) => desk.invites.invited(req.deskUser!));
 
-  app.post<{ Params: { id: string }; Body: { response: 'accepted' | 'declined' } }>(
+  // [참석할게요]만 받아요. [못 가요]는 사유를 꼭 적는 decline이에요(11/4).
+  app.post<{ Params: { id: string }; Body: { response: 'accepted' } }>(
     '/api/rooms/invites/:id/response',
     {
       preHandler: ctx.guards.user,
       schema: {
         params: ID_PARAMS,
-        body: { type: 'object', required: ['response'], additionalProperties: false, properties: { response: { enum: ['accepted', 'declined'] } } },
+        body: { type: 'object', required: ['response'], additionalProperties: false, properties: { response: { enum: ['accepted'] } } },
       },
     },
     async (req) => desk.invites.respond(req.deskUser!, req.params.id, req.body.response),
+  );
+
+  // [못 가요](11/4): 사유 필수, 같은 팀 사람에게 대신 부탁할 수 있어요. 화면이 확인을 먼저 띄워요.
+  app.get<{ Params: { id: string } }>('/api/rooms/invites/:id/colleagues', { preHandler: ctx.guards.user, schema: { params: ID_PARAMS } }, async (req) =>
+    desk.invites.colleagues(req.deskUser!, req.params.id),
+  );
+  app.post<{ Params: { id: string }; Body: InviteDeclineBody }>(
+    '/api/rooms/invites/:id/decline',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        params: ID_PARAMS,
+        body: {
+          type: 'object',
+          required: ['reason', 'requestId'],
+          additionalProperties: false,
+          properties: {
+            reason: { type: 'string', maxLength: 400 },
+            delegate: { type: 'string', maxLength: 2048 },
+            requestId: { type: 'string', minLength: 1, maxLength: 64 },
+          },
+        },
+      },
+    },
+    async (req) => desk.invites.decline(req.deskUser!, req.params.id, req.body),
   );
 
   // 캘린더 파일(.ics). 예약한 사람과 초대받은 사람만 받아요. 서버는 어디에도 보내지 않아요.

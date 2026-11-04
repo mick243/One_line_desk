@@ -77,7 +77,23 @@ export function MyReservations({ compact }: { compact?: boolean }) {
                 {r.loans.length > 0 && <p className='hint'>같이 빌린 장비: {r.loans.join(' · ')}</p>}
                 {r.resize && <p className='hint resize-line'>{r.resize.line}</p>}
                 {r.attendees.length > 0 && (
-                  <p className='hint'>{r.attendees.map((a) => `${a.name.split(' ').at(-1)}(${INVITE_RESPONSE_LABEL[a.response]})`).join(' · ')}</p>
+                  <>
+                    <p className='hint'>
+                      {r.attendees
+                        .map(
+                          (a) =>
+                            `${a.name.split(' ').at(-1)}${a.delegatedBy ? `(${a.delegatedBy.split(' ').at(-1)} 대신)` : ''}(${INVITE_RESPONSE_LABEL[a.response]})`,
+                        )
+                        .join(' · ')}
+                    </p>
+                    {r.attendees
+                      .filter((a) => a.reason)
+                      .map((a) => (
+                        <p key={a.name} className='hint'>
+                          {a.name.split(' ').at(-1)} 못 가는 사유: {a.reason}
+                        </p>
+                      ))}
+                  </>
                 )}
               </div>
               {!compact && (

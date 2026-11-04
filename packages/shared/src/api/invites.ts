@@ -36,11 +36,33 @@ export const INVITE_RESPONSE_LABEL: Record<InviteResponse, string> = {
   declined: '못 가요',
 };
 
+/** "못 가요" 사유·대신 부탁 사유 글자 수 상한(11/4) */
+export const INVITE_REASON_MAX = 200;
+
 /** 예약한 사람이 보는 참석자 한 사람 */
 export interface ReservationAttendee {
   name: string;
   department: string;
   response: InviteResponse;
+  /** 못 간다고 한 사유(11/4). 부른 사람에게만 보여요. */
+  reason?: string;
+  /** 다른 사람이 대신 가 달라고 부탁해서 온 사람이면 부탁한 사람 이름(11/4) */
+  delegatedBy?: string;
+}
+
+/**
+ * POST /api/rooms/invites/:id/decline 본문(11/4). 사유는 꼭 적어요.
+ * delegate(같은 팀 사람 ref)를 넣으면 그 사람에게 대신 가 달라고 부탁해요. 사유는 부른 사람과 부탁받은 사람에게 보여요.
+ */
+export interface InviteDeclineBody {
+  reason: string;
+  delegate?: string;
+  requestId: string;
+}
+
+/** 대신 부탁할 수 있는 같은 팀 사람(나·부른 사람·이미 초대받은 사람 빼고) */
+export interface InviteColleaguesResponse {
+  items: { ref: string; name: string }[];
 }
 
 /** 초대받은 회의 한 줄(초대받은 사람만 봐요) */
@@ -53,9 +75,15 @@ export interface InvitedMeeting {
   end: string;
   inviter: { name: string; department: string };
   response: InviteResponse;
+  /** 내가 못 간다고 하며 적은 사유(11/4) */
+  declineReason?: string;
+  /** 다른 사람이 나에게 대신 가 달라고 부탁한 초대면 부탁한 사람과 사유(11/4) */
+  delegatedBy?: { name: string; reason: string };
   /** 캘린더 파일 받기 주소 */
   icsPath: string;
+  /** [참석할게요] 고정 버튼. [못 가요]는 사유를 적는 양식이라 화면이 띄워요(canDecline). */
   actions: CardAction[];
+  canDecline: boolean;
 }
 
 export interface InvitedMeetingsResponse {
