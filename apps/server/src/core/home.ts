@@ -254,7 +254,15 @@ export class HomeDesk {
       items: [],
       links: [],
       cards: [],
-      team: { shown, team, person: more.person ?? null, entries: more.entries ?? [], leaveConnected: more.leaveConnected ?? true },
+      team: {
+        shown,
+        team,
+        person: more.person ?? null,
+        entries: more.entries ?? [],
+        leaveConnected: more.leaveConnected ?? true,
+        // 팀 일정을 못 보여 주면 그룹웨어 팀 일정으로 가는 버튼을 붙여요(11/4). 같은 팀에게 보여 준 답에는 붙이지 않아요.
+        link: !shown && settings.links.teamSchedule ? settings.links.teamSchedule : null,
+      },
     });
     if (!settings.teamSchedule) {
       await this.audit(user, 'team-off');

@@ -20,7 +20,7 @@ import { hashClientSecret, randomToken } from './tokens';
 // 운영자 API(ops-routes.ts)와 명령 도구(scripts/mcp-clients.ts)가 같은 함수를 써요. 운영자 웹 화면은 없어요(R7).
 // - 감사 로그(channel ops)에는 동작·클라이언트 ID·결과만 남겨요. 앱 이름·리디렉트 주소·비밀·사람은 넣지 않아요.
 // - 연결을 끊는 동작은 접속기록(mcp.disconnect)에 누가(운영자) 누구의 연결(가명 ID)을 끊었는지만 남겨요(ADR-20).
-// - 사람별 강제 끊기(11/3 사용자 결정): 운영자가 초대와 같은 직원 검색(POST /api/people/search, people.search 접속기록)으로 고른
+// - 사람별 강제 끊기(11/3 사용자 결정): 운영자가 운영자 전용 직원 검색(POST /api/ops/people/search, 11/4 — 회의실 쓰기와 상관없음, people.search 접속기록)으로 고른
 //   사람의 모든 연결을 끊어요. 응답은 끊은 연결 수뿐이고, 그 사람이 쓴 앱·연결한 날은 돌려주지 않아요.
 //   명령 도구에는 두지 않아요: 사람을 고를 안전한 길(직원 검색의 봉인된 ref)이 웹 로그인에 묶여 있고,
 //   명령 줄에서 IdP 주체(메일일 수 있어요)나 가명 ID를 받으면 셸 기록에 사람 식별값이 남아요.

@@ -122,6 +122,8 @@ export interface HomeTeamSchedule {
   entries: TeamEntry[];
   /** 근태 기록을 읽었는지. 거짓이면 휴가 칸이 빠졌다고 알려요(회의·자리비움만 보여요). */
   leaveConnected: boolean;
+  /** 그룹웨어 팀 일정 주소(11/4). 보여 주지 못한 답(shown 거짓)에만, 운영 설정에 주소가 있을 때만 와요. */
+  link: string | null;
 }
 
 export const ABSENCE_PART_LABEL: Record<AbsencePart, string> = { full: '하루', am: '오전', pm: '오후', half: '반나절' };

@@ -3,6 +3,9 @@ import { MODULES, type ModuleKind } from './kinds';
 // 끄기 스위치(ADR-12, R4). 운영자만 바꾸고, 바꿀 때마다 감사 로그에 남겨요.
 export type ModuleSwitch = 'on' | 'link' | 'off';
 
+/** 운영 설정 링크 칸: 기능별 그룹웨어 화면 + 그룹웨어 팀 일정(11/4) */
+export const OPS_LINK_KEYS = [...MODULES, 'teamSchedule'] as const;
+export type OpsLinkKey = (typeof OPS_LINK_KEYS)[number];
 export interface OpsSettings {
   modules: Record<ModuleKind, ModuleSwitch>;
   /** 끄면 회의실 카드 주 버튼과 MCP 링크가 그룹웨어 링크로 바뀌어요. */
@@ -24,8 +27,12 @@ export interface OpsSettings {
   /** 이번 2주는 고정이에요(M6). */
   noticeSummary: false;
   s5Mode: 'list-only';
-  /** "링크만"일 때 보내는 그룹웨어 화면 주소. 회사 그룹웨어가 정해지면 바꿔요(사용자 확인 1). */
-  links: Record<ModuleKind, string>;
+  /**
+   * "링크만"일 때 보내는 그룹웨어 화면 주소. 회사 그룹웨어가 정해지면 바꿔요(사용자 확인 1).
+   * teamSchedule(11/4 사용자 결정): 그룹웨어 팀 일정 주소. 홈 채팅이 팀 일정을 보여 주지 못할 때(다른 팀·꺼짐·연결 안 됨)
+   * [그룹웨어 팀 일정 열기] 버튼으로 붙어요. 빈 글이면 버튼 없이 글 안내만 해요.
+   */
+  links: Record<OpsLinkKey, string>;
   values: {
     /** 아래 값은 아직 정하지 않은 임시값이에요. 운영 설정에서 바꿔요. */
     defaultMeetingMinutes: number;
@@ -60,6 +67,7 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     notices: 'https://groupware.example.com/board',
     rooms: 'https://groupware.example.com/resources',
     pantry: 'https://groupware.example.com/supplies',
+    teamSchedule: 'https://groupware.example.com/calendar/team',
   },
   values: {
     defaultMeetingMinutes: 60,
@@ -79,7 +87,15 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
  * 출시(운영) 기본값(CD-14): 회의실 쓰기·MCP·채팅 자동 실행·같은 팀 일정은 끈 채로 시작해요. 운영자가 바꾸면 운영 설정 표에 남아요.
  * 같은 팀 일정(11/3)은 회사 규정·보안팀 확인 뒤 켜요.
  */
-export const LAUNCH_OPS_SETTINGS: OpsSettings = { ...DEFAULT_OPS_SETTINGS, roomsWrite: false, mcp: false, autoActions: false, teamSchedule: false };
+export const LAUNCH_OPS_SETTINGS: OpsSettings = {
+  ...DEFAULT_OPS_SETTINGS,
+  roomsWrite: false,
+  mcp: false,
+  autoActions: false,
+  teamSchedule: false,
+  // 팀 일정 주소는 회사마다 달라서 비워 두고 운영자가 넣어요.
+  links: { ...DEFAULT_OPS_SETTINGS.links, teamSchedule: '' },
+};
 
 /** "같이 채워요 단독" 모드 = navi·notices·rooms 모두 끔. 묻기 탭을 숨기고 같이 채워요 탭이 첫 화면이에요. */
 export function isPantryStandalone(settings: OpsSettings): boolean {

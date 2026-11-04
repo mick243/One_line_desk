@@ -28,9 +28,9 @@ afterEach(async () => {
 
 type Session = Awaited<ReturnType<TestApp['loginAs']>>;
 
-/** 초대와 같은 직원 검색으로 하나를 골라요. */
-async function pick(me: Session, query: string): Promise<PeopleSearchResponse['items'][number]> {
-  const res = await me.call('POST', '/api/people/search', { query });
+/** 운영자 전용 직원 검색(11/4)으로 하나를 골라요. 운영자가 아니면 초대용 검색(path)으로 골라요. */
+async function pick(me: Session, query: string, path = '/api/ops/people/search'): Promise<PeopleSearchResponse['items'][number]> {
+  const res = await me.call('POST', path, { query });
   expect(res.status).toBe(200);
   const items = (res.body as PeopleSearchResponse).items;
   expect(items).toHaveLength(1);
@@ -71,7 +71,7 @@ describe('운영자만 써요', () => {
     const a = await connect(t, MOCK.staff);
     // 직원 검색은 누구나 쓰지만, 그 ref로 끊는 건 운영자만이에요.
     const dev = await t.loginAs(MOCK.dev);
-    const ref = (await pick(dev, '하늘')).ref;
+    const ref = (await pick(dev, '하늘', '/api/people/search')).ref;
     expect((await dev.call('POST', '/api/ops/mcp/people/disconnect', { ref })).status).toBe(403);
     expect((await t.app.inject({ method: 'POST', url: '/api/ops/mcp/people/disconnect', payload: { ref } })).statusCode).toBe(401);
     expect((await mcpRequest(t, a.tokens.access_token, 'tools/list')).statusCode).toBe(200);
@@ -89,7 +89,7 @@ describe('운영자만 써요', () => {
     await connect(t, MOCK.staff);
     const op = await t.loginAs(MOCK.operator);
     const dev = await t.loginAs(MOCK.dev);
-    const someoneElses = (await pick(dev, '하늘')).ref;
+    const someoneElses = (await pick(dev, '하늘', '/api/people/search')).ref;
     for (const ref of [someoneElses, 'pr_made-up', 'not-a-ref']) {
       expect((await op.call('POST', '/api/ops/mcp/people/disconnect', { ref })).body, ref).toMatchObject({ error: 'bad-request' });
     }
@@ -98,6 +98,19 @@ describe('운영자만 써요', () => {
     const later = await t.loginAs(MOCK.operator);
     expect((await later.call('POST', '/api/ops/mcp/people/disconnect', { ref: mine })).status).toBe(400);
     expect((await t.db.query('select * from mcp_grants')).rows).toHaveLength(1);
+  });
+});
+
+describe('운영자 전용 직원 검색(11/4 사용자 결정)', () => {
+  it('회의실 쓰기를 꺼도 운영자는 사람을 골라 끊을 수 있어요. 초대용 검색은 닫히고, 운영자가 아니면 403이에요', async () => {
+    const t = await setup();
+    const op = await t.loginAs(MOCK.operator);
+    const dev = await t.loginAs(MOCK.dev);
+    expect((await op.call('PUT', '/api/ops/flag', { flag: 'roomsWrite', value: false })).status).toBe(200);
+    expect((await op.call('POST', '/api/people/search', { query: '하늘' })).status).toBe(409);
+    expect((await dev.call('POST', '/api/ops/people/search', { query: '하늘' })).status).toBe(403);
+    const res = await op.call('POST', '/api/ops/mcp/people/disconnect', { ref: (await pick(op, '하늘')).ref });
+    expect(res.status).toBe(200);
   });
 });
 

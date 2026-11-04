@@ -69,6 +69,7 @@ describe('홈 답 그리기(ADR-27)', () => {
         team: '개발팀',
         person: null,
         leaveConnected: true,
+        link: null,
         entries: [
           { name: '가상 직원 서준', date: '2026-10-27', what: 'leave', part: 'full' },
           { name: '가상 직원 하은', date: '2026-10-28', what: 'meeting', start: '10:00', end: '11:00', room: '가상 회의실 A' },
@@ -88,11 +89,19 @@ describe('홈 답 그리기(ADR-27)', () => {
     const refused: HomeAskResponse = {
       ...week,
       headline: '다른 팀의 일정은 볼 수 없어요. 그룹웨어 팀 일정에서 확인해 주세요',
-      team: { shown: false, team: '개발팀', person: null, leaveConnected: true, entries: [] },
+      team: { shown: false, team: '개발팀', person: null, leaveConnected: true, entries: [], link: null },
     };
     const refusedHtml = renderToStaticMarkup(<HomeAnswer answer={refused} onOpen={() => undefined} />);
     expect(refusedHtml).toContain('다른 팀의 일정은 볼 수 없어요');
     expect(refusedHtml).not.toContain('같은 팀에게만 보여요');
+    expect(refusedHtml).not.toContain('그룹웨어 팀 일정 열기');
+
+    // 운영 설정에 그룹웨어 팀 일정 주소가 있으면 버튼이 붙어요(11/4).
+    const linked = renderToStaticMarkup(
+      <HomeAnswer answer={{ ...refused, team: { ...refused.team!, link: 'https://groupware.example.com/calendar/team' } }} onOpen={() => undefined} />,
+    );
+    expect(linked).toContain('href="https://groupware.example.com/calendar/team"');
+    expect(linked).toContain('그룹웨어 팀 일정 열기');
   });
 
   it('대화는 최근 몇 개만, 새 것이 위예요(이 창 메모리)', () => {

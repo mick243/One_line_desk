@@ -197,6 +197,7 @@ describe('[팀 일정] 홈 채팅 같은 팀 일정(11/3)', () => {
       team: '개발팀',
       person: null,
       leaveConnected: true,
+      link: null,
       entries: [
         { name: '가상 직원 서준', date: '2026-10-26', what: 'leave', part: 'full' },
         { name: '가상 직원 하은', date: '2026-10-26', what: 'leave', part: 'pm' },
@@ -279,13 +280,18 @@ describe('[팀 일정] 홈 채팅 같은 팀 일정(11/3)', () => {
       expect(res, text).toMatchObject({
         intent: 'team-schedule',
         headline: '다른 팀의 일정은 볼 수 없어요. 그룹웨어 팀 일정에서 확인해 주세요',
-        team: { shown: false, team: '개발팀', entries: [] },
+        team: { shown: false, team: '개발팀', entries: [], link: 'https://groupware.example.com/calendar/team' },
       });
       expect(JSON.stringify(res)).not.toMatch(/하늘|수아|서준|하은/);
     }
     expect(await accessRows(t)).toEqual([]);
     const audit = (await t.ctx.audit.recent(10)).filter((a) => a.module === 'home');
     expect(audit.map((a) => a.result)).toEqual(['team-other', 'team-other', 'team-other']);
+    // 그룹웨어 팀 일정 주소(11/4): 같은 팀에게 보여 준 답에는 붙지 않고, 주소를 지우면 거절 답에도 없어요.
+    expect((await home(doyun, '오늘 우리 팀 누가 없어?')).team).toMatchObject({ shown: true, link: null });
+    const op = await t.loginAs(MOCK.operator);
+    expect((await op.call('PUT', '/api/ops/link', { module: 'teamSchedule', url: '' })).status).toBe(200);
+    expect((await home(doyun, '오늘 재무팀 휴가인 사람')).team).toMatchObject({ shown: false, link: null });
   });
 
   it('[팀 일정 시험] 응답 전체에 휴가 종류·사유·남은 연차가 0건이에요(근태 기록에 섞인 병가 사유 카나리 포함)', async () => {
