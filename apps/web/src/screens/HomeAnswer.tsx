@@ -15,7 +15,7 @@ import {
 } from '@one-line-desk/shared';
 import type { ReactNode } from 'react';
 
-export function HomeItemList({ items, onOpen, label }: { items: HomeItem[]; onOpen: (open: HomeOpen) => void; label: string }) {
+function HomeItemList({ items, onOpen, label }: { items: HomeItem[]; onOpen: (open: HomeOpen) => void; label: string }) {
   return (
     <ul className='home-items' aria-label={label}>
       {items.map((i) => (

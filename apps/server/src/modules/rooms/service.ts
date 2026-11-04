@@ -77,12 +77,19 @@ import {
 // 쓰기는 'rooms:reserve' plan(확인 시트 한 번)과 [취소] 고정 버튼뿐이에요.
 
 type Owner = Pick<DeskUser, 'pseudonymId'>;
+/** 팀 인원은 찾기 조건 상한(200명)까지만 세요. */
+const TEAM_SIZE_MAX = 200;
 /** 찾는 사람: 내 층에서 가까운 회의실부터 보여 주고(home), 겹치는 내 예약을 알려 줘요(10/28). */
 type Seeker = Pick<DeskUser, 'pseudonymId' | 'floor'>;
 
 /** 예약·취소를 해도 되는 스위치 상태: 회의실 켬 + 회의실 쓰기 켬(R4). */
 export function roomsWriteEnabled(s: OpsSettings): boolean {
   return s.modules.rooms === 'on' && s.roomsWrite;
+}
+
+/** 인원을 말하지 않아 팀 인원으로 찾았을 때 머리줄(11/4). */
+export function teamSizeHeadline(teamSize: number): string {
+  return `인원을 말하지 않아 우리 팀 ${teamSize}명으로 찾았어요`;
 }
 
 /** 라우터 슬롯 → 조건. 길이가 없으면 운영 설정 기본값이에요(F2-1). */
@@ -281,6 +288,18 @@ export class RoomDesk {
       ]),
       found: false,
     };
+  }
+
+  /**
+   * 인원을 말하지 않으면 내 팀(직원 명단의 같은 부서 재직자, 나 포함) 인원으로 찾아요(11/4 사용자 결정, 모든 팀).
+   * 그래서 팀이 5명이면 정원 4명 이하 회의실은 후보에서 빠져요. 이름은 쓰지 않고 수만 세요(ADR-06).
+   * 부서를 모르거나 명단을 못 읽으면 그대로 두고, 지금처럼 인원을 되물어요.
+   */
+  async withTeamSize(partial: Partial<RoomQuery>, user: Pick<DeskUser, 'department'>): Promise<{ query: Partial<RoomQuery>; teamSize: number | null }> {
+    if (partial.people || !user.department) return { query: partial, teamSize: null };
+    const members = await this.ctx.adapters.directory.departmentMembers(user.department, TEAM_SIZE_MAX).catch(() => []);
+    if (!members.length) return { query: partial, teamSize: null };
+    return { query: { ...partial, people: members.length }, teamSize: members.length };
   }
 
   // ── 둘러보기(10/26): 회의실 카드 목록 · 회의실 자세히 · 이 회의실 이 시간(읽기만) ──────────

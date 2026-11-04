@@ -199,7 +199,8 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
 
   it.each([
     ['묻는 문장', '내일 3시 6명 빈 방 있어?', 'cards'],
-    ['인원이 빠짐', '내일 3시 회의실 잡아 줘', 'reask'],
+    ['인원이 빠짐(팀 인원으로 찾고 바로 잡지 않음, 11/4)', '내일 3시 회의실 잡아 줘', 'team-size'],
+    ['시작 시각이 빠짐', '내일 6명 회의실 잡아 줘', 'reask'],
     ['4시간 넘음', '내일 1시부터 6시까지 6명 잡아 줘', 'too-long'],
     ['취소는 자동으로 하지 않음', '내일 3시 예약 취소해 줘', 'cancel'],
   ])('%s → 아무것도 쓰지 않아요', async (_name, text, code) => {
@@ -211,6 +212,34 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
     expect((await t.db.query('select 1 from plans')).rows).toHaveLength(0);
     const audit = await t.ctx.audit.recent(1);
     expect(audit[0]).toMatchObject({ channel: 'ask', action: 'chat', result: code });
+  });
+
+  it('인원을 말하지 않으면 내 팀 인원으로 찾아요: 팀이 5명이면 정원 4명 이하 회의실은 후보에서 빠져요(11/4 사용자 결정, 모든 팀)', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.dev);
+    const directory = t.ctx.adapters.directory;
+    const real = directory.departmentMembers.bind(directory);
+    // 개발팀을 5명으로 가정해요(모의 명단은 4명).
+    directory.departmentMembers = async (department, limit) => {
+      const got = await real(department, limit);
+      return [...got, { ...got[0]!, idpSubject: 'mock|emp-099', displayName: '가상 직원 다섯째' }].slice(0, limit);
+    };
+    const rooms = await listRooms(t.db);
+    const capacities = (out: RoomChatResponse) =>
+      out.cards.filter((c) => c.actions.primary?.type === 'propose').map((c) => rooms.find((r) => c.id.startsWith(`rooms-slot-${r.id}-`))?.capacity ?? 0);
+
+    const team = await chat(me, '내일 3시 회의실 잡아 줘');
+    expect(team.reply).toContain('우리 팀 5명으로 찾았어요');
+    expect(team.changed).toBe(false);
+    expect(capacities(team).length).toBeGreaterThan(0);
+    expect(capacities(team).every((n) => n >= 5)).toBe(true);
+    expect(JSON.stringify(team)).not.toMatch(/서준|하은|주원|다섯째/);
+    expect(await appReservations(t)).toHaveLength(0);
+
+    // 인원을 말하면 그 수가 먼저예요. 2명이면 정원 4명 회의실도 후보예요.
+    const two = await chat(me, '내일 3시 2명 빈 회의실 있어?');
+    expect(two.reply).not.toContain('우리 팀');
+    expect(capacities(two)).toContain(4);
   });
 
   it('묻는 문장은 후보 카드와 [이 회의실로 예약](확인 시트)이에요', async () => {

@@ -1,12 +1,12 @@
 // 홈 AI 채팅 "나에게 해당하는 일"(11/3 사용자 결정, ADR-27, 개선 회의 D8 해제).
 // - 묻는 글은 공통 입력 검사·가림 줄을 지난 뒤 POST 본문으로만 보내요. 대화는 이 창 메모리에만 있어요(R13).
 // - 홈 칸은 예약·신청을 하지 않아요. 다른 일이면 옮기기 카드를 누를 때 같은 문장을 그 페이지 칸에 채우기만 해요(바로 보내지 않아요).
-// - "오늘·이번 주 내 일"은 홈을 열 때 한 번 불러요(폴링 아님).
+// - 11/4 사용자 결정: "오늘·이번 주 내 일"·"내 요청" 카드는 없애고(채팅과 겹쳐서), 그 내용은 예시 칩 "내가 보낸 요청"·"나한테 온 요청"으로 물어요.
 // - 11/3 사용자 요청: 예시 칩은 PC에서도 휠·끌기로 옆으로 넘겨요(ScrollChips). 대화는 입력 칸과 구분되는 "대화" 칸 안에
 //   오래된 것부터 쌓고, 길어지면 칸 높이는 그대로 두고 칸 안에서 스크롤해요. 새 질문이 오면 그 질문이 칸 위에 오게 넘겨요.
-import { type AppDestination, type CardAction, HOME_ASK_NOTE, type HomeOpen, type HomeTodayResponse } from '@one-line-desk/shared';
+import { type AppDestination, type CardAction, HOME_ASK_NOTE, type HomeOpen } from '@one-line-desk/shared';
 import { useEffect, useRef, useState } from 'react';
-import { api, ApiFailure } from '../api';
+import { api } from '../api';
 import { useActions } from '../components/ActionHost';
 import { CardView } from '../components/CardView';
 import { CheckedInput } from '../components/CheckedInput';
@@ -14,9 +14,9 @@ import { ScrollChips } from '../components/ScrollChips';
 import { useSlow } from '../components/useSlow';
 import { OFFLINE_MESSAGE, SLOW_MESSAGE } from '../net';
 import { pageOfKind } from './features';
-import { HomeAnswer, HomeItemList, type HomeTurn, pushTurn } from './HomeAnswer';
+import { HomeAnswer, type HomeTurn, pushTurn } from './HomeAnswer';
 
-const EXAMPLES = ['이번 주 내 일정 뭐 있어?', '내 휴가 어떻게 됐어?', '오늘 나한테 온 거 있어?'];
+const EXAMPLES = ['이번 주 내 일정 뭐 있어?', '내가 보낸 요청 어떻게 됐어?', '나한테 온 요청 있어?', '내 휴가 어떻게 됐어?'];
 /** 같은 팀 일정이 켜져 있을 때만 더해요(11/3). */
 const TEAM_EXAMPLE = '오늘 우리 팀 누가 없어?';
 
@@ -129,36 +129,6 @@ export function HomeAsk({ onOpen, teamSchedule = false }: { onOpen: Open; teamSc
           </div>
         </section>
       )}
-
-      <TodayCard onOpen={openItem} />
     </>
-  );
-}
-
-/** "오늘·이번 주 내 일". 열 때 한 번 불러요. 불러오지 못하면 조용히 숨겨요(다른 일은 아래 탭으로 가요). */
-function TodayCard({ onOpen }: { onOpen: (open: HomeOpen) => void }) {
-  const [data, setData] = useState<HomeTodayResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    api
-      .homeToday()
-      .then((d) => alive && setData(d))
-      .catch((e: unknown) => alive && setError(e instanceof ApiFailure ? e.message : null));
-    return () => {
-      alive = false;
-    };
-  }, []);
-  if (error) return <p className='lock-line'>{error}</p>;
-  if (!data || !data.enabled) return null;
-  return (
-    <section className='card home-today' aria-label='오늘·이번 주 내 일'>
-      <h2>오늘·이번 주 내 일</h2>
-      {data.items.length === 0 ? (
-        <p className='empty'>이번 주에 나에게 해당하는 일이 없어요. 다른 일은 아래 탭에서 고를 수 있어요.</p>
-      ) : (
-        <HomeItemList items={data.items} onOpen={onOpen} label='오늘·이번 주 내 일' />
-      )}
-    </section>
   );
 }
