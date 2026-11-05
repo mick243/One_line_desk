@@ -1,4 +1,5 @@
 import { personNameWords } from '@one-line-desk/shared';
+import { z } from 'zod';
 import { matchPeople } from '../people';
 import type { DirectoryAdapter, EmployeeProfile, IdpAdapter } from '../types';
 
@@ -38,11 +39,51 @@ const EMPLOYEES: MockEmployee[] = [
   person(16, '가상 IT 하린', 'harin', 'IT지원팀', '4층', [], true),
 ];
 
+/**
+ * 다른 가상 회사의 직원 명단(11/5, 회사별 분리 시연). 시연·개발에서 DESK_MOCK_ROSTER_JSON으로만 받아요(저장소에 두지 않아요).
+ * 앱에 든 가상 직원 16명 대신 이 명단으로 로그인·직원 검색을 해요. 주체는 "mock|" 로 시작해요. 모두 지어낸 사람이어야 해요.
+ * 모양: [{ "subject": "mock|b-001", "name": "가상 직원 보람", "email": "boram@company-b.example", "department": "재무팀", "floor": "3층", "groups": [], "login": true }]
+ */
+const RosterSchema = z
+  .array(
+    z.strictObject({
+      subject: z.string().regex(/^mock\|[a-z0-9-]{1,40}$/),
+      name: z.string().min(1).max(40),
+      email: z.email(),
+      department: z.string().min(1).max(40),
+      floor: z.string().min(1).max(10),
+      groups: z.array(z.enum(['facilities', 'operator', 'team-lead'])).default([]),
+      login: z.boolean().default(false),
+    }),
+  )
+  .min(1)
+  .max(200);
+
+export function rosterFromJson(json: string): MockEmployee[] {
+  return RosterSchema.parse(JSON.parse(json)).map((p) => ({
+    idpSubject: p.subject,
+    displayName: p.name,
+    email: p.email,
+    department: p.department,
+    floor: p.floor,
+    groups: p.groups,
+    active: true,
+    login: p.login,
+  }));
+}
+
+export type { MockEmployee };
+
 const strip = ({ active: _active, login: _login, ...profile }: MockEmployee): EmployeeProfile => profile;
 
 export class MockEmployees implements IdpAdapter, DirectoryAdapter {
   readonly capabilities = { name: 'mock-oidc', label: '사내 로그인·직원 디렉터리(모의 OIDC, 가상 직원)', mock: true };
-  private readonly people: MockEmployee[] = EMPLOYEES.map((e) => ({ ...e, groups: [...e.groups] }));
+  private readonly people: MockEmployee[];
+
+  /** people가 없으면 앱에 든 가상 직원 16명이에요. 다른 가상 회사 시연은 rosterFromJson으로 읽은 명단을 넘겨요. */
+  constructor(people: MockEmployee[] = EMPLOYEES) {
+    this.people = people.map((e) => ({ ...e, groups: [...e.groups] }));
+  }
 
   loginChoices(): EmployeeProfile[] {
     return this.people.filter((e) => e.active && e.login).map(strip);

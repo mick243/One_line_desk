@@ -76,6 +76,18 @@ export interface ServerConfig {
    */
   demoSwitches: DemoSwitch[];
   /**
+   * 회사별 가상 근태 기록 파일(11/5, 회사별 분리 시험). 시연·개발에서만 DESK_MOCK_LEAVE_FILE로 읽어요.
+   * 다른 회사(임시 IdP의 다른 영역)를 띄울 때 그 회사 가상 직원의 휴가 기록을 저장소 밖 파일에 둬요. 운영에서는 무시해요.
+   */
+  mockLeaveFile: string | undefined;
+  /** 배포 시연용: 같은 근태 기록을 비밀 값(DESK_MOCK_LEAVE_JSON)으로 받아요. 파일보다 먼저예요. */
+  mockLeaveJson: string | undefined;
+  /**
+   * 다른 가상 회사의 직원 명단(11/5, 회사별 분리 시연). 시연·개발에서만 DESK_MOCK_ROSTER_JSON으로 받아요.
+   * 모의 로그인일 때 앱에 든 가상 직원 대신 이 명단을 써요. 운영에서는 무시해요.
+   */
+  mockRosterJson: string | undefined;
+  /**
    * 시연 비밀번호(DESK_DEMO_PASSWORD, 10/30 Vercel 배포 회의). 넣으면 모의 로그인에 이 비밀번호가 있어야 들어와요.
    * 웹 화면만 Vercel(공개 주소)에 올린 시연에서 자료·API를 비밀번호 뒤에 둬요. 시연 배포에서만 써요.
    */
@@ -270,6 +282,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, runtime: Runtim
     build: env.DESK_BUILD || 'dev',
     demoWide: demo && env.DESK_DEMO_WIDE === 'true',
     demoSwitches: demo ? (list(env.DESK_DEMO_SWITCHES) as DemoSwitch[]) : [],
+    mockLeaveFile: demo ? env.DESK_MOCK_LEAVE_FILE || undefined : undefined,
+    mockLeaveJson: demo ? env.DESK_MOCK_LEAVE_JSON || undefined : undefined,
+    mockRosterJson: demo ? env.DESK_MOCK_ROSTER_JSON || undefined : undefined,
     demoPassword: demo ? env.DESK_DEMO_PASSWORD || undefined : undefined,
   };
   // 응답 머리에 그대로 실어서 글자를 좁혀 둬요.

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { z } from 'zod';
 import type { AdapterCapabilities, LeaveAdapter, LeaveRecord, LeaveUse } from '../types';
 
 // 시연용 가상 인사 근태 기록이에요. 실제 사람이 아니에요. 가상 직원 16명(모의 직원·임시 IdP 같은 사람)의 입사일과 휴가 쓴 날만 있어요.
@@ -54,19 +56,51 @@ const RECORDS: Record<string, LeaveRecord> = {
   'harin@corp.example': { hireDate: '2023-03-02', uses: [...full('2026-05-04')] },
 };
 
+const LeaveFileSchema = z.record(
+  z.email(),
+  z.strictObject({
+    hireDate: z.iso.date(),
+    uses: z.array(
+      z.strictObject({
+        date: z.iso.date(),
+        kind: z.enum(['full', 'half']),
+        half: z.enum(['am', 'pm']).optional(),
+        type: z.enum(['annual', 'official', 'sick']).optional(),
+      }),
+    ),
+  }),
+);
+
+/**
+ * 회사마다 따로 둔 가상 근태 기록 파일(11/5, 회사별 분리 시험). 시연·개발에서 DESK_MOCK_LEAVE_FILE로만 읽어요.
+ * 다른 회사(임시 IdP의 다른 영역)를 띄워 볼 때 그 회사 가상 직원의 입사일·휴가 쓴 날을 저장소 밖 파일에 둬요.
+ * 모양: { "메일": { "hireDate": "YYYY-MM-DD", "uses": [{ "date": "YYYY-MM-DD", "kind": "full" | "half" }] } }
+ */
+export function loadLeaveRecords(path: string): Record<string, LeaveRecord> {
+  return leaveRecordsFromJson(readFileSync(path, 'utf8'));
+}
+
+/** 같은 모양을 글자로 받아요(배포 시연은 파일 대신 비밀 값 DESK_MOCK_LEAVE_JSON으로 넣어요). */
+export function leaveRecordsFromJson(json: string): Record<string, LeaveRecord> {
+  return LeaveFileSchema.parse(JSON.parse(json));
+}
+
 export class MockLeave implements LeaveAdapter {
   readonly capabilities: AdapterCapabilities = { name: 'mock-leave', label: '인사 근태 기록(가상 연차 자료)', mock: true };
   /** 시연 중 인사팀이 승인한 날(ADR-24). 이 서버 메모리에만 있고, 다시 뜨면 처음 자료로 돌아가요. */
   private readonly approved = new Map<string, LeaveUse[]>();
 
+  /** records가 없으면 앱에 든 가상 직원 16명 기록이에요. 회사별 시험은 파일에서 읽은 기록을 넘겨요. */
+  constructor(private readonly records: Record<string, LeaveRecord> = RECORDS) {}
+
   async leaveOf(person: { idpSubject: string; email?: string }): Promise<LeaveRecord | null> {
-    const record = person.email ? RECORDS[person.email] : undefined;
+    const record = person.email ? this.records[person.email] : undefined;
     if (!record) return null;
     return { hireDate: record.hireDate, uses: [...record.uses, ...(this.approved.get(person.email!) ?? [])].map((u) => ({ ...u })) };
   }
 
   async recordUses(person: { idpSubject: string; email?: string }, uses: LeaveUse[]): Promise<'recorded' | 'not-found'> {
-    if (!person.email || !RECORDS[person.email]) return 'not-found';
+    if (!person.email || !this.records[person.email]) return 'not-found';
     this.approved.set(person.email, [...(this.approved.get(person.email) ?? []), ...uses.map((u) => ({ ...u }))]);
     return 'recorded';
   }
