@@ -56,6 +56,25 @@ describe('vercel.json(웹 화면만 Vercel에 올린 시연)', () => {
     expect(vercel.outputDirectory).toBe('apps/web/dist');
   });
 
+  it('운영자 API 가운데 관리자 AI 정답률(11/5 시험) 두 경로만 넘겨요. 운영 설정·MCP 운영 API는 계속 막아요', () => {
+    const opsRules = vercel.rewrites.filter((r) => r.source.startsWith('/api/ops'));
+    expect(opsRules).toHaveLength(1);
+    const server = apiRewrite.destination!.replace(/\/api\/:path$/, '');
+    expect(opsRules[0]!.destination).toBe(`${server}/api/ops/:path`);
+    const pattern = new RegExp(`^${opsRules[0]!.source.replace(':path(', '(')}$`);
+    for (const p of ['/api/ops/ai-eval', '/api/ops/ai-eval/run']) expect(pattern.test(p), p).toBe(true);
+    for (const p of [
+      '/api/ops',
+      '/api/ops/settings',
+      '/api/ops/switch',
+      '/api/ops/mcp/clients',
+      '/api/ops/ai-evalx',
+      '/api/ops/ai-eval/runs',
+      '/api/ops/ai-eval/x',
+    ])
+      expect(pattern.test(p), p).toBe(false);
+  });
+
   it('MCP·인가 경로는 시연 서버로 넘기고, 화면 보안·캐시 머리를 붙이지 않아요(11/2, 발급자가 Vercel 주소라서)', () => {
     // 10/30 회의는 "MCP 단계 전엔 닫아요"였어요. 11/2 MCP 연결 단계에서 시연도 열어요(MCP 스위치는 따로 운영자가 켜요).
     const server = apiRewrite.destination!.replace(/\/api\/:path$/, '');

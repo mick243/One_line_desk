@@ -7,6 +7,7 @@
   "git": { "deploymentEnabled": false },
   "rewrites": [
     { "source": "/api/:path((?!ops(?:/|$)).*)", "destination": "https://one-line-desk-demo.fly.dev/api/:path" },
+    { "source": "/api/ops/:path(ai-eval|ai-eval/run)", "destination": "https://one-line-desk-demo.fly.dev/api/ops/:path" },
     { "source": "/mcp", "destination": "https://one-line-desk-demo.fly.dev/mcp" },
     {
       "source": "/.well-known/:path(oauth-protected-resource|oauth-protected-resource/mcp|oauth-authorization-server)",
