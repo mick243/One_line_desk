@@ -1,4 +1,5 @@
 import {
+  addDays,
   AUTO_DAILY_LIMIT,
   CANCEL_WORD,
   type Card,
@@ -22,10 +23,21 @@ import type { AutoOutcome } from '../../core/plans';
 import { linkCard } from '../../core/router';
 import { parseSlots, parseTime, repeatedSlots } from '../../core/slots';
 import type { DeskUser } from '../../core/user';
-import { chatHelpCard, dayText, equipmentOverviewCard, loanCard, myReservationCard, overviewCard, roomEquipmentCard, whenText, withSubject } from './cards';
+import {
+  chatHelpCard,
+  dayText,
+  equipmentOverviewCard,
+  loanCard,
+  myReservationCard,
+  otherRoomsCard,
+  overviewCard,
+  roomEquipmentCard,
+  whenText,
+  withSubject,
+} from './cards';
 import type { RentParams, RoomEquipment } from './equipment';
 import { listRooms, myLoans, myUpcoming, type ReservationRow, type RoomRow } from './repo';
-import { checkQuery, kstIso, MINUTE } from './search';
+import { checkQuery, kstIso, MINUTE, REPEAT_MAX_WEEKS } from './search';
 import { JOINT_MEETING_HEADLINE, jointHeadline, type RoomDesk, roomsWriteEnabled, slotsToQuery, teamCountText, teamSizeHeadline } from './service';
 
 // 회의실 채팅(10/28, ADR-19). 한 줄을 읽고 예약·대여·내 예약·현황·장비 현황으로 답해요.
@@ -168,6 +180,25 @@ export function mentionedRoom(text: string, rooms: RoomRow[]): RoomRow | null {
   return /대회의실/.test(text) ? (rooms.find((r) => r.name.startsWith('대회의실')) ?? null) : null;
 }
 
+/**
+ * 매주 반복 예약 횟수(11/5, ADR-19 보강). "매주"·"주마다"가 있어야 반복이에요. "4주"·"6번"·"한 달"(4주)·"두 달"(8주)을 읽고,
+ * 말하지 않으면 4번이에요. 2~8번으로 맞춰요. "2주 뒤부터"처럼 때를 가리키는 말은 횟수가 아니에요.
+ */
+export function repeatWeeksOf(text: string): number | null {
+  if (!/매\s?주|주마다/.test(text)) return null;
+  const digits = text.match(/(\d{1,2})\s*(주|번|회)(?!\s*(뒤|후|전|째))/);
+  const months = text.match(/(한|두)\s*달/);
+  const n = digits ? Number(digits[1]) : months ? (months[1] === '한' ? 4 : 8) : 4;
+  return Math.min(REPEAT_MAX_WEEKS, Math.max(2, n));
+}
+
+/** "60" → "1시간", "90" → "1시간 30분", "30" → "30분" */
+function minutesText(m: number): string {
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  return h ? `${h}시간${r ? ` ${r}분` : ''}` : `${r}분`;
+}
+
 interface ChatResult extends RoomChatResponse {
   /** 감사 로그 결과 칸(내용 없음) */
   code: string;
@@ -258,12 +289,18 @@ export class RoomChat {
     // 장비도 같이 빌리는 문장이면 장비 이름은 회의실 조건에서 빼요.
     const rentToo = it.kinds.length > 0 && RENT_VERB.test(text);
     const slots = parseSlots(rentToo ? withoutLoanWords(text) : text, now);
+    // "매주 목요일 3시"를 목요일 3시가 지난 뒤에 말하면 이번 주가 아니라 다음 주부터예요(11/5).
+    if (repeatWeeksOf(text) && slots.date && slots.start && kstToEpoch(slots.date, slots.start) <= now) slots.date = addDays(slots.date, 7);
     // 인원을 말하지 않으면 내 팀에서 그 시간에 휴가·자리비움인 사람을 뺀 수로 찾고 잡아요(11/4).
     // 여러 팀 회의면 말한 팀 인원까지 더해 짐작하고 카드에서 확인해요. 예약하면 팀마다 참석자 고르기가 가요(ADR-28). 팀 이름이 없으면 물어요.
     const { query, team, joint, teams } = await this.desk.withTeamSize(slotsToQuery(slots, this.ctx.ops.get().values.defaultMeetingMinutes), user, text, {
       requestId,
     });
     const teamNote = team ? ` · 인원은 ${teamCountText(team)}으로 봤어요` : '';
+    // 길이를 말하지 않으면 운영 기본값으로 잡았다고 알려요(11/5, 처음 쓰는 직원 점검: 말없이 1시간으로 잡혔어요).
+    const lengthNote = slots.minutes
+      ? ''
+      : ` · 길이를 말하지 않아 ${minutesText(this.ctx.ops.get().values.defaultMeetingMinutes)}으로 봤어요("2시간"처럼 말하면 바꿔요)`;
     const cards = async (headline: string) =>
       (
         await this.desk.cards(
@@ -305,10 +342,38 @@ export class RoomChat {
       const found = await cards('이 조건으로 찾았어요');
       return { reply: `${jointHeadline(teams)}. [이 회의실로 예약]을 누르면 한 번 더 확인해요`, cards: found, changed: false, code: 'joint' };
     }
+    // 매주 반복(11/5): 여러 번을 한꺼번에 잡아서 바로 실행하지 않고, 카드에서 고르면 잡을 날을 확인 시트로 한 번 보여 줘요.
+    const repeatWeeks = repeatWeeksOf(text);
+    if (repeatWeeks) {
+      const found = (
+        await this.desk.cards(
+          query,
+          user,
+          {
+            headline: `매주 ${repeatWeeks}번 잡을 회의실을 찾았어요`,
+            evidence: '채팅에서 읽은 조건 · 칩을 고치면 다시 찾아요',
+            aiSummarized: it.byModel,
+            repeatWeeks,
+          },
+          now,
+        )
+      ).cards;
+      return {
+        reply: `매주 ${repeatWeeks}번 잡을 회의실이에요${teamNote}${lengthNote}. 카드에서 고르면 잡을 날을 한 번 확인하고 예약해요(이미 예약된 주는 빼요)`,
+        cards: found,
+        changed: false,
+        code: 'repeat',
+      };
+    }
     if (!it.command) {
       const found = await cards('이 조건으로 찾았어요');
       if (it.held) return { reply: it.held, cards: found, changed: false, code: 'held' };
-      return { reply: `이 조건으로 찾았어요${teamNote}. [이 회의실로 예약]을 누르면 한 번 더 확인하고 예약해요`, cards: found, changed: false, code: 'cards' };
+      return {
+        reply: `이 조건으로 찾았어요${teamNote}${lengthNote}. [이 회의실로 예약]을 누르면 한 번 더 확인하고 예약해요`,
+        cards: found,
+        changed: false,
+        code: 'cards',
+      };
     }
     if (!this.autoOn()) {
       return {
@@ -354,12 +419,19 @@ export class RoomChat {
     const end = Date.parse(params.end);
     const booked = (await myUpcoming(this.ctx.db, user.pseudonymId, now)).find((r) => r.roomId === params.roomId && r.start === start);
     const picked = room ? '말한 회의실' : booked?.floor === user.floor ? '내 층에서 조건에 맞는 회의실' : '내 층에 맞는 회의실이 없어 가까운 층';
-    let reply = `예약했어요: ${booked ? `${booked.roomName} · ${booked.floor}` : params.roomId}, ${whenText(start, end)} (${picked})${teamNote}`;
+    let reply = `예약했어요: ${booked ? `${booked.roomName} · ${booked.floor}` : params.roomId}, ${whenText(start, end)} (${picked})${teamNote}${lengthNote}`;
     const extra: Card[] = [];
+    // 회의실을 말하지 않았으면 같은 시간에 비어 있는 다른 회의실을 바꾸기 버튼으로 보여 줘요(11/5, 후보를 보고 고르고 싶어요).
+    const others = booked && !room ? await this.desk.otherFree(query, booked.roomId, now, user.floor) : [];
     if (rentToo && booked) {
       const rented = await this.rentKinds(user, requestId, it.kinds, { start, end, reservationId: booked.id });
       extra.push(...rented.cards);
       reply += rented.summary ? ` · ${rented.summary}` : '';
+    }
+    // 바꾸기 카드는 확정·대여 카드 뒤에 둬요(지금 잡은 것부터 보이게).
+    if (booked && others.length) {
+      extra.push(otherRoomsCard(booked, others));
+      reply += ` · 다른 빈 회의실 ${others.length}곳으로 바꿀 수 있어요`;
     }
     reply += '. 바꾸려면 카드의 [취소]를 눌러 주세요';
     return { reply, cards: [out.card, ...extra], changed: true, code: 'auto-done' };

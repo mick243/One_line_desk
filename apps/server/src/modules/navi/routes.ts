@@ -19,6 +19,7 @@ import {
   OFFICIAL_LEAVE_REASONS,
   SICK_LEAVE_REASONS,
   NAVI_ROW_ID_PATTERN,
+  type LeaveStartResponse,
   type NaviRowCardRequest,
   type OnboardingResponse,
 } from '@one-line-desk/shared';
@@ -28,6 +29,8 @@ import type { AppContext } from '../../context';
 import { DeskError } from '../../core/errors';
 import type { InquiryService } from './inquiries';
 import type { ItHelpService } from './it-help';
+import { findLeaveRequestRow, leaveLinkAction } from './leave';
+import * as repo from './repo';
 import type { NaviService } from './service';
 
 // navi 경로. 묻기(/api/ask)와 따로인 행 카드·문의·S5(분장표 주인만)예요.
@@ -60,6 +63,14 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
       return { status: 'done' as const, card: await navi.rowCard(req.body.rowId) };
     },
   );
+
+  // 휴가 신청 바로 가기(11/5): 홈·문의하기의 [휴가 신청하기]가 날 없이 본인 양식을 열어요. 보내기는 양식의 확인 시트예요(ADR-24).
+  // 남은 연차는 이 요청에서만 계산해 본인에게만 주고 저장하지 않아요(ADR-18). 읽기만이라 감사·접속기록은 없어요.
+  app.get('/api/navi/leave/start', { preHandler: ctx.guards.user }, async (req): Promise<LeaveStartResponse> => {
+    assertNotOff();
+    const target = findLeaveRequestRow(await repo.allRows(ctx.db));
+    return { action: target ? await leaveLinkAction(ctx, req.deskUser!, target, [], 'annual') : null };
+  });
 
   // 신규 입사자 첫 2주 할 일(넓힐 후보 ①). 누구나 읽어요. 진행은 저장하지 않아요.
   app.get('/api/navi/onboarding', { preHandler: ctx.guards.user }, async (): Promise<OnboardingResponse> => {

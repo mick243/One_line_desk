@@ -6,7 +6,7 @@ import { pseudonymize } from '../../core/pseudonym';
 import { createTestApp, MOCK } from '../../testing';
 import { LOAN_KINDS, loanKindsIn } from '@one-line-desk/shared';
 import { NO_AUTO_SENTENCES } from '@one-line-desk/shared/rooms-chat/samples';
-import { CHAT_INTENTS, interpretByRules, mentionedRoom } from './chat';
+import { CHAT_INTENTS, interpretByRules, mentionedRoom, repeatWeeksOf } from './chat';
 import { listRooms } from './repo';
 
 // 회의실 채팅·장비 대여(ADR-19). 시계는 2026-10-26(월) 09:00이에요. "내일"은 10월 27일(화)이에요.
@@ -461,7 +461,8 @@ describe('장비 대여', () => {
     const me = await t.loginAs(MOCK.staff);
     const out = await chat(me, '내일 3시 6명 회의실 잡고 빔프로젝터도 빌려 줘');
     expect(out.changed).toBe(true);
-    expect(labels(out.cards)).toEqual(['확정', '확정']);
+    // 예약 확정 · 대여 확정 뒤에 같은 시간 다른 빈 회의실로 바꾸기 카드가 붙어요(11/5).
+    expect(labels(out.cards)).toEqual(['확정', '확정', '제안']);
     expect(out.reply).toContain('빌렸어요: 빔프로젝터');
     // 빔프로젝터는 빌리는 장비라 방 조건(화면)에 들어가지 않아요.
     expect(
@@ -728,5 +729,74 @@ describe('알아들은 것(11/5 시험, AI 보완 2번)', () => {
       expect(out.read, said.join(',')).toEqual({ understood: '장비 현황 보기 · 빔프로젝터' });
     }
     expect((await t.ctx.gateway.usageByModule()).find((u) => u.module === 'rooms')?.failures ?? 0).toBe(0);
+  });
+});
+
+describe('11/5 처음 쓰는 직원 점검: 후보 바꾸기·길이 안내·매주 반복', () => {
+  it('반복 횟수: 매주·주마다가 있어야 하고, 4주·6번·한 달·두 달을 읽고 2~8번으로 맞춰요', () => {
+    expect(repeatWeeksOf('내일 3시 회의실 잡아 줘')).toBeNull();
+    expect(repeatWeeksOf('매주 화요일 3시 잡아 줘')).toBe(4);
+    expect(repeatWeeksOf('매주 화요일 3시 6번 잡아 줘')).toBe(6);
+    expect(repeatWeeksOf('주마다 월요일 10시 한 달 동안')).toBe(4);
+    expect(repeatWeeksOf('매주 수요일 두 달')).toBe(8);
+    expect(repeatWeeksOf('매주 금요일 20주')).toBe(8);
+    expect(repeatWeeksOf('2주 뒤부터 매주 목요일')).toBe(4);
+  });
+
+  it('바로 잡은 뒤 같은 시간 다른 빈 회의실로 바꾸기 버튼이 붙고, 누르면 같은 예약이 그 회의실로 옮겨요', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.dev);
+    const out = await chat(me, '내일 3시 4명 회의실 잡아 줘');
+    expect(out.reply).toContain('다른 빈 회의실');
+    // 길이를 말하지 않으면 기본 길이로 봤다고 알려요.
+    expect(out.reply).toContain('길이를 말하지 않아 1시간으로 봤어요');
+    const other = out.cards.find((c) => c.id.startsWith('rooms-other-'))!;
+    expect(other).toMatchObject({ label: '제안', headline: '다른 빈 회의실로 바꿀 수 있어요' });
+    expect(other.actions.secondary.length).toBeGreaterThan(0);
+    const move = other.actions.secondary[0]!;
+    if (move.type !== 'fixed') throw new Error('바꾸기 버튼이 고정 버튼이 아니에요');
+    expect(move.confirm?.confirmLabel).toBe('바꾸기');
+    const before = await appReservations(t);
+    expect(before).toHaveLength(1);
+    expect((await me.call(move.method, move.path, move.body)).status).toBe(200);
+    const after = await appReservations(t);
+    expect(after).toHaveLength(1);
+    expect(after[0]!.id).toBe(before[0]!.id);
+    expect(after[0]!.room_id).toBe((move.body as { roomId: string }).roomId);
+    // 길이를 말하면 안내가 없어요. 회의실을 말하면 바꾸기 카드가 없어요.
+    const said = await chat(me, '모레 3시 4명 2시간 회의실 잡아 줘');
+    expect(said.reply).not.toContain('길이를 말하지 않아');
+  });
+
+  it('매주 반복은 바로 잡지 않고 카드에서 고르면 잡을 날을 확인 시트로 보여 주고, 이미 예약된 주는 빼고 잡아요', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.dev);
+    const out = await chat(me, '매주 화요일 3시 4명 회의실 4주 잡아 줘');
+    expect(out.changed).toBe(false);
+    expect(out.reply).toContain('매주 4번 잡을 회의실이에요');
+    expect(await appReservations(t)).toHaveLength(0);
+    const card = out.cards.find((c) => c.actions.primary?.type === 'propose')!;
+    expect(card.fields).toContainEqual({ name: '반복', value: '매주 같은 시간 4번 · 이미 예약된 주는 빼고 잡아요' });
+    const action = card.actions.primary as Extract<CardAction, { type: 'propose' }>;
+    const sheet = (await me.call('POST', '/api/plans', { proposalToken: action.proposalToken })).body as PlanCreateResponse;
+    if (sheet.status !== 'sheet') throw new Error('확인 시트가 아니에요');
+    expect(sheet.sheet.lines).toContainEqual('매주 같은 시간 4번: 10월 27일(화) · 11월 3일(화) · 11월 10일(화) · 11월 17일(화) · 이미 예약된 주는 빼고 잡아요');
+    // 셋째 주는 다른 사람이 먼저 같은 회의실을 잡았어요.
+    const roomId = (card.id.match(/^rooms-slot-(.+)-\d+$/) ?? [])[1]!;
+    const other = await t.loginAs(MOCK.staff);
+    const third = await chat(other, `11월 10일 3시 4명 ${(await listRooms(t.db)).find((r) => r.id === roomId)!.name} 잡아 줘`);
+    expect(third.changed).toBe(true);
+    const done = (await me.call('POST', `/api/plans/${sheet.planId}/confirm`)).body as PlanConfirmResponse;
+    expect(done.status).toBe('done');
+    if (done.status !== 'done') return;
+    expect(done.card.headline).toBe('매주 3번 예약했어요');
+    expect(done.card.fields.find((f) => f.name === '반복')?.value).toBe('10월 27일(화) · 11월 3일(화) · 11월 17일(화) · 이미 예약돼 있어 뺀 날: 11월 10일(화)');
+    const mine = (
+      await t.db.query<{ series_no: number }>('select series_no from room_reservations where plan_id = $1 order by series_no', [sheet.planId])
+    ).rows.map((r) => r.series_no);
+    expect(mine).toEqual([0, 1, 3]);
+    // 같은 plan을 다시 확인해도 더 생기지 않아요.
+    await me.call('POST', `/api/plans/${sheet.planId}/confirm`);
+    expect((await t.db.query('select 1 from room_reservations where plan_id = $1', [sheet.planId])).rows).toHaveLength(3);
   });
 });

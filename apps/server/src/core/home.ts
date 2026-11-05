@@ -85,6 +85,8 @@ const ROOM_WORDS = /회의실|미팅룸|\d+\s*명|방\s?(잡|예약)|예약|대�
 const PANTRY_WORDS = /간식|음료|커피|콜라|사이다|과자|라면|비품|탕비실|티백|우유|넣어|채워|사\s?(줘|주세)|주문|같이\s?채워/;
 const NAVI_HOW = /어디서|어디에|누구(한테|에게)|담당|어떻게\s?(해|하|신청)|방법/;
 /** 휴가를 쓰려는 말(11/5): "연차 쓰고 싶어요"는 내 휴가 결과가 아니라 휴가 신청이라 문의하기(인사팀 카드의 [휴가 신청하기])로 가요. */
+/** 때를 묻는 말(11/5): 담당 답에 맞는 공지 원문 한 줄을 같이 붙일지 봐요. */
+const ASKS_WHEN = /언제|까지|마감|기한|며칠|날짜/;
 const LEAVE_USE = /(연차|휴가|반차|병가|공가|월차)\s?(을|를|좀)?\s?(쓰고\s?싶|쓸래|쓸게|쓰려|쓸\s?거|낼래|낼게|내고\s?싶|내려)/;
 const FREE_ROOM = /빈\s?(회의실|방)|회의실\s?(찾|비어|비었|남)/;
 const MINE =
@@ -396,7 +398,13 @@ export class HomeDesk {
     const out = await this.askModule(user, text, kind);
     if (out.cards.length === 0) return null;
     // 회의실은 후보만 보여요. 조건 칩 카드(고쳐 다시 찾기)는 회의실 탭의 일이라 빼요.
-    return kind === 'rooms' ? out.cards.filter((c) => c.variant !== ROOM_CONDITIONS_VARIANT).map(readOnlyRoomCard) : out.cards;
+    if (kind === 'rooms') return out.cards.filter((c) => c.variant !== ROOM_CONDITIONS_VARIANT).map(readOnlyRoomCard);
+    // "언제까지"처럼 때를 묻는 담당 질문이면 맞는 공지의 원문 한 줄도 같이 보여 줘요(11/5, 공지 핵심만 보기).
+    if (kind === 'navi' && ASKS_WHEN.test(text) && this.ctx.ops.get().modules.notices === 'on') {
+      const notice = (await this.askModule(user, text, 'notices')).cards.find((c) => c.id.startsWith('notice-') && c.id !== 'notices-not-found');
+      if (notice) return [...out.cards, notice];
+    }
+    return out.cards;
   }
 
   private async gather(user: DeskUser, period: HomePeriod, kinds: HomeKind[], o: { pantryAlways: boolean }): Promise<HomeItem[]> {

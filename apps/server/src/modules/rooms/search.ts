@@ -13,6 +13,9 @@ export const DAY_OPEN = '07:00';
 export const DAY_CLOSE = '22:00';
 export const MAX_CANDIDATES = 3;
 export const MAX_ALTERNATIVES = 2;
+/** 매주 반복 예약 횟수 상한(11/5). 확인 시트 한 번으로 잡는 수라 두 달(8주)까지예요. */
+export const REPEAT_MAX_WEEKS = 8;
+export const WEEK = 7 * 24 * 60 * MINUTE;
 
 /** 들어오는 조건은 남의 입력으로 보고 길이·정해진 목록으로 검증해요(ADR-14). */
 export const RoomQuerySchema = z.strictObject({
@@ -42,6 +45,8 @@ export const ReserveParamsSchema = z
       .min(1)
       .max(6)
       .optional(),
+    /** 매주 같은 시간 반복(11/5, ADR-19 보강): 첫 주를 포함한 횟수. 채팅 자동 실행에는 쓰지 않고 확인 시트로만 잡아요. */
+    repeatWeeks: z.number().int().min(2).max(REPEAT_MAX_WEEKS).optional(),
   })
   .refine(
     (p) => {

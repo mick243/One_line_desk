@@ -22,6 +22,7 @@ import { FeaturePage } from './screens/FeaturePage';
 import { Home } from './screens/Home';
 import { Login } from './screens/Login';
 import { AiEvalScreen } from './screens/AiEval';
+import { LeaveStart } from './screens/LeaveStart';
 import { Mine } from './screens/Mine';
 
 type View = AppDestination;
@@ -235,6 +236,8 @@ export function App() {
                 {current === 'navi' && (
                   <>
                     {/* 11/2: "이런 것도 찾아 줘요" 묶음을 뺐어요. IT 오류·첫 2주 화면은 맞는 질문의 카드 버튼(withGuides)으로 들어가요. */}
+                    {/* 11/5: 휴가 신청은 찾지 않아도 바로 열 수 있게 칸을 둬요. */}
+                    <LeaveStart variant='card' />
                     <InquiryInbox />
                     <MyInquiries />
                   </>

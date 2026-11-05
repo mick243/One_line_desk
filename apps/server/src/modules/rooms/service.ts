@@ -16,7 +16,7 @@ import type {
   RoomSearchResult,
   Slots,
 } from '@one-line-desk/shared';
-import { kstDate, kstTime, kstToEpoch } from '@one-line-desk/shared';
+import { dayLabel, kstDate, kstTime, kstToEpoch } from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
 import type { AccessEntry } from '../../core/access-record';
 import type { Queryable } from '../../core/db';
@@ -77,6 +77,7 @@ import {
   ReserveParamsSchema,
   searchSlots,
   type Slot,
+  WEEK,
 } from './search';
 
 // F2 회의실 찾고 확인 예약(ADR-03·06·14). 읽기(찾기·다시 확인)는 아무것도 쓰지 않고,
@@ -114,6 +115,12 @@ export function jointCountText(teams: JointTeam[]): string {
 /** 여러 팀 회의 머리줄(ADR-28) */
 export function jointHeadline(teams: JointTeam[]): string {
   return `여러 팀 회의라 ${jointCountText(teams)}으로 찾았어요. 예약하면 팀마다 회의 담당자에게 참석자를 골라 달라고 보내요`;
+}
+
+/** 매주 반복 확인 시트 줄(11/5): 잡을 날을 모두 적어요. */
+function repeatSheetLine(start: number, weeks: number): string {
+  const days = Array.from({ length: weeks }, (_, w) => dayLabel(kstDate(start + w * WEEK)));
+  return `매주 같은 시간 ${weeks}번: ${days.join(' · ')} · 이미 예약된 주는 빼고 잡아요`;
 }
 
 function jointSheetLine(teams: JointTeam[]): string {
@@ -219,6 +226,8 @@ interface CardsOptions {
   wrong?: boolean;
   /** 여러 팀 회의면 예약 제안에 팀 목록을 담아요(ADR-28). */
   joint?: JointTeam[];
+  /** 매주 반복(11/5): 첫 주를 포함한 횟수. 후보 카드의 제안에 담고 카드에 "반복" 칸을 붙여요. */
+  repeatWeeks?: number;
 }
 
 /** 빠진 조건 되묻기 · 고칠 조건 안내. 조건 칩 카드에 빠진 칸을 "알려 주세요"로 보여 줘요(F2-1). */
@@ -260,7 +269,7 @@ export class RoomDesk {
   }
 
   /** 카드 주 버튼. 쓰기가 꺼졌으면 그룹웨어 링크예요. 제안 토큰은 서명만 하고 DB에 쓰지 않아요. */
-  private primaryFor(user: Owner, slot: Slot, query: RoomQuery, text: string, joint?: JointTeam[]): CardAction {
+  private primaryFor(user: Owner, slot: Slot, query: RoomQuery, text: string, joint?: JointTeam[], repeatWeeks?: number): CardAction {
     const s = this.ctx.ops.get();
     if (!s.roomsWrite) return { type: 'link', text: '그룹웨어에서 예약하기', href: s.links.rooms };
     return {
@@ -272,6 +281,7 @@ export class RoomDesk {
         end: kstIso(slot.end),
         query,
         ...(joint?.length ? { joint } : {}),
+        ...(repeatWeeks ? { repeatWeeks } : {}),
       }),
     };
   }
@@ -286,16 +296,30 @@ export class RoomDesk {
     user: Owner,
     slots: Slot[],
     query: RoomQuery,
-    o: { checkedAt: number; aiSummarized: boolean; alternative: boolean; text: string; joint?: JointTeam[] },
+    o: { checkedAt: number; aiSummarized: boolean; alternative: boolean; text: string; joint?: JointTeam[]; repeatWeeks?: number },
   ): Card[] {
-    return slots.map((slot) =>
-      slotCard(slot, {
+    return slots.map((slot) => {
+      const card = slotCard(slot, {
         checkedAt: o.checkedAt,
         aiSummarized: o.aiSummarized,
         alternative: o.alternative,
-        primary: this.primaryFor(user, slot, query, o.text, o.joint),
-      }),
-    );
+        primary: this.primaryFor(user, slot, query, o.text, o.joint, o.repeatWeeks),
+      });
+      // 매주 반복이면 몇 주를 잡는지 카드에 적어요. 이미 예약된 주는 실행할 때 빼고 알려요(11/5).
+      if (o.repeatWeeks) card.fields.push({ name: '반복', value: `매주 같은 시간 ${o.repeatWeeks}번 · 이미 예약된 주는 빼고 잡아요` });
+      return card;
+    });
+  }
+
+  /** 채팅으로 바로 잡은 뒤 같은 시간·조건에 비어 있는 다른 회의실(11/5). 바꾸기 버튼에 써요. */
+  async otherFree(partial: Partial<RoomQuery>, exceptRoomId: string, now = this.ctx.now(), home?: string, limit = 2): Promise<RoomRow[]> {
+    const check = checkQuery(partial, now);
+    if (!check.ok) return [];
+    const { rooms, busy } = await this.load(this.ctx.db, check.query.date);
+    return searchSlots({ rooms, busy, query: check.query, start: check.start, end: check.end, now, home })
+      .candidates.filter((s) => s.room.id !== exceptRoomId)
+      .slice(0, limit)
+      .map((s) => s.room);
   }
 
   /** 이 구간과 겹치는 내 앞으로의 예약. 겹쳐도 막지는 않고 알려만 줘요(10/28 사용성 점검). */
@@ -330,6 +354,7 @@ export class RoomDesk {
             alternative: false,
             text: '이 회의실로 예약',
             joint: o.joint,
+            repeatWeeks: o.repeatWeeks,
           }),
           cond,
         ]),
@@ -612,6 +637,7 @@ export class RoomDesk {
             whenText(start, end),
             ...mine.map((r) => `이 시간에 이미 내 예약이 있어요: ${r.roomName} · ${r.floor} ${whenText(r.start, r.end)}`),
             ...(p.joint?.length ? [jointSheetLine(p.joint)] : []),
+            ...(p.repeatWeeks ? [repeatSheetLine(start, p.repeatWeeks)] : []),
             CONFIRM_LINE,
           ],
           confirmLabel: '예약하기',
@@ -629,7 +655,29 @@ export class RoomDesk {
           const row: ReservationRow = { id, roomId: room.id, roomName: room.name, floor: room.floor, start, end };
           // 여러 팀 회의면 같은 트랜잭션에서 팀마다 참석자 고르기 요청을 보내요(ADR-28).
           if (p.joint?.length) await this.joint.open(ex.q, ex.user, id, p.joint, { start, end, roomName: room.name }, ex.now);
-          return { status: 'done', card: confirmedCard(row, ex.now) };
+          const card = confirmedCard(row, ex.now);
+          // 매주 반복(11/5): 같은 회의실·같은 시간으로 다음 주들도 잡아요. 이미 예약된 주는 넣지 않고(겹침 제약) 알려요.
+          if (p.repeatWeeks) {
+            const booked = [dayLabel(kstDate(start))];
+            const skipped: string[] = [];
+            for (let w = 1; w < p.repeatWeeks; w += 1) {
+              const s = start + w * WEEK;
+              const e = end + w * WEEK;
+              const got = await insertReservation(ex.q, {
+                roomId: room.id,
+                start: s,
+                end: e,
+                pseudonymId: ex.user.pseudonymId,
+                planId: ex.planId,
+                seriesNo: w,
+              });
+              (got ? booked : skipped).push(dayLabel(kstDate(s)));
+            }
+            card.headline = `매주 ${booked.length}번 예약했어요`;
+            card.fields.push({ name: '반복', value: `${booked.join(' · ')}${skipped.length ? ` · 이미 예약돼 있어 뺀 날: ${skipped.join(' · ')}` : ''}` });
+            card.tail = `${card.tail} · 한 번씩 따로 취소해요`;
+          }
+          return { status: 'done', card };
         }
         const { rooms, busy } = await this.load(ex.q, p.query.date);
         const alternatives = alternativeSlots({

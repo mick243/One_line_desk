@@ -438,6 +438,16 @@ describe('홈 질문 해석: 게이트웨이(ADR-10·27)', () => {
     for (const secret of [room, '11월 3일', '2026-11-03', '가상 직원', '개발팀', '재무팀', '인사팀']) expect(all).not.toContain(secret);
   });
 
+  it('11/5: 때를 묻는 담당 질문이면 담당 카드 뒤에 맞는 공지의 원문 한 줄을 같이 보여 줘요', async () => {
+    const t = await setup();
+    const doyun = await t.loginAs(MOCK.dev);
+    const res = await home(doyun, '연말정산 서류는 언제까지 어디에 내요?');
+    expect(res.cards.map((c) => c.kind)).toEqual(['navi', 'notices']);
+    expect(res.cards[1]!.fields).toContainEqual({ name: '원문 한 줄', value: '“올해 연말정산 서류는 1월 15일부터 1월 31일까지 그룹웨어에서 받아요.”' });
+    // 때를 묻지 않으면 공지를 붙이지 않아요.
+    expect((await home(doyun, '법인카드 잃어버리면 어디에 말해요?')).cards.map((c) => c.kind)).toEqual(['navi']);
+  });
+
   it('[ADR-27 시험] 계약 켬 + 실제 모델(흉내)이면 그 해석을 쓰고 "AI 정리"가 붙어요', async () => {
     const provider = new RecordingProvider('anthropic', { intent: 'mine', period: 'next-week', kinds: ['leave'], moveTo: null });
     const t = await setup({ contract: true, provider });

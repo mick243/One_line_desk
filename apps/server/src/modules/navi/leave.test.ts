@@ -272,3 +272,21 @@ describe('담당 찾기 답에 붙는 내 남은 연차(ADR-18)', () => {
     expect(myLeave(await askAs(t, MOCK.staff, '도윤이랑 같이 다음 주에 연차 쓰면 몇 개 남아?'))!.headline).toMatch(/^남은 연차는/);
   });
 });
+
+describe('휴가 신청 바로 가기(11/5)', () => {
+  it('누르면 날 없이 본인 휴가 신청 양식을 주고, 아무것도 쓰지 않아요. 근태 기록이 없으면 null이에요', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.dev);
+    const before = (await t.db.query<{ n: number }>('select count(*)::int as n from navi_inquiries')).rows[0]!.n;
+    const res = await me.call('GET', '/api/navi/leave/start');
+    expect(res.status).toBe(200);
+    const action = (res.body as { action: { type: string; text: string; days: unknown[]; team: string; remaining: number } | null }).action;
+    expect(action).toMatchObject({ type: 'leave-request', text: '휴가 신청하기', days: [], team: '인사팀' });
+    expect(typeof action!.remaining).toBe('number');
+    expect((await t.db.query<{ n: number }>('select count(*)::int as n from navi_inquiries')).rows[0]!.n).toBe(before);
+
+    const off = await setup({ adapters: { ...createMockAdapters(), leave: new OffLeave() } });
+    const nobody = await off.loginAs(MOCK.dev);
+    expect((await nobody.call('GET', '/api/navi/leave/start')).body).toEqual({ action: null });
+  });
+});

@@ -125,14 +125,15 @@ export async function busyBetween(q: Queryable, from: number, to: number): Promi
  */
 export async function insertReservation(
   q: Queryable,
-  r: { roomId: string; start: number; end: number; pseudonymId: string; planId: string },
+  r: { roomId: string; start: number; end: number; pseudonymId: string; planId: string; seriesNo?: number },
 ): Promise<string | null> {
+  // 겹침(같은 회의실·시간)이나 같은 plan의 같은 주가 이미 있으면 넣지 않고 null이에요(반복 예약은 그 주만 빼요, 11/5).
   const { rows } = await q.query<{ id: string }>(
-    `insert into room_reservations (room_id, slot, pseudonym_id, plan_id, source)
-     values ($1, tstzrange($2, $3, '[)'), $4, $5, 'app')
+    `insert into room_reservations (room_id, slot, pseudonym_id, plan_id, source, series_no)
+     values ($1, tstzrange($2, $3, '[)'), $4, $5, 'app', $6)
      on conflict do nothing
      returning id::text as id`,
-    [r.roomId, iso(r.start), iso(r.end), r.pseudonymId, r.planId],
+    [r.roomId, iso(r.start), iso(r.end), r.pseudonymId, r.planId, r.seriesNo ?? 0],
   );
   return rows[0]?.id ?? null;
 }

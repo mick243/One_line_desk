@@ -356,6 +356,14 @@ export interface OnboardingItem {
   revisedOn: string;
 }
 
+/**
+ * GET /api/navi/leave/start(11/5, 처음 쓰는 직원 점검: 휴가 신청 버튼이 앞에 보였으면). 본인 휴가 신청 양식을 날 없이 열어요.
+ * 남은 연차는 열 때 계산하고 저장하지 않아요(ADR-18). 근태 기록이 없거나 분장표에 휴가 신청 줄이 없으면 action이 null이에요.
+ */
+export interface LeaveStartResponse {
+  action: Extract<CardAction, { type: 'leave-request' }> | null;
+}
+
 /** GET /api/navi/onboarding. 누구나 읽어요. 신규 입사자인지는 묻지도 판단하지도 않아요. */
 export interface OnboardingResponse {
   weeks: { week: 1 | 2; items: OnboardingItem[] }[];
