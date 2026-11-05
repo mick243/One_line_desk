@@ -420,9 +420,12 @@ export function createInviteService(ctx: AppContext) {
      * [못 가요](11/4): 사유를 꼭 적어요(공통 입력 검사, 200자). 같은 팀 사람(delegate)을 고르면 그 사람에게 대신 가 달라고 부탁해요.
      * 부탁받은 사람에게는 부른 사람 이름으로 초대가 가고, 부탁한 사람·사유가 보여요. 사유는 부른 사람과 부탁받은 사람에게만 보여요.
      * 알림 글·감사 로그에는 사유를 넣지 않아요. 고정 버튼(화면이 확인을 먼저 띄워요)이에요.
+     * 11/5: 부탁받은 사람도 같은 팀 다른 사람에게 다시 부탁할 수 있어요. 나에게 부탁한 사람에게는 되돌려 부탁하지 못하고,
+     * 이미 못 간다고 한 초대는 다시 보낼 수 없고, 한 회의에서 대신 부탁은 한 사람이 한 번만 해요.
      */
     async decline(user: DeskUser, reservationId: string, body: InviteDeclineBody): Promise<{ ok: true; delegated: boolean }> {
       if (!writeOn(ctx.ops.get())) throw new DeskError('feature-off', 409, '지금은 이 기능이 꺼져 있어요');
+      if (!ctx.rateLimiter.hit(user.pseudonymId, 'invite')) throw new DeskError('rate-limited', 429, '요청이 많아요. 잠시 뒤에 다시 보내 주세요');
       const reason = checkedReason(body.reason);
       const meeting = await findMeeting(ctx.db, reservationId);
       if (!meeting || meeting.end <= ctx.now()) throw new DeskError('not-found', 404, '초대받은 회의를 찾지 못했어요');
@@ -446,6 +449,13 @@ export function createInviteService(ctx: AppContext) {
           const all = await invitesOf(q, reservationId);
           const mine = all.find((i) => i.attendeePseudonym === user.pseudonymId);
           if (!mine) throw new DeskError('not-found', 404, '초대받은 회의를 찾지 못했어요');
+          // 화면은 [못 가요]를 숨기지만, 서버도 한 번만 받아요(같은 초대로 여러 사람에게 부탁하지 못하게).
+          if (mine.response === 'declined') throw new DeskError('already-declined', 409, '이미 못 간다고 보냈어요');
+          if (delegate) {
+            if (mine.delegatedBySubject === delegate.idpSubject)
+              throw new DeskError('bad-request', 400, `나에게 부탁한 ${delegate.displayName}님에게는 다시 부탁할 수 없어요`);
+            if (all.some((i) => i.delegatedBySubject === user.idpSubject)) throw new DeskError('bad-request', 400, '이 회의에서는 이미 한 번 대신 부탁했어요');
+          }
           await q.query(
             "update room_invites set response = 'declined', decline_reason = $3, responded_at = $4 where reservation_id = $1 and attendee_pseudonym = $2",
             [reservationId, user.pseudonymId, reason, new Date(at).toISOString()],

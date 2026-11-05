@@ -333,4 +333,52 @@ describe('못 가요 사유·대신 부탁(11/4)', () => {
     expect((await haeun.call('GET', `/api/rooms/invites/${reservationId}/colleagues`)).status).toBe(404);
     expect((await decline(haeun, reservationId, { reason: '못 가요' })).status).toBe(404);
   });
+
+  it('부탁받은 사람도 같은 팀 다른 사람에게 다시 부탁할 수 있어요. 나에게 부탁한 사람에게는 못 하고, 못 간다고 한 초대는 다시 못 보내요(11/5)', async () => {
+    const { t, doyun, seojun, reservationId } = await invited();
+    const juwonRef = ((await seojun.call('GET', `/api/rooms/invites/${reservationId}/colleagues`)).body as InviteColleaguesResponse).items.find(
+      (c) => c.name === '가상 직원 주원',
+    )!.ref;
+    expect((await decline(seojun, reservationId, { reason: '출장이에요', delegate: juwonRef })).body).toEqual({ ok: true, delegated: true });
+
+    // 이미 못 간다고 보낸 초대는 다시 보낼 수 없어요(화면에서 숨긴 버튼을 API로 불러도요).
+    const haeunRefBySeojun = (await refsOf(seojun, '하은'))[0]!.ref;
+    const again = await decline(seojun, reservationId, { reason: '하은님도 부탁해요', delegate: haeunRefBySeojun });
+    expect(again.status).toBe(409);
+    expect(again.body.message).toBe('이미 못 간다고 보냈어요');
+
+    // 주원: 고를 수 있는 사람에서 나에게 부탁한 서준·부른 도윤은 빠져요. 서준을 직접 골라도 막혀요.
+    const juwon = await t.loginAs(JUWON);
+    const list = ((await juwon.call('GET', `/api/rooms/invites/${reservationId}/colleagues`)).body as InviteColleaguesResponse).items;
+    expect(list.map((c) => c.name)).toEqual(['가상 직원 하은']);
+    const back = await decline(juwon, reservationId, { reason: '저도 못 가요', delegate: (await refsOf(juwon, '서준'))[0]!.ref });
+    expect(back.status).toBe(400);
+    expect(back.body.message).toBe('나에게 부탁한 가상 직원 서준님에게는 다시 부탁할 수 없어요');
+
+    // 주원 → 하은으로 다시 부탁해요. 하은에게는 부른 사람 이름(도윤)과 부탁한 주원·사유가 보여요.
+    expect((await decline(juwon, reservationId, { reason: '같은 시간에 면접이 있어요', delegate: list[0]!.ref })).body).toEqual({ ok: true, delegated: true });
+    const haeun = await t.loginAs(HAEUN);
+    expect(((await haeun.call('GET', '/api/rooms/invites')).body as InvitedMeetingsResponse).items[0]).toMatchObject({
+      inviter: { name: '가상 직원 도윤', department: '개발팀' },
+      delegatedBy: { name: '가상 직원 주원', reason: '같은 시간에 면접이 있어요' },
+      response: 'pending',
+      canDecline: true,
+    });
+    const mine = (await doyun.call('GET', '/api/rooms/my-reservations')).body as MyReservationsResponse;
+    expect(mine.items[0]!.attendees).toHaveLength(3);
+    expect(mine.items[0]!.attendees).toEqual(
+      expect.arrayContaining([
+        { name: '가상 직원 서준', department: '개발팀', response: 'declined', reason: '출장이에요' },
+        { name: '가상 직원 주원', department: '개발팀', response: 'declined', reason: '같은 시간에 면접이 있어요', delegatedBy: '가상 직원 서준' },
+        { name: '가상 직원 하은', department: '개발팀', response: 'pending', delegatedBy: '가상 직원 주원' },
+      ]),
+    );
+
+    // 서준이 다시 참석한다고 해도, 이 회의에서 대신 부탁은 한 번뿐이에요.
+    expect((await seojun.call('POST', `/api/rooms/invites/${reservationId}/response`, { response: 'accepted' })).status).toBe(200);
+    const twice = await decline(seojun, reservationId, { reason: '역시 못 가요', delegate: haeunRefBySeojun });
+    expect(twice.status).toBe(400);
+    expect(twice.body.message).toBe('이 회의에서는 이미 한 번 대신 부탁했어요');
+    expect((await decline(seojun, reservationId, { reason: '역시 못 가요' })).body).toEqual({ ok: true, delegated: false });
+  });
 });

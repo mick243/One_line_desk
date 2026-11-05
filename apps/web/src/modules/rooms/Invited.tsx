@@ -166,6 +166,7 @@ function DeclineButton({ meeting }: { meeting: InvitedMeeting }) {
               </option>
             ))}
           </select>
+          {meeting.delegatedBy && <span className='hint'>나에게 부탁한 {meeting.delegatedBy.name}님에게는 다시 부탁할 수 없어요</span>}
         </label>
       )}
       <div className='actions'>
