@@ -41,6 +41,19 @@ export class FakeProvider implements LlmProvider {
   }
 }
 
+/**
+ * 공급자 실패와 그 종류(11/5). 비용 표에는 종류 코드만 남겨요(글·오류 본문은 남기지 않아요).
+ * refusal · max_tokens · no-output · parse(구조 검사) · http-<상태 번호> · timeout · error
+ */
+export class ProviderFailure extends Error {
+  constructor(
+    readonly kind: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 export class GatewayRefused extends DeskError {
   constructor(grade: Grade) {
     super('grade-refused', 422, `등급 ${grade} 자료는 AI로 보내지 않아요`);
@@ -75,20 +88,41 @@ export class AiGateway {
       await this.recordUsage(req, res.inputTokens, res.outputTokens, true);
       return res.output;
     } catch (e) {
-      await this.recordUsage(req, 0, 0, false);
+      await this.recordUsage(req, 0, 0, false, e instanceof ProviderFailure ? e.kind : 'error');
       if (e instanceof DeskError) throw e;
       throw new DeskError('ai-failed', 502, '지금 답을 만들지 못했어요');
     }
   }
 
   /** 모듈별 AI 비용(운영 표). 본문은 없어요. */
-  async usageByModule(): Promise<{ module: string; calls: number; inputTokens: number; outputTokens: number; failures: number }[]> {
+  async usageByModule(): Promise<
+    {
+      module: string;
+      calls: number;
+      inputTokens: number;
+      outputTokens: number;
+      failures: number;
+      failureKinds: { purpose: string; kind: string; count: number }[];
+    }[]
+  > {
     const { rows } = await this.db.query<{ module: string; calls: number; input_tokens: number; output_tokens: number; failures: number }>(
       `select module, count(*)::int as calls, coalesce(sum(input_tokens), 0)::int as input_tokens,
               coalesce(sum(output_tokens), 0)::int as output_tokens, count(*) filter (where not ok)::int as failures
          from ai_usage group by module order by module`,
     );
-    return rows.map((r) => ({ module: r.module, calls: r.calls, inputTokens: r.input_tokens, outputTokens: r.output_tokens, failures: r.failures }));
+    // 실패 종류(11/5): 목적·종류별 수만이에요. 글은 없어요.
+    const { rows: kinds } = await this.db.query<{ module: string; purpose: string; kind: string; count: number }>(
+      `select module, purpose, coalesce(fail_kind, 'error') as kind, count(*)::int as count
+         from ai_usage where not ok group by module, purpose, coalesce(fail_kind, 'error') order by module, purpose, kind`,
+    );
+    return rows.map((r) => ({
+      module: r.module,
+      calls: r.calls,
+      inputTokens: r.input_tokens,
+      outputTokens: r.output_tokens,
+      failures: r.failures,
+      failureKinds: kinds.filter((k) => k.module === r.module).map((k) => ({ purpose: k.purpose, kind: k.kind, count: Number(k.count) })),
+    }));
   }
 
   /** 보관 기간(7일, 10/28)이 지난 사용량 줄을 지워요. 운영 표의 AI 비용은 최근 7일 합계가 돼요. */
@@ -96,14 +130,20 @@ export class AiGateway {
     await this.db.query('delete from ai_usage where at < $1', [new Date(before).toISOString()]);
   }
 
-  private async recordUsage(req: StructuredRequest<unknown>, inputTokens: number, outputTokens: number, ok: boolean): Promise<void> {
-    await this.db.query('insert into ai_usage (module, purpose, provider, input_tokens, output_tokens, ok) values ($1, $2, $3, $4, $5, $6)', [
+  private async recordUsage(req: StructuredRequest<unknown>, inputTokens: number, outputTokens: number, ok: boolean, failKind?: string): Promise<void> {
+    await this.db.query('insert into ai_usage (module, purpose, provider, input_tokens, output_tokens, ok, fail_kind) values ($1, $2, $3, $4, $5, $6, $7)', [
       req.module,
       req.purpose,
       this.provider.name,
       inputTokens,
       outputTokens,
       ok,
+      ok ? null : safeKind(failKind),
     ]);
   }
+}
+
+/** 표 검사(소문자·숫자·-·_ 40자)에 맞는 종류 코드만 남겨요. 아니면 error예요. */
+function safeKind(kind: string | undefined): string {
+  return kind && /^[a-z0-9_-]{1,40}$/.test(kind) ? kind : 'error';
 }

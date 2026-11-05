@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { LlmProvider, ProviderResult, StructuredRequest } from './gateway';
+import { type LlmProvider, ProviderFailure, type ProviderResult, type StructuredRequest } from './gateway';
 
 // Gemini 공급자(11/3 사용자 결정: Anthropic·Gemini 둘 다 쓸 수 있게, 기본은 Anthropic).
 // Anthropic 공급자와 같은 약속을 지켜요: 무보관 계약이 된 모델 하나로 고정하고, 거절·빈 답이면 다른 모델로 넘기지 않고 실패로 다뤄요.
@@ -42,20 +42,24 @@ export class GeminiProvider implements LlmProvider {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     // 오류 응답 본문은 읽지 않아요. 입력이 되울려 나올 수 있어서 상태 번호만 남겨요.
-    if (!res.ok) throw new Error(`Gemini가 답하지 않았어요(${res.status})`);
+    if (!res.ok) throw new ProviderFailure(`http-${res.status}`, `Gemini가 답하지 않았어요(${res.status})`);
     const body = (await res.json()) as GeminiResponse;
-    if (body.promptFeedback?.blockReason) throw new Error(`모델이 답을 만들지 않았어요(${body.promptFeedback.blockReason})`);
+    if (body.promptFeedback?.blockReason) throw new ProviderFailure('refusal', `모델이 답을 만들지 않았어요(${body.promptFeedback.blockReason})`);
     const candidate = body.candidates?.[0];
     const text = candidate?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
-    if (!text) throw new Error(`모델이 답을 만들지 않았어요(${candidate?.finishReason ?? 'empty'})`);
+    if (!text)
+      throw new ProviderFailure(
+        candidate?.finishReason === 'MAX_TOKENS' ? 'max_tokens' : 'no-output',
+        `모델이 답을 만들지 않았어요(${candidate?.finishReason ?? 'empty'})`,
+      );
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
     } catch {
-      throw new Error('모델 답이 JSON이 아니에요');
+      throw new ProviderFailure('parse', '모델 답이 JSON이 아니에요');
     }
     const output = req.schema.safeParse(parsed);
-    if (!output.success) throw new Error('모델 답이 정해진 모양이 아니에요');
+    if (!output.success) throw new ProviderFailure('parse', '모델 답이 정해진 모양이 아니에요');
     return { output: output.data, inputTokens: body.usageMetadata?.promptTokenCount ?? 0, outputTokens: body.usageMetadata?.candidatesTokenCount ?? 0 };
   }
 }

@@ -1,7 +1,7 @@
 import { DEFAULT_OPS_SETTINGS, GRADE, gatewayAllows, isPantryStandalone, type OpsSettings } from '@one-line-desk/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { AiGateway, FakeProvider, GatewayRefused } from './ai/gateway';
+import { AiGateway, FakeProvider, GatewayRefused, type LlmProvider, ProviderFailure } from './ai/gateway';
 import { AuditLog } from './audit';
 import type { Db } from './db';
 import { createTestDb } from './db/test-db';
@@ -38,9 +38,54 @@ describe('AI 게이트웨이', () => {
     await expect(gateway.structured({ ...req, grade: GRADE.internal })).rejects.toBeInstanceOf(GatewayRefused);
     await expect(gateway.structured({ ...req, grade: GRADE.public })).resolves.toEqual({ id: 'a' });
     const usage = await gateway.usageByModule();
-    expect(usage).toEqual([{ module: 'navi', calls: 1, inputTokens: 0, outputTokens: 0, failures: 0 }]);
+    expect(usage).toEqual([{ module: 'navi', calls: 1, inputTokens: 0, outputTokens: 0, failures: 0, failureKinds: [] }]);
     const { rows } = await db.query('select * from ai_usage');
     expect(JSON.stringify(rows)).not.toContain('X-CANARY');
+  });
+
+  it('공급자 실패는 비용 표에 종류 코드만 남겨요(11/5). 오류 글은 남지 않아요', async () => {
+    await db.query('delete from ai_usage');
+    const failing = (error: Error): LlmProvider => ({
+      name: 'anthropic',
+      async complete() {
+        throw error;
+      },
+    });
+    const req = {
+      module: 'rooms' as const,
+      purpose: 'chat-intent',
+      grade: GRADE.public,
+      system: 's',
+      input: '문장 Y-CANARY',
+      schema: z.object({ id: z.string() }),
+      fallback: () => ({ id: 'a' }),
+    };
+    for (const error of [
+      new ProviderFailure('parse', '모양 틀림 Y-CANARY'),
+      new ProviderFailure('parse', 'x'),
+      new ProviderFailure('http-429', 'x'),
+      new Error('Y-CANARY'),
+    ])
+      await expect(new AiGateway(failing(error), true, db).structured(req)).rejects.toThrow();
+    // 표 검사에 맞지 않는 종류 글자는 error로 남겨요.
+    await expect(new AiGateway(failing(new ProviderFailure('나쁜 종류 Y-CANARY', 'x')), true, db).structured(req)).rejects.toThrow();
+    const usage = await new AiGateway(new FakeProvider(), true, db).usageByModule();
+    expect(usage).toEqual([
+      {
+        module: 'rooms',
+        calls: 5,
+        inputTokens: 0,
+        outputTokens: 0,
+        failures: 5,
+        failureKinds: [
+          { purpose: 'chat-intent', kind: 'error', count: 2 },
+          { purpose: 'chat-intent', kind: 'http-429', count: 1 },
+          { purpose: 'chat-intent', kind: 'parse', count: 2 },
+        ],
+      },
+    ]);
+    const { rows } = await db.query('select * from ai_usage');
+    expect(JSON.stringify(rows)).not.toContain('Y-CANARY');
   });
 });
 

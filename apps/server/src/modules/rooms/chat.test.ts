@@ -713,4 +713,20 @@ describe('알아들은 것(11/5 시험, AI 보완 2번)', () => {
     provider.reply = undefined;
     expect((await chat(me, '노트북 몇 대 남았어?')).read).toEqual({ understood: '장비 현황 보기 · 노트북' });
   });
+
+  it('모델이 장비 이름을 줄여 보내도("프로젝터", "빔 프로젝터") 목록 값으로 맞추고 AI 해석이 실패하지 않아요(11/5)', async () => {
+    const provider = new ScriptedProvider();
+    const t = await createTestApp({ provider });
+    opened.push(t);
+    await t.modules.find((m) => m.kind === 'rooms')!.seed!();
+    t.ctx.gateway = new AiGateway(provider, true, t.db);
+    const me = await t.loginAs(MOCK.staff);
+    for (const said of [['프로젝터'], ['빔 프로젝터'], ['빔프로젝터', '없는 장비']]) {
+      provider.reply = { intent: 'equipment', command: false, kinds: said };
+      const out = await chat(me, '빔프로젝터 남았어?');
+      expect(out.aiParsed, said.join(',')).toBe(true);
+      expect(out.read, said.join(',')).toEqual({ understood: '장비 현황 보기 · 빔프로젝터' });
+    }
+    expect((await t.ctx.gateway.usageByModule()).find((u) => u.module === 'rooms')?.failures ?? 0).toBe(0);
+  });
 });

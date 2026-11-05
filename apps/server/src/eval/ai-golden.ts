@@ -41,6 +41,10 @@ export const GOLDEN: readonly GoldenCase[] = [
   { task: 'home', text: '신입인데 첫 주에 뭘 해야 해?', expect: 'move:navi', why: '첫 2주 안내는 문의하기에 있어요' },
   { task: 'home', text: '내 자리 모니터 하나 더 받을 수 있어?', expect: 'move:navi', why: '"내"가 있어도 내 일정을 묻는 말이 아니에요' },
   { task: 'home', text: '이번 주 금요일 팀 회식 장소 공지 났어?', expect: 'move:notices' },
+  // 11/5 홈 지시문 보강 뒤에 더한 처음 보는 문장(지시문 예문과 겹치지 않게 골랐어요)
+  { task: 'home', text: '프린터에서 종이가 계속 걸려요', expect: 'move:navi', why: '고장 신고예요' },
+  { task: 'home', text: '사무실 에어컨이 안 나와요', expect: 'move:navi', why: '시설 고장 신고예요' },
+  { task: 'home', text: '모니터 케이블이 하나 더 필요해요', expect: 'move:navi', why: '사무 비품 요청이에요' },
 
   // ── 회의실 채팅 ──
   { task: 'room-chat', text: '내일 3시 6명 회의실 잡아 줘', expect: 'reserve' },
@@ -56,6 +60,7 @@ export const GOLDEN: readonly GoldenCase[] = [
   { task: 'room-chat', text: '빔프로젝터 반납할게', expect: 'cancel:빔프로젝터' },
   { task: 'room-chat', text: '다섯 명이서 회의할 곳 필요해', expect: 'reserve', why: '"회의실"이라는 낱말이 없어도 회의할 곳을 찾는 말이에요' },
   { task: 'room-chat', text: '발표 연습할 방 하나 잡아 줄래', expect: 'reserve' },
+  { task: 'room-chat', text: '빔프로젝터 남았어?', expect: 'equipment:빔프로젝터', why: '11/5 모델이 "프로젝터"로 줄여 보내 해석이 실패하던 문장이에요' },
 
   // ── 기능 나누기(/ask) ──
   { task: 'router', text: '법인카드 분실 신고는 어디서 해?', expect: 'navi' },

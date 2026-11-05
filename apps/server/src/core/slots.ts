@@ -9,6 +9,14 @@ const EQUIPMENT_WORDS: Record<Equipment, RegExp> = {
   화이트보드: /화이트 ?보드|칠판/i,
 };
 
+/**
+ * 모델이 글자로 보낸 설비 이름을 목록 값으로 맞춰요(11/5). "모니터"·"TV"는 화면, "줌"은 화상회의예요. 목록에 없는 말은 버려요.
+ * 목록(enum)으로 받으면 모델이 비슷한 말로 줄여 보낼 때 구조 검사에서 떨어져 해석 전체가 실패해서예요.
+ */
+export function equipmentIn(words: readonly string[]): Equipment[] {
+  return EQUIPMENT.filter((e) => words.some((w) => EQUIPMENT_WORDS[e].test(w)));
+}
+
 export function parseSlots(text: string, now: number): Slots {
   const slots: Slots = {};
   const today = kstDate(now);
