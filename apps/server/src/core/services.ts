@@ -4,6 +4,7 @@ import type {
   CardAction,
   InquiryState,
   InvitedMeetingsResponse,
+  JointRequestsResponse,
   LeaveDay,
   LeaveType,
   LoanKind,
@@ -56,6 +57,8 @@ interface RoomsHomeRead {
   myLoans(user: Pick<DeskUser, 'pseudonymId'>): Promise<MyLoansResponse>;
   /** 나를 부른 회의(다가오는 것). 부른 사람 이름은 초대받은 본인에게만 보여요(ADR-17). */
   invited(user: DeskUser): Promise<InvitedMeetingsResponse>;
+  /** 내가 골라야 할 여러 팀 회의 참석자 요청(ADR-28, 팀장·회의 담당자만). 부른 사람 이름은 고르는 사람에게만 보여요. */
+  jointRequests?(user: DeskUser): Promise<JointRequestsResponse>;
 }
 
 /** 장비 대여 링크 값. 장비 종류와 하루 안의 한 구간(KST ISO)만이에요. */

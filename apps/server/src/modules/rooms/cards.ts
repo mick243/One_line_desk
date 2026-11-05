@@ -163,7 +163,7 @@ export function confirmedCard(r: ReservationRow, checkedAt: number): Card {
     evidence: { text: `${kstTime(checkedAt)}에 다시 확인하고 예약했어요`, aiSummarized: false },
     primary: inviteAction(r),
     secondary: [{ type: 'link', text: '캘린더 파일 받기', href: icsPath(r.id) }, cancelAction(r)],
-    tail: '예약 기록이 남아요 · 내 예약은 마이 페이지에서 봐요',
+    tail: '예약 기록이 남아요 · 내 예약은 회의실 아래 "내 예약"에서 봐요',
   });
 }
 

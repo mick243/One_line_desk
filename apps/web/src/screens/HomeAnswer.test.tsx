@@ -44,6 +44,22 @@ describe('홈 답 그리기(ADR-27)', () => {
     expect(html).not.toMatch(/예약하기|신청하기|취소/);
   });
 
+  it('11/5: 가장 최근 답은 항목 버튼이 그 칸을 답 아래에 펼치는 버튼이고, 자리비움 양식 자리를 그려요', () => {
+    const html = renderToStaticMarkup(<HomeAnswer answer={mine} onOpen={() => undefined} panelFor={() => <p>칸 자리</p>} away={<p>자리비움 양식 자리</p>} />);
+    expect(html).toContain('여기서 관리');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('회의실에서 보기');
+    // 펼치기 전에는 칸을 그리지 않아요.
+    expect(html).not.toContain('칸 자리');
+    expect(html).toContain('자리비움 양식 자리');
+  });
+
+  it('11/5: 내 일을 찾지 못한 답이면 해 볼 수 있는 일 자리를 그려요', () => {
+    const empty: HomeAskResponse = { ...mine, items: [], links: [], headline: '이번 주 나에게 해당하는 일을 찾지 못했어요' };
+    expect(renderToStaticMarkup(<HomeAnswer answer={empty} onOpen={() => undefined} emptyHint={<p>해 볼 일 자리</p>} />)).toContain('해 볼 일 자리');
+    expect(renderToStaticMarkup(<HomeAnswer answer={mine} onOpen={() => undefined} emptyHint={<p>해 볼 일 자리</p>} />)).not.toContain('해 볼 일 자리');
+  });
+
   it('[ADR-27 시험] 실제 모델이 해석했을 때만 "AI 정리"가 붙어요', () => {
     const html = renderToStaticMarkup(<HomeAnswer answer={{ ...mine, by: 'ai' }} onOpen={() => undefined} />);
     expect(html).toContain('AI 정리');
@@ -55,7 +71,7 @@ describe('홈 답 그리기(ADR-27)', () => {
     );
     expect(plain).toContain('알아들은 것');
     expect(plain).not.toContain('AI가 알아들은 것');
-    expect(plain).not.toContain('낱말로만 보면');
+    expect(plain).not.toContain('낱말만 보면');
     const fixed = renderToStaticMarkup(
       <HomeAnswer
         answer={{ ...mine, by: 'ai', read: { understood: '하려는 일 · 문의하기에서 해요', ruleSaid: '요즘 · 내 일(내 예약)' } }}
@@ -64,7 +80,9 @@ describe('홈 답 그리기(ADR-27)', () => {
     );
     expect(fixed).toContain('AI가 알아들은 것');
     expect(fixed).toContain('하려는 일 · 문의하기에서 해요');
-    expect(fixed).toContain('낱말로만 보면 &quot;요즘 · 내 일(내 예약)&quot;예요. AI가 문장 뜻으로 다시 봤어요');
+    expect(fixed).toContain('낱말만 보면 &quot;요즘 · 내 일(내 예약)&quot;인데, AI가 문장 전체 뜻을 보고 바로잡았어요');
+    // 11/5: 기본은 접어 두고 누르면 펼쳐요.
+    expect(fixed).toContain('<details class="read-line"><summary>AI가 어떻게 알아들었는지 보기</summary>');
     expect(renderToStaticMarkup(<HomeAnswer answer={mine} onOpen={() => undefined} />)).not.toContain('알아들은 것');
   });
 

@@ -183,7 +183,7 @@ export async function buildApp(opts: BuildOptions) {
   registerAiEvalRoutes(app, ctx);
   registerAuthRoutes(app, ctx);
   registerAskRoutes(app, ctx, router);
-  registerHomeRoutes(app, ctx);
+  registerHomeRoutes(app, ctx, router);
   registerPlanRoutes(app, ctx);
   registerNotificationRoutes(app, ctx);
   registerPeopleRoutes(app, ctx);

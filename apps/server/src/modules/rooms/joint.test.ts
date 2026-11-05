@@ -1,5 +1,6 @@
 import type {
   CardAction,
+  HomeAskResponse,
   JointRequestsResponse,
   NotificationsResponse,
   PeopleSearchResponse,
@@ -75,6 +76,25 @@ describe('여러 팀 회의(ADR-28)', () => {
     // 팀장이 아닌 사람에게는 가지 않아요.
     expect(await titles(await t.loginAs(YUNA))).toEqual([]);
     expect(await requests(await t.loginAs(SEOJUN))).toEqual([]);
+  });
+
+  it('11/5: 참석자 고르기 요청은 홈 채팅 "나에게 온 요청"에 나오고, 알림은 회의실 페이지로 가요(마이 페이지에서 옮김)', async () => {
+    const t = await setup();
+    await reserveJoint(await t.loginAs(MOCK.dev));
+    const home = async (me: Session) => (await me.call('POST', '/api/home/ask', { text: '나한테 온 요청 있어?' })).body as HomeAskResponse;
+    const jiwoo = await t.loginAs(JIWOO);
+    expect((await home(jiwoo)).items).toContainEqual(
+      expect.objectContaining({
+        kind: 'invites',
+        title: expect.stringContaining('회의 참석자 골라 주세요 · '),
+        when: '10월 27일(화) 15:00~16:00',
+        detail: '가상 직원 도윤(개발팀)님이 디자인팀에서 갈 사람을 골라 달라고 했어요',
+      }),
+    );
+    // 팀장·회의 담당자가 아니면 나오지 않아요(이름도 가지 않아요).
+    expect(JSON.stringify((await home(await t.loginAs(YUNA))).items)).not.toContain('골라 주세요');
+    const notes = ((await jiwoo.call('GET', '/api/notifications')).body as NotificationsResponse).items;
+    expect(notes.map((n) => n.page)).toEqual(['rooms']);
   });
 
   it('팀장이 자기 팀 사람만 골라요. 고른 사람에게 부른 사람 이름으로 초대가 가고, 다 고르면 예약한 사람에게 다시 센 인원이 가요', async () => {

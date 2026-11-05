@@ -8,15 +8,17 @@ const ROLE_HINT: Partial<Record<Role, string>> = {
   facilities: '같이 채워요 운영(합치기·주문안)',
   'chart-owner': '분장표 수정 제안함',
   operator: '운영 설정',
+  // 11/5: 빠져 있어서 "팀장 — 도 볼 수 있어요"처럼 글자가 비었어요(처음 쓰는 직원 점검).
+  'team-lead': '여러 팀 회의 참석자 고르기·팀 회의 담당자',
 };
 
-function roleLine(roles: Role[] = []): string {
+export function roleLine(roles: Role[] = []): string {
   const extra = roles.filter((r) => r !== 'employee');
   if (extra.length === 0) return '직원 화면';
-  return `${extra.map((r) => ROLE_LABEL[r]).join('·')} — ${extra
-    .map((r) => ROLE_HINT[r])
-    .filter(Boolean)
-    .join(', ')}도 볼 수 있어요`;
+  const labels = extra.map((r) => ROLE_LABEL[r]).join('·');
+  const hints = extra.map((r) => ROLE_HINT[r]).filter(Boolean);
+  // 설명이 없는 역할만 있으면 역할 이름만 보여요(빈 "— 도 볼 수 있어요"가 나오지 않게).
+  return hints.length ? `${labels} — ${hints.join(', ')}도 볼 수 있어요` : labels;
 }
 
 /** 동그라미 안 글자: 이름 마지막 낱말의 첫 글자("가상 직원 도윤" → "도") */

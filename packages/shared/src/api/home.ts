@@ -4,6 +4,8 @@ import type { ReadNote } from './read-note';
 // 홈 AI 채팅 "나에게 해당하는 일"(11/3 사용자 결정, ADR-27, 개선 회의 D8 해제).
 // AI는 질문 뜻(구조 값)만 해석하고, 내 일은 서버가 각 모듈 서비스에서 규칙으로 모아요. 내 자료는 AI에 가지 않아요.
 // 홈 칸은 예약·신청을 하지 않아요. 다른 일이면 맞는 기능 페이지로 옮기는 카드만 줘요(D8 조건).
+// 11/5 사용자 결정(ADR-27 보강): 마이 페이지의 내 예약·내 요청·나에게 온 요청·자리비움 알리기를 홈 채팅으로 옮겼어요.
+// 답 아래에서 그 칸을 펼쳐 바로 취소·답하기·자리비움 알리기를 해요(새 예약·신청은 여전히 그 페이지에서 해요).
 
 /** 홈이 모으는 내 일 종류 */
 export const HOME_KINDS = ['reservations', 'loans', 'invites', 'inquiries', 'leave', 'pantry', 'inbox'] as const;
@@ -13,7 +15,7 @@ export type HomeKind = (typeof HOME_KINDS)[number];
 export const HOME_PERIODS = ['today', 'tomorrow', 'this-week', 'next-week', 'recent'] as const;
 export type HomePeriod = (typeof HOME_PERIODS)[number];
 
-/** 다른 일이면 옮겨 갈 기능 페이지. away는 마이 페이지의 "자리비움 알리기" 양식이에요(11/3). */
+/** 다른 일이면 옮겨 갈 기능 페이지. away는 "자리비움 알리기" 양식이에요(11/3). 11/5부터 홈 답 아래에 바로 펼쳐요. */
 export const HOME_MOVE_TO = ['rooms', 'navi', 'notices', 'board', 'away'] as const;
 export type HomeMoveTo = (typeof HOME_MOVE_TO)[number];
 
@@ -70,6 +72,8 @@ export function homeReadLabel(r: HomeRead): string {
     case 'mine':
       return `${HOME_PERIOD_LABEL[r.period]} · 내 일(${r.kinds.length ? r.kinds.map((k) => HOME_KIND_LABEL[k]).join('·') : '전부'})`;
     case 'move':
+      // 자리비움은 홈 답 아래에서 바로 알려요(11/5). 다른 곳은 그 기능 페이지에서 해요.
+      if (r.moveTo === 'away') return `하려는 일 · ${HOME_MOVE_LABEL.away}`;
       return r.moveTo ? `하려는 일 · ${HOME_MOVE_LABEL[r.moveTo]}에서 해요` : '하려는 일';
     case 'team-schedule':
       return `${HOME_PERIOD_LABEL[r.period]} · 같은 팀 일정`;
@@ -124,6 +128,18 @@ export interface HomeAskResponse {
   team: HomeTeamSchedule | null;
   /** 알아들은 것(11/5 시험). 해석 라벨만이에요. */
   read?: ReadNote;
+  /** 자리비움 알리기 미리 채움(11/5). 문장에서 서버가 규칙으로 뽑은 종류·날·시각만이에요(글 없음, 저장 안 함). */
+  away?: AwayDraft;
+}
+
+/** 홈 문장("내일 오후 외근이에요")에서 뽑은 자리비움 양식 값. 말하지 않은 칸은 비어 있고 양식 기본값을 써요. 사람이 [알리기]를 눌러야 정해져요. */
+export interface AwayDraft {
+  kind?: AwayKind;
+  /** YYYY-MM-DD(한국 날짜), 오늘부터 AWAY_MAX_DAYS 안 */
+  date?: string;
+  /** HH:MM */
+  start?: string;
+  end?: string;
 }
 
 /**
@@ -179,7 +195,7 @@ export const TEAM_SCHEDULE_TEXT = {
   off: '이 회사에서는 팀 일정을 여기서 보여 주지 않아요. 그룹웨어 팀 일정에서 확인해 주세요',
   notConnected: '근태 기록이 연결되지 않아 팀 일정을 볼 수 없어요. 그룹웨어 팀 일정에서 확인해 주세요',
   noTeam: '내 부서를 알 수 없어서 팀 일정을 볼 수 없어요',
-  awayMove: '자리비움은 마이 페이지에서 알려요',
+  awayMove: '자리비움은 여기서 알려요',
   leaveMissing: '근태 기록이 연결되지 않아 휴가는 보이지 않아요',
 } as const;
 
@@ -203,5 +219,14 @@ export interface AwaySetRequest {
   requestId: string;
 }
 
-/** 홈 칸 아래 문구(D8 조건) */
-export const HOME_ASK_NOTE = '나에게 해당하는 일을 찾아요. 여기서는 예약·신청을 하지 않아요';
+/** 홈 칸 아래 문구(D8 조건, 11/5 보강: 답 아래에서 바로 처리하는 일이 생겼어요) */
+export const HOME_ASK_NOTE = '내 예약·요청·나에게 온 요청을 찾고, 답 아래에서 바로 처리해요. 새 예약·신청은 그 페이지에서 해요';
+
+/** 마이 페이지 안내(11/5 사용자 결정): 옮긴 칸 대신 보여 줘요. 버튼은 홈 채팅에 정해진 문장을 넣어 바로 찾아요(읽기만). */
+export const mineMovedNote = (away: boolean) => `내 예약·내 요청·나에게 온 요청${away ? '·자리비움 알리기' : ''}는 이제 홈 채팅에서 해요`;
+export const MINE_MOVED_ASKS = [
+  { text: '내 예약 보기', ask: '내 예약 보여 줘' },
+  { text: '내 요청 보기', ask: '내가 보낸 요청 어떻게 됐어?' },
+  { text: '나에게 온 요청 보기', ask: '나한테 온 요청 있어?' },
+  { text: '자리비움 알리기', ask: '자리비움 알릴게요' },
+] as const;

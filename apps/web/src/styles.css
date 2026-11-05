@@ -393,6 +393,36 @@ a {
     scrollbar-color: var(--surface-3) transparent;
   }
 }
+/* 넘치는 칩 줄 끝의 [›]·[‹](11/5): 흐린 가장자리 위에 떠서 옆에 더 있다는 걸 보여요. */
+.scroll-chips {
+  position: relative;
+  min-width: 0;
+}
+.scroll-chips-arrow {
+  position: absolute;
+  top: 18px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 14%);
+}
+.scroll-chips-arrow.next {
+  right: 0;
+}
+.scroll-chips-arrow.prev {
+  left: 0;
+}
+.scroll-chips-arrow.prev svg {
+  transform: rotate(180deg);
+}
 /* 마우스로 끌어 넘기는 중(11/3)에는 글자가 선택되지 않고 손 모양이에요. */
 .chips.scroll-x[data-dragging='true'] {
   cursor: grabbing;
@@ -2234,6 +2264,49 @@ select {
   gap: 8px;
 }
 
+/* 홈 답 아래에 펼치는 칸(11/5): 마이 페이지에서 옮긴 내 예약·나를 부른 회의·내 문의·내 요청 */
+.home-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.home-panels .card,
+.home-answer > .card.away {
+  padding: 16px;
+  border: 1px solid var(--line);
+}
+
+/* 자리비움 알리기(11/3, 11/5 홈 답 아래로 옮김): 칸을 두 줄 격자로 두고, 다른 화면의 고르기 칸과 같은 모양으로 맞춰요. */
+.away-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 8px;
+}
+.away-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-quiet);
+}
+.away-form select,
+.away-form input[type='time'] {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+}
+.away-form button {
+  grid-column: 1 / -1;
+}
+
 /* 여러 팀 회의(11/4, ADR-28): 마이 페이지 참석자 고르기·팀 회의 담당자 */
 .joint-request {
   display: flex;
@@ -2268,22 +2341,39 @@ select {
   gap: 6px;
 }
 /* 알아들은 것(11/5 시험, AI 보완 2번). 답 아래 작은 한 줄: 무엇으로 알아들었는지, 낱말 규칙과 다르면 그것도. */
+/* 11/5: 접어 두고 "어떻게 알아들었는지 보기"를 누를 때만 펼쳐요. */
 .read-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 8px;
   margin: 2px 0 4px;
   color: var(--text-quiet);
   font-size: 0.8125rem;
+}
+.read-line summary {
+  width: fit-content;
+  cursor: pointer;
+}
+.read-line p {
+  margin: 4px 0 0;
 }
 .read-label {
   color: var(--accent-text);
   font-weight: 700;
 }
 .read-diff {
-  flex-basis: 100%;
   font-size: 0.75rem;
+}
+/* 내 일이 없다는 답 아래 "이런 것도 물어볼 수 있어요"(11/5) */
+.home-try {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.home-try p {
+  margin: 0;
+}
+.home-try-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 /* 관리자 AI 정답률(11/5 시험, 운영자만). 표는 좁은 화면에서 옆으로 밀어 봐요. */
 .eval-head {
