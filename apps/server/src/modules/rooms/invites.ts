@@ -90,6 +90,25 @@ function checkedReason(text: string): string {
   return result.text;
 }
 
+/**
+ * 내가 대신 부탁해서 생긴 초대 중 아직 참석한다고 하지 않은 것(11/5). 부탁받은 사람이 못 간다고 하며 또 부탁했으면 그 아래도 따라가요.
+ * 참석한다고 한 사람에서 멈춰요. 다시 참석할 때 이 초대들을 거둬요.
+ */
+function openDelegations(all: InviteRow[], fromSubject: string): InviteRow[] {
+  const out: InviteRow[] = [];
+  const seen = new Set([fromSubject]);
+  let parents = [fromSubject];
+  while (parents.length) {
+    const next = all.filter(
+      (i) => i.delegatedBySubject !== null && parents.includes(i.delegatedBySubject) && i.response !== 'accepted' && !seen.has(i.attendeeSubject),
+    );
+    for (const i of next) seen.add(i.attendeeSubject);
+    out.push(...next);
+    parents = next.filter((i) => i.response === 'declined').map((i) => i.attendeeSubject);
+  }
+  return out;
+}
+
 /** 취소한 뒤 바깥으로 알릴 것(트랜잭션이 끝난 뒤 보내요) */
 export interface CancelFollowUp {
   meeting: Meeting;
@@ -111,6 +130,37 @@ export function createInviteService(ctx: AppContext) {
       return found;
     };
   };
+
+  /** Slack이 연결돼 있는지(연결 안 함 어댑터면 보내지 않아요) */
+  const slackOn = () => ctx.adapters.messenger.capabilities.name !== 'messenger-off';
+
+  /** 그룹웨어 일정 참석자 메일. 못 간다고 한 사람은 빼요(11/5 사용자 결정). */
+  async function calendarEmails(rows: InviteRow[], profile: ReturnType<typeof lookup>): Promise<string[]> {
+    const people = await Promise.all(rows.filter((i) => i.response !== 'declined').map((i) => profile(i.attendeeSubject)));
+    return people.flatMap((p) => (p?.email ? [p.email] : []));
+  }
+
+  /**
+   * 그룹웨어 일정이 있는 회의면 참석자를 지금 답에 맞춰요(11/5): 못 간다고 하면 빼고, 다시 참석하면 넣고, 거둔 부탁은 빼요.
+   * 주최자는 부른 사람(예약한 사람)이에요. 트랜잭션이 끝난 뒤 부르고, 실패해도 답은 그대로예요.
+   */
+  async function syncCalendar(meeting: Meeting, reservationId: string, organizerSubject: string): Promise<void> {
+    const profile = lookup();
+    const organizer = await profile(organizerSubject).catch(() => null);
+    if (!organizer?.email) return;
+    const emails = await calendarEmails(await invitesOf(ctx.db, reservationId), profile);
+    await ctx.adapters.calendar
+      .upsertEvent({
+        uid: calendarUid(reservationId),
+        title: `회의 · ${meeting.roomName}`,
+        start: new Date(meeting.start).toISOString(),
+        end: new Date(meeting.end).toISOString(),
+        location: `${meeting.roomName} (${meeting.floor})`,
+        organizerEmail: organizer.email,
+        attendeeEmails: emails,
+      })
+      .catch(() => undefined);
+  }
 
   async function outboundSlack(to: { email?: string }[], text: string): Promise<{ sent: number; missing: number; failed: number; sentTo: Set<string> }> {
     const out = { sent: 0, missing: 0, failed: 0, sentTo: new Set<string>() };
@@ -134,22 +184,22 @@ export function createInviteService(ctx: AppContext) {
 
   /**
    * 앱 알림 뒤 바깥으로 알리기(트랜잭션이 끝난 뒤). 예약한 사람이 직접 고른 초대와 여러 팀 회의에서 팀장·담당자가 고른 초대(ADR-28)가 같이 써요.
-   * - 그룹웨어 캘린더: 지금 참석자 모두로 일정을 만들거나 고쳐요(초대 메일은 그룹웨어가 보내요). 주최자는 예약한 사람이에요.
-   * - Slack DM: 이번에 새로 부른 사람에게만 보내요.
+   * - 그룹웨어 캘린더: 지금 참석자(못 간다고 한 사람 빼고, 11/5)로 일정을 만들거나 고쳐요(초대 메일은 그룹웨어가 보내요). 주최자는 예약한 사람이에요.
+   * - Slack DM: 이번에 새로 부른 사람에게만 보내요. 대신 부탁(delegated)이면 "대신 가 달라는 부탁" 글이에요.
+   *   글에는 부른 사람 이름·시간·회의실·앱 주소만 넣어요. 부탁한 사람 이름과 사유는 앱 안에서만 보여요.
    */
   async function deliver(
     meeting: Meeting,
     reservationId: string,
     inviter: { displayName: string; email?: string },
     added: EmployeeProfile[],
-    opts: { calendar: boolean; slack: boolean },
+    opts: { calendar: boolean; slack: boolean; delegated?: boolean },
   ): Promise<{ calendar: number | null; slack: { sent: number; missing: number; failed: number } | null }> {
     const profile = lookup();
     let calendar: number | null = null;
     if (opts.calendar && added.length) {
       calendar = 0;
-      const all = await invitesOf(ctx.db, reservationId);
-      const emails = (await Promise.all(all.map((i) => profile(i.attendeeSubject)))).flatMap((p) => (p?.email ? [p.email] : []));
+      const emails = await calendarEmails(await invitesOf(ctx.db, reservationId), profile);
       if (inviter.email && emails.length) {
         try {
           await ctx.adapters.calendar.upsertEvent({
@@ -174,7 +224,8 @@ export function createInviteService(ctx: AppContext) {
     }
     let slack: { sent: number; missing: number; failed: number } | null = null;
     if (opts.slack && added.length) {
-      const text = `${inviter.displayName}님이 회의에 불렀어요 · ${whenText(meeting.start, meeting.end)} · ${meeting.roomName}(${meeting.floor}) · 한 줄 데스크에서 보기: ${appUrl}`;
+      const what = opts.delegated ? `${inviter.displayName}님 회의에 대신 가 달라는 부탁이 왔어요` : `${inviter.displayName}님이 회의에 불렀어요`;
+      const text = `${what} · ${whenText(meeting.start, meeting.end)} · ${meeting.roomName}(${meeting.floor}) · 한 줄 데스크에서 보기: ${appUrl}`;
       const r = await outboundSlack(added, text);
       slack = { sent: r.sent, missing: r.missing, failed: r.failed };
       const sentSubjects = added.filter((p) => p.email && r.sentTo.has(p.email)).map((p) => p.idpSubject);
@@ -251,7 +302,7 @@ export function createInviteService(ctx: AppContext) {
      * 여러 팀 회의에서 팀장·담당자가 고른 사람에게 바깥으로 알려요(ADR-28, 트랜잭션이 끝난 뒤). 부른 사람(주최자)은 예약한 사람이에요.
      * 감사에는 고른 사람(by) 이름 없이 동작·수만 남겨요.
      */
-    async deliverPicked(by: DeskUser, reservationId: string, subjects: string[], opts: { calendar: boolean; slack: boolean }) {
+    async deliverPicked(by: DeskUser, reservationId: string, subjects: string[], opts: { calendar: boolean; slack: boolean; delegated?: boolean }) {
       const meeting = await findMeeting(ctx.db, reservationId);
       if (!meeting || !subjects.length) return { calendar: null, slack: null };
       const owner = (await invitesOf(ctx.db, reservationId)).find((i) => subjects.includes(i.attendeeSubject));
@@ -280,8 +331,7 @@ export function createInviteService(ctx: AppContext) {
       const meeting = await findMeeting(ctx.db, reservationId);
       const all = await invitesOf(ctx.db, reservationId);
       if (!meeting || !user.email || !all.some((i) => i.viaCalendar)) return;
-      const profile = lookup();
-      const emails = (await Promise.all(all.map((i) => profile(i.attendeeSubject)))).flatMap((p) => (p?.email ? [p.email] : []));
+      const emails = await calendarEmails(all, lookup());
       await ctx.adapters.calendar
         .upsertEvent({
           uid: calendarUid(reservationId),
@@ -325,10 +375,14 @@ export function createInviteService(ctx: AppContext) {
           declineReason: string | null;
           delegatedBySubject: string | null;
           delegateReason: string | null;
+          openDelegation: boolean;
         }
       >(
         `select ${MEETING_COLUMNS}, i.response, i.inviter_subject as "inviterSubject", i.decline_reason as "declineReason",
-                i.delegated_by_subject as "delegatedBySubject", i.delegate_reason as "delegateReason"
+                i.delegated_by_subject as "delegatedBySubject", i.delegate_reason as "delegateReason",
+                exists (select 1 from room_invites d
+                         where d.reservation_id = i.reservation_id and d.delegated_by_pseudonym = i.attendee_pseudonym
+                           and d.response <> 'accepted') as "openDelegation"
            from room_invites i join room_reservations x on x.id = i.reservation_id join rooms r on r.id = x.room_id
           where i.attendee_pseudonym = $1 and upper(x.slot) > $2
           order by lower(x.slot), x.id`,
@@ -362,6 +416,16 @@ export function createInviteService(ctx: AppContext) {
                     method: 'POST' as const,
                     path: `/api/rooms/invites/${m.id}/response`,
                     body: { response: 'accepted' },
+                    // 대신 부탁한 사람이 아직 참석한다고 하지 않았으면, 다시 참석할 때 그 부탁을 거둬요(11/5). 먼저 알려요.
+                    ...(m.openDelegation
+                      ? {
+                          confirm: {
+                            title: '다시 참석할까요?',
+                            lines: [`${m.roomName} · ${whenText(m.start, m.end)}`, '대신 가 달라고 한 부탁은 거둬요. 이미 참석한다고 한 사람은 그대로예요'],
+                            confirmLabel: '참석할게요',
+                          },
+                        }
+                      : {}),
                   },
                 ],
           canDecline: m.response !== 'declined',
@@ -370,15 +434,21 @@ export function createInviteService(ctx: AppContext) {
       return { enabled, items };
     },
 
-    /** [참석할게요]. 부른 사람에게 알림이 가요. 못 갔다가 다시 간다고 하면 적었던 사유는 지워요. 못 가요는 decline(사유 필수)이에요. */
+    /**
+     * [참석할게요]. 부른 사람에게 알림이 가요. 못 갔다가 다시 간다고 하면 적었던 사유는 지워요. 못 가요는 decline(사유 필수)이에요.
+     * 11/5: 내가 대신 부탁한 사람이 아직 참석한다고 하지 않았으면 그 부탁을 거둬요. 그 사람이 또 부탁했으면 거기까지 같은 규칙이에요.
+     * 이미 참석한다고 한 사람은 그대로 둬요. 그룹웨어 일정이 있으면 참석자를 지금 답에 맞춰요.
+     */
     async respond(user: DeskUser, reservationId: string, response: 'accepted'): Promise<{ ok: true }> {
       const meeting = await findMeeting(ctx.db, reservationId);
       if (!meeting || meeting.end <= ctx.now()) throw new DeskError('not-found', 404, '초대받은 회의를 찾지 못했어요');
-      return ctx.fixed.run(user, {
+      let followUp: { inviterSubject: string; withdrawn: InviteRow[]; calendar: boolean } | null = null;
+      const result = await ctx.fixed.run(user, {
         module: 'rooms',
         action: 'invite.respond',
         enabled: writeOn,
         run: async (q, now) => {
+          const all = await invitesOf(q, reservationId);
           const { rows } = await q.query<{ inviter: string; before: InviteResponse }>(
             `update room_invites i set response = $3, responded_at = $4, decline_reason = null
                from room_invites old
@@ -389,15 +459,48 @@ export function createInviteService(ctx: AppContext) {
           );
           const row = rows[0];
           if (!row) throw new DeskError('not-found', 404, '초대받은 회의를 찾지 못했어요');
-          if (row.before !== response)
+          const withdrawn = openDelegations(all, user.idpSubject);
+          const when = formatKstDateTime(meeting.start);
+          if (withdrawn.length) {
+            await q.query('delete from room_invites where reservation_id = $1 and attendee_pseudonym = any($2)', [
+              reservationId,
+              withdrawn.map((i) => i.attendeePseudonym),
+            ]);
+            const inviter = await ctx.adapters.directory.getProfile(withdrawn[0]!.inviterSubject).catch(() => null);
+            for (const w of withdrawn)
+              await ctx.notify.toUser(q, w.attendeePseudonym, {
+                module: 'rooms',
+                title: `${inviter?.displayName ?? '예약한 사람'}님 회의에 대신 가 달라는 부탁이 취소됐어요 · ${when}`,
+                page: 'mine',
+              });
+          }
+          if (row.before !== response || withdrawn.length)
             await ctx.notify.toUser(q, row.inviter, {
               module: 'rooms',
-              title: `${user.displayName}님이 참석해요 · ${formatKstDateTime(meeting.start)}`,
+              title: `${user.displayName}님이 참석해요${withdrawn.length ? '. 대신 부탁은 거뒀어요' : ''} · ${when}`,
               page: 'mine',
             });
+          const mine = all.find((i) => i.attendeePseudonym === user.pseudonymId);
+          if (mine && (row.before !== response || withdrawn.length))
+            followUp = { inviterSubject: mine.inviterSubject, withdrawn, calendar: all.some((i) => i.viaCalendar) };
           return { ok: true as const };
         },
       });
+      // 트랜잭션이 끝난 뒤 바깥으로: 그룹웨어 일정 참석자를 맞추고, Slack으로 부탁을 받았던 사람에게 취소를 알려요.
+      const f = followUp as { inviterSubject: string; withdrawn: InviteRow[]; calendar: boolean } | null;
+      if (f) {
+        if (f.calendar) await syncCalendar(meeting, reservationId, f.inviterSubject);
+        const profile = lookup();
+        const slackPeople = (await Promise.all(f.withdrawn.filter((i) => i.viaSlack).map((i) => profile(i.attendeeSubject)))).flatMap((p) => (p ? [p] : []));
+        if (slackPeople.length) {
+          const inviter = await profile(f.inviterSubject).catch(() => null);
+          await outboundSlack(
+            slackPeople,
+            `${inviter?.displayName ?? '예약한 사람'}님 회의에 대신 가 달라는 부탁이 취소됐어요 · ${whenText(meeting.start, meeting.end)} · ${meeting.roomName}(${meeting.floor})`,
+          );
+        }
+      }
+      return result;
     },
 
     /** 대신 부탁할 수 있는 같은 팀 사람(11/4). 나·부른 사람·이미 초대받은 사람은 빼요. ref는 나에게 묶여요. */
@@ -421,7 +524,8 @@ export function createInviteService(ctx: AppContext) {
      * 부탁받은 사람에게는 부른 사람 이름으로 초대가 가고, 부탁한 사람·사유가 보여요. 사유는 부른 사람과 부탁받은 사람에게만 보여요.
      * 알림 글·감사 로그에는 사유를 넣지 않아요. 고정 버튼(화면이 확인을 먼저 띄워요)이에요.
      * 11/5: 부탁받은 사람도 같은 팀 다른 사람에게 다시 부탁할 수 있어요. 나에게 부탁한 사람에게는 되돌려 부탁하지 못하고,
-     * 이미 못 간다고 한 초대는 다시 보낼 수 없고, 한 회의에서 대신 부탁은 한 사람이 한 번만 해요.
+     * 이미 못 간다고 한 초대는 다시 보낼 수 없고, 내가 부탁한 사람이 회의에 남아 있는 동안은 또 부탁하지 못해요.
+     * 부탁받은 사람에게는 앱 알림이 가고, Slack이 연결돼 있으면 DM도 가요. 그룹웨어 일정이 있으면 못 간 사람은 빼고 부탁받은 사람을 넣어요.
      */
     async decline(user: DeskUser, reservationId: string, body: InviteDeclineBody): Promise<{ ok: true; delegated: boolean }> {
       if (!writeOn(ctx.ops.get())) throw new DeskError('feature-off', 409, '지금은 이 기능이 꺼져 있어요');
@@ -439,7 +543,8 @@ export function createInviteService(ctx: AppContext) {
         if (!(await ctx.adapters.idp.isActive(p.idpSubject))) throw new DeskError('bad-request', 400, '그 사람은 지금 부를 수 없어요');
         delegate = p;
       }
-      let calendarFollowUp = false;
+      // 같은 requestId가 다시 오면 run이 돌지 않아요. 그때는 바깥으로 다시 보내지 않아요.
+      let followUp: { calendar: boolean; inviterSubject: string } | null = null;
       const result = await ctx.fixed.run<{ ok: true; delegated: boolean }>(user, {
         module: 'rooms',
         action: delegate ? 'invite.delegate' : 'invite.decline',
@@ -454,13 +559,16 @@ export function createInviteService(ctx: AppContext) {
           if (delegate) {
             if (mine.delegatedBySubject === delegate.idpSubject)
               throw new DeskError('bad-request', 400, `나에게 부탁한 ${delegate.displayName}님에게는 다시 부탁할 수 없어요`);
-            if (all.some((i) => i.delegatedBySubject === user.idpSubject)) throw new DeskError('bad-request', 400, '이 회의에서는 이미 한 번 대신 부탁했어요');
+            // 내가 부탁한 사람이 회의에 남아 있으면(참석한다고 했으면) 또 부탁하지 못해요. 다시 참석해 거둔 부탁은 남지 않아요.
+            if (all.some((i) => i.delegatedBySubject === user.idpSubject))
+              throw new DeskError('bad-request', 400, '이 회의에는 내가 대신 부탁한 사람이 이미 있어요');
           }
           await q.query(
             "update room_invites set response = 'declined', decline_reason = $3, responded_at = $4 where reservation_id = $1 and attendee_pseudonym = $2",
             [reservationId, user.pseudonymId, reason, new Date(at).toISOString()],
           );
           const when = formatKstDateTime(meeting.start);
+          followUp = { calendar: all.some((i) => i.viaCalendar), inviterSubject: mine.inviterSubject };
           if (!delegate) {
             await ctx.notify.toUser(q, mine.inviterPseudonym, { module: 'rooms', title: `${user.displayName}님이 못 온대요 · ${when}`, page: 'mine' });
             return { ok: true as const, delegated: false };
@@ -496,12 +604,15 @@ export function createInviteService(ctx: AppContext) {
             title: `${user.displayName}님이 못 온대요. ${delegate.displayName}님에게 대신 부탁했어요 · ${when}`,
             page: 'mine',
           });
-          calendarFollowUp = all.some((i) => i.viaCalendar);
           return { ok: true as const, delegated: true };
         },
       });
-      // 그룹웨어 캘린더 일정이 있는 회의면 부탁받은 사람도 일정에 넣어요(트랜잭션이 끝난 뒤, 주최자는 부른 사람).
-      if (delegate && calendarFollowUp) await this.deliverPicked(user, reservationId, [delegate.idpSubject], { calendar: true, slack: false });
+      // 트랜잭션이 끝난 뒤 바깥으로(11/5). 그룹웨어 일정이 있으면 못 간 사람은 빼요(주최자는 부른 사람).
+      // 대신 부탁이면 부탁받은 사람을 일정에 넣고, Slack이 연결돼 있으면 DM도 보내요(글에는 부른 사람 이름·시간·회의실·앱 주소만).
+      const f = followUp as { calendar: boolean; inviterSubject: string } | null;
+      if (f && !delegate && f.calendar) await syncCalendar(meeting, reservationId, f.inviterSubject);
+      if (f && delegate && (f.calendar || slackOn()))
+        await this.deliverPicked(user, reservationId, [delegate.idpSubject], { calendar: f.calendar, slack: slackOn(), delegated: true });
       return result;
     },
 
