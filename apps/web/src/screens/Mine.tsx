@@ -15,6 +15,8 @@ function retentionLines(s: { modules: Record<ModuleKind, ModuleSwitch>; roomsWri
     `앱 안 알림. 내용 없이 무슨 일인지만 남고, ${RECORD_KEEP_DAYS}일 뒤 지워져요.`,
     invites &&
       `예약·장비 대여 기록과 회의 초대(부른 사람·참석자·답). 끝나고 ${RECORD_KEEP_DAYS}일 뒤 지워져요. 예약을 취소하면 초대와 같이 빌린 장비도 함께 지워지고, 취소한 기록은 ${RECORD_KEEP_DAYS}일 뒤 지워져요.`,
+    invites &&
+      `회의 초대에 못 간다고 적은 사유와 대신 부탁한 사유. 부른 사람(과 부탁받은 사람)에게만 보이고, 알림에는 넣지 않아요. 회의가 끝나고 ${RECORD_KEEP_DAYS}일 뒤 지워져요.`,
     s.modules.pantry !== 'off' &&
       `내가 올린 품목 이름과 표. 올린 지 ${RECORD_KEEP_DAYS}일(주문에 들어갔으면 주문하고 ${RECORD_KEEP_DAYS}일) 뒤 지워져요. 누가 표를 줬는지는 화면 어디에도 안 보여요.`,
     s.modules.navi === 'on' && s.teamSchedule && `내가 알린 자리비움(종류·시간). 같은 팀 사람에게만 보이고, ${RECORD_KEEP_DAYS}일 뒤 지워져요.`,

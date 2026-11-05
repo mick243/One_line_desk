@@ -1,7 +1,11 @@
 import {
   type Card,
+  checkInput,
   formatKstDateTime,
   INVITE_MAX,
+  INVITE_REASON_MAX,
+  type InviteColleaguesResponse,
+  type InviteDeclineBody,
   INVITE_RESPONSE_LABEL,
   type InvitedMeeting,
   type InvitedMeetingsResponse,
@@ -15,7 +19,7 @@ import type { AppContext } from '../../context';
 import { makeCard } from '../../core/cards';
 import type { Queryable } from '../../core/db';
 import { DeskError } from '../../core/errors';
-import { readPersonRef } from '../../core/person-ref';
+import { personRef, readPersonRef } from '../../core/person-ref';
 import { pseudonymize } from '../../core/pseudonym';
 import type { DeskUser } from '../../core/user';
 import { icsPath, whenText } from './cards';
@@ -43,6 +47,9 @@ interface InviteRow {
   response: InviteResponse;
   viaCalendar: boolean;
   viaSlack: boolean;
+  declineReason: string | null;
+  delegatedBySubject: string | null;
+  delegateReason: string | null;
 }
 
 const MEETING_COLUMNS = `x.id::text as id, r.name as "roomName", r.floor,
@@ -51,7 +58,8 @@ const MEETING_COLUMNS = `x.id::text as id, r.name as "roomName", r.floor,
 
 const INVITE_COLUMNS = `attendee_pseudonym as "attendeePseudonym", attendee_subject as "attendeeSubject",
   inviter_pseudonym as "inviterPseudonym", inviter_subject as "inviterSubject", response,
-  via_calendar as "viaCalendar", via_slack as "viaSlack"`;
+  via_calendar as "viaCalendar", via_slack as "viaSlack", decline_reason as "declineReason",
+  delegated_by_subject as "delegatedBySubject", delegate_reason as "delegateReason"`;
 
 async function findMeeting(q: Queryable, id: string): Promise<Meeting | null> {
   if (!/^\d{1,18}$/.test(id)) return null;
@@ -71,6 +79,16 @@ async function invitesOf(q: Queryable, reservationId: string): Promise<InviteRow
 
 const writeOn = (s: OpsSettings) => s.modules.rooms === 'on' && s.roomsWrite;
 const calendarUid = (reservationId: string) => `one-line-desk-reservation-${reservationId}`;
+
+/** 못 가요·대신 부탁 사유(11/4): 꼭 적고, 200자까지, 공통 입력 검사(키·주민번호 등)를 지나야 해요. */
+function checkedReason(text: string): string {
+  const trimmed = (text ?? '').trim();
+  if (!trimmed) throw new DeskError('bad-request', 400, '못 가는 사유를 적어 주세요');
+  if (trimmed.length > INVITE_REASON_MAX) throw new DeskError('bad-request', 400, `사유는 ${INVITE_REASON_MAX}자까지 적을 수 있어요`);
+  const result = checkInput(trimmed);
+  if (result.locks.length) throw new DeskError('locked', 400, `보낼 수 없는 글자가 있어요: ${[...new Set(result.locks.map((l) => l.message))].join(' · ')}`);
+  return result.text;
+}
 
 /** 취소한 뒤 바깥으로 알릴 것(트랜잭션이 끝난 뒤 보내요) */
 export interface CancelFollowUp {
@@ -284,7 +302,14 @@ export function createInviteService(ctx: AppContext) {
       const out: ReservationAttendee[] = [];
       for (const r of rows) {
         const p = await profile(r.attendeeSubject);
-        out.push({ name: p?.displayName ?? '알 수 없는 직원', department: p?.department ?? '', response: r.response });
+        const by = r.delegatedBySubject ? await profile(r.delegatedBySubject) : null;
+        out.push({
+          name: p?.displayName ?? '알 수 없는 직원',
+          department: p?.department ?? '',
+          response: r.response,
+          ...(r.response === 'declined' && r.declineReason ? { reason: r.declineReason } : {}),
+          ...(r.delegatedBySubject ? { delegatedBy: by?.displayName ?? '알 수 없는 직원' } : {}),
+        });
       }
       return out;
     },
@@ -293,8 +318,17 @@ export function createInviteService(ctx: AppContext) {
     async invited(user: DeskUser): Promise<InvitedMeetingsResponse> {
       const enabled = writeOn(ctx.ops.get());
       if (!enabled) return { enabled, items: [] };
-      const { rows } = await ctx.db.query<Meeting & { response: InviteResponse; inviterSubject: string }>(
-        `select ${MEETING_COLUMNS}, i.response, i.inviter_subject as "inviterSubject"
+      const { rows } = await ctx.db.query<
+        Meeting & {
+          response: InviteResponse;
+          inviterSubject: string;
+          declineReason: string | null;
+          delegatedBySubject: string | null;
+          delegateReason: string | null;
+        }
+      >(
+        `select ${MEETING_COLUMNS}, i.response, i.inviter_subject as "inviterSubject", i.decline_reason as "declineReason",
+                i.delegated_by_subject as "delegatedBySubject", i.delegate_reason as "delegateReason"
            from room_invites i join room_reservations x on x.id = i.reservation_id join rooms r on r.id = x.room_id
           where i.attendee_pseudonym = $1 and upper(x.slot) > $2
           order by lower(x.slot), x.id`,
@@ -304,6 +338,7 @@ export function createInviteService(ctx: AppContext) {
       const items: InvitedMeeting[] = [];
       for (const m of rows) {
         const inviter = await profile(m.inviterSubject);
+        const by = m.delegatedBySubject ? await profile(m.delegatedBySubject) : null;
         items.push({
           reservationId: m.id,
           roomName: m.roomName,
@@ -313,23 +348,30 @@ export function createInviteService(ctx: AppContext) {
           end: new Date(m.end).toISOString(),
           inviter: { name: inviter?.displayName ?? '알 수 없는 직원', department: inviter?.department ?? '' },
           response: m.response,
+          ...(m.response === 'declined' && m.declineReason ? { declineReason: m.declineReason } : {}),
+          ...(m.delegatedBySubject && m.delegateReason ? { delegatedBy: { name: by?.displayName ?? '알 수 없는 직원', reason: m.delegateReason } } : {}),
           icsPath: icsPath(m.id),
-          actions: (['accepted', 'declined'] as const)
-            .filter((r) => r !== m.response)
-            .map((r) => ({
-              type: 'fixed' as const,
-              text: r === 'accepted' ? '참석할게요' : '못 가요',
-              method: 'POST' as const,
-              path: `/api/rooms/invites/${m.id}/response`,
-              body: { response: r },
-            })),
+          // [못 가요]는 사유를 꼭 적는 양식이라 화면이 띄워요(11/4). 고정 버튼은 [참석할게요]뿐이에요.
+          actions:
+            m.response === 'accepted'
+              ? []
+              : [
+                  {
+                    type: 'fixed' as const,
+                    text: '참석할게요',
+                    method: 'POST' as const,
+                    path: `/api/rooms/invites/${m.id}/response`,
+                    body: { response: 'accepted' },
+                  },
+                ],
+          canDecline: m.response !== 'declined',
         });
       }
       return { enabled, items };
     },
 
-    /** 참석·못 가요 답. 부른 사람에게 알림이 가요. 답은 몇 번이든 바꿀 수 있어요. */
-    async respond(user: DeskUser, reservationId: string, response: 'accepted' | 'declined'): Promise<{ ok: true }> {
+    /** [참석할게요]. 부른 사람에게 알림이 가요. 못 갔다가 다시 간다고 하면 적었던 사유는 지워요. 못 가요는 decline(사유 필수)이에요. */
+    async respond(user: DeskUser, reservationId: string, response: 'accepted'): Promise<{ ok: true }> {
       const meeting = await findMeeting(ctx.db, reservationId);
       if (!meeting || meeting.end <= ctx.now()) throw new DeskError('not-found', 404, '초대받은 회의를 찾지 못했어요');
       return ctx.fixed.run(user, {
@@ -338,7 +380,7 @@ export function createInviteService(ctx: AppContext) {
         enabled: writeOn,
         run: async (q, now) => {
           const { rows } = await q.query<{ inviter: string; before: InviteResponse }>(
-            `update room_invites i set response = $3, responded_at = $4
+            `update room_invites i set response = $3, responded_at = $4, decline_reason = null
                from room_invites old
               where i.reservation_id = $1 and i.attendee_pseudonym = $2
                 and old.reservation_id = i.reservation_id and old.attendee_pseudonym = i.attendee_pseudonym
@@ -347,17 +389,120 @@ export function createInviteService(ctx: AppContext) {
           );
           const row = rows[0];
           if (!row) throw new DeskError('not-found', 404, '초대받은 회의를 찾지 못했어요');
-          if (row.before !== response) {
-            const said = response === 'accepted' ? '참석해요' : '못 온대요';
+          if (row.before !== response)
             await ctx.notify.toUser(q, row.inviter, {
               module: 'rooms',
-              title: `${user.displayName}님이 ${said} · ${formatKstDateTime(meeting.start)}`,
+              title: `${user.displayName}님이 참석해요 · ${formatKstDateTime(meeting.start)}`,
               page: 'mine',
             });
-          }
           return { ok: true as const };
         },
       });
+    },
+
+    /** 대신 부탁할 수 있는 같은 팀 사람(11/4). 나·부른 사람·이미 초대받은 사람은 빼요. ref는 나에게 묶여요. */
+    async colleagues(user: DeskUser, reservationId: string): Promise<InviteColleaguesResponse> {
+      const meeting = await findMeeting(ctx.db, reservationId);
+      const invites = meeting ? await invitesOf(ctx.db, reservationId) : [];
+      if (!meeting || meeting.end <= ctx.now() || !invites.some((i) => i.attendeePseudonym === user.pseudonymId) || !user.department)
+        throw new DeskError('not-found', 404, '초대받은 회의를 찾지 못했어요');
+      const taken = new Set([user.idpSubject, ...invites.map((i) => i.attendeeSubject), ...invites.map((i) => i.inviterSubject)]);
+      const members = await ctx.adapters.directory.departmentMembers(user.department, 100).catch(() => [] as EmployeeProfile[]);
+      const now = ctx.now();
+      return {
+        items: members
+          .filter((m) => !taken.has(m.idpSubject) && pseudonymize(ctx.config.pseudonymSecret, m.idpSubject) !== meeting.owner)
+          .map((m) => ({ ref: personRef(ctx.config.pseudonymSecret, m.idpSubject, user.pseudonymId, now), name: m.displayName })),
+      };
+    },
+
+    /**
+     * [못 가요](11/4): 사유를 꼭 적어요(공통 입력 검사, 200자). 같은 팀 사람(delegate)을 고르면 그 사람에게 대신 가 달라고 부탁해요.
+     * 부탁받은 사람에게는 부른 사람 이름으로 초대가 가고, 부탁한 사람·사유가 보여요. 사유는 부른 사람과 부탁받은 사람에게만 보여요.
+     * 알림 글·감사 로그에는 사유를 넣지 않아요. 고정 버튼(화면이 확인을 먼저 띄워요)이에요.
+     * 11/5: 부탁받은 사람도 같은 팀 다른 사람에게 다시 부탁할 수 있어요. 나에게 부탁한 사람에게는 되돌려 부탁하지 못하고,
+     * 이미 못 간다고 한 초대는 다시 보낼 수 없고, 한 회의에서 대신 부탁은 한 사람이 한 번만 해요.
+     */
+    async decline(user: DeskUser, reservationId: string, body: InviteDeclineBody): Promise<{ ok: true; delegated: boolean }> {
+      if (!writeOn(ctx.ops.get())) throw new DeskError('feature-off', 409, '지금은 이 기능이 꺼져 있어요');
+      if (!ctx.rateLimiter.hit(user.pseudonymId, 'invite')) throw new DeskError('rate-limited', 429, '요청이 많아요. 잠시 뒤에 다시 보내 주세요');
+      const reason = checkedReason(body.reason);
+      const meeting = await findMeeting(ctx.db, reservationId);
+      if (!meeting || meeting.end <= ctx.now()) throw new DeskError('not-found', 404, '초대받은 회의를 찾지 못했어요');
+      const now = ctx.now();
+      let delegate: EmployeeProfile | null = null;
+      if (body.delegate) {
+        const subject = readPersonRef(ctx.config.pseudonymSecret, body.delegate, user.pseudonymId, now);
+        const p = subject ? await ctx.adapters.directory.getProfile(subject).catch(() => null) : null;
+        if (!p || !user.department || p.department !== user.department || p.idpSubject === user.idpSubject)
+          throw new DeskError('bad-request', 400, '같은 팀 다른 사람에게만 부탁할 수 있어요');
+        if (!(await ctx.adapters.idp.isActive(p.idpSubject))) throw new DeskError('bad-request', 400, '그 사람은 지금 부를 수 없어요');
+        delegate = p;
+      }
+      let calendarFollowUp = false;
+      const result = await ctx.fixed.run<{ ok: true; delegated: boolean }>(user, {
+        module: 'rooms',
+        action: delegate ? 'invite.delegate' : 'invite.decline',
+        idempotencyKey: body.requestId,
+        enabled: writeOn,
+        run: async (q, at) => {
+          const all = await invitesOf(q, reservationId);
+          const mine = all.find((i) => i.attendeePseudonym === user.pseudonymId);
+          if (!mine) throw new DeskError('not-found', 404, '초대받은 회의를 찾지 못했어요');
+          // 화면은 [못 가요]를 숨기지만, 서버도 한 번만 받아요(같은 초대로 여러 사람에게 부탁하지 못하게).
+          if (mine.response === 'declined') throw new DeskError('already-declined', 409, '이미 못 간다고 보냈어요');
+          if (delegate) {
+            if (mine.delegatedBySubject === delegate.idpSubject)
+              throw new DeskError('bad-request', 400, `나에게 부탁한 ${delegate.displayName}님에게는 다시 부탁할 수 없어요`);
+            if (all.some((i) => i.delegatedBySubject === user.idpSubject)) throw new DeskError('bad-request', 400, '이 회의에서는 이미 한 번 대신 부탁했어요');
+          }
+          await q.query(
+            "update room_invites set response = 'declined', decline_reason = $3, responded_at = $4 where reservation_id = $1 and attendee_pseudonym = $2",
+            [reservationId, user.pseudonymId, reason, new Date(at).toISOString()],
+          );
+          const when = formatKstDateTime(meeting.start);
+          if (!delegate) {
+            await ctx.notify.toUser(q, mine.inviterPseudonym, { module: 'rooms', title: `${user.displayName}님이 못 온대요 · ${when}`, page: 'mine' });
+            return { ok: true as const, delegated: false };
+          }
+          const p = pseudonymize(ctx.config.pseudonymSecret, delegate.idpSubject);
+          if (p === meeting.owner || all.some((i) => i.attendeeSubject === delegate!.idpSubject))
+            throw new DeskError('bad-request', 400, '그 사람은 이미 이 회의에 있어요');
+          if (all.length + 1 > INVITE_MAX) throw new DeskError('bad-request', 400, `한 회의에 ${INVITE_MAX}명까지 부를 수 있어요`);
+          await q.query(
+            `insert into room_invites (reservation_id, attendee_pseudonym, attendee_subject, inviter_pseudonym, inviter_subject, invited_at,
+                                       delegated_by_pseudonym, delegated_by_subject, delegate_reason)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              reservationId,
+              p,
+              delegate.idpSubject,
+              mine.inviterPseudonym,
+              mine.inviterSubject,
+              new Date(at).toISOString(),
+              user.pseudonymId,
+              user.idpSubject,
+              reason,
+            ],
+          );
+          const inviter = await ctx.adapters.directory.getProfile(mine.inviterSubject).catch(() => null);
+          await ctx.notify.toUser(q, p, {
+            module: 'rooms',
+            title: `${inviter?.displayName ?? '예약한 사람'}님 회의에 ${user.displayName}님이 대신 가 달라고 했어요 · ${when}`,
+            page: 'mine',
+          });
+          await ctx.notify.toUser(q, mine.inviterPseudonym, {
+            module: 'rooms',
+            title: `${user.displayName}님이 못 온대요. ${delegate.displayName}님에게 대신 부탁했어요 · ${when}`,
+            page: 'mine',
+          });
+          calendarFollowUp = all.some((i) => i.viaCalendar);
+          return { ok: true as const, delegated: true };
+        },
+      });
+      // 그룹웨어 캘린더 일정이 있는 회의면 부탁받은 사람도 일정에 넣어요(트랜잭션이 끝난 뒤, 주최자는 부른 사람).
+      if (delegate && calendarFollowUp) await this.deliverPicked(user, reservationId, [delegate.idpSubject], { calendar: true, slack: false });
+      return result;
     },
 
     /** 캘린더 파일(.ics). 예약한 사람과 초대받은 사람만 받아요. */

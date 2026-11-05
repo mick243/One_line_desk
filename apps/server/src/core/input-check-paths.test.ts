@@ -6,7 +6,8 @@ import { postActionOf } from '../modules/pantry/test-kit';
 import { createTestApp, MOCK } from '../testing';
 
 // 입력 검사 규칙 2(QA-2·3·10·19, L-39)를 사람이 글을 쓰는 다섯 경로에 같은 표로 돌려요.
-// 묻기·문의·판 초안·판 올리기(/api/plans/direct edits)·회의실 채팅(ADR-19)·IT 오류 붙여넣기(10/31). 모두 잠기고, 500은 0건이에요. 제어 문자는 어느 경로든 400이에요.
+// 묻기·문의·판 초안·판 올리기(/api/plans/direct edits)·회의실 채팅(ADR-19)·IT 오류 붙여넣기(10/31)·회의 초대 못 가요 사유(11/4).
+// 모두 잠기고, 500은 0건이에요. 제어 문자는 어느 경로든 400이에요.
 
 type Test = Awaited<ReturnType<typeof createTestApp>>;
 type Session = Awaited<ReturnType<Test['loginAs']>>;
@@ -46,7 +47,10 @@ describe('입력 검사 다섯 경로(L-39)', () => {
     // 홈 AI 채팅(ADR-27)
     const home = await me.call('POST', '/api/home/ask', { text });
     expect(home.status, 'home').toBe(control ? 400 : 422);
-    for (const res of [ask, inquiry, draft, post, chat, itHelp, home]) expect(res.body.message).not.toContain(text.trim());
+    // 회의 초대 [못 가요] 사유(ADR-17 보강): 사유 검사는 회의를 찾기 전에 해서, 잠긴 글로는 DB를 보지 않아요.
+    const decline = await me.call('POST', '/api/rooms/invites/1/decline', { reason: text, requestId: randomUUID() });
+    expect(decline.status, 'decline').toBe(400);
+    for (const res of [ask, inquiry, draft, post, chat, itHelp, home, decline]) expect(res.body.message).not.toContain(text.trim());
   });
 
   it('잠긴 글은 문의함·판 어디에도 저장되지 않아요', async () => {

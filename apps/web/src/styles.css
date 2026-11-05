@@ -2254,3 +2254,16 @@ select {
   margin: 0;
   padding-left: 20px;
 }
+
+/* 초대 [못 가요] 사유·대신 부탁(11/4) */
+.decline-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.decline-delegate {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
