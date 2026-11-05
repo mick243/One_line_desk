@@ -120,6 +120,8 @@ function DeclineButton({ meeting }: { meeting: InvitedMeeting }) {
           `${meeting.roomName} · ${meeting.when}`,
           `사유: ${reason.trim()}`,
           who ? `사유는 ${meeting.inviter.name}님과 ${who}님에게만 보여요` : `사유는 ${meeting.inviter.name}님에게만 보여요`,
+          // 11/5: 부탁받은 사람에게는 앱 알림과 Slack DM(연결돼 있을 때)이 가요. Slack 글에 사유는 넣지 않아요.
+          ...(who ? [`${who}님에게 앱 알림이 가고, Slack이 연결돼 있으면 DM도 가요(사유는 넣지 않아요)`] : []),
         ],
         confirmLabel: '보내기',
       },
