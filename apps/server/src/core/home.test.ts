@@ -201,7 +201,7 @@ describe('홈 AI 채팅: 나에게 해당하는 일(ADR-27)', () => {
         title: '연차 요청 · 아직 확인 전이에요',
         when: '11월 3일(화) 하루',
         detail: '인사팀에 보냈어요',
-        open: { text: '문의하기에서 보기', to: 'navi' },
+        open: { text: '문의함에서 보기', to: 'navi' },
       },
     ]);
     expect(res.links).toEqual([{ text: '남은 연차 보기', to: 'navi', handoff: '내 남은 연차 알려 줘', auto: true }]);
@@ -249,7 +249,7 @@ describe('홈 AI 채팅: 나에게 해당하는 일(ADR-27)', () => {
         title: '내 문의 · 인사팀',
         when: '10월 26일(월) 보냄',
         detail: '재직증명서 발급 · 아직 확인 전이에요 · 답장 있음',
-        open: { text: '문의하기에서 보기', to: 'navi' },
+        open: { text: '문의함에서 보기', to: 'navi' },
       },
     ]);
     expect(JSON.stringify(mine)).not.toMatch(/REPLYCANARY|QUESTIONCANARY|지후|제출용/);
@@ -494,9 +494,9 @@ describe('알아들은 것(11/5 시험, AI 보완 2번)', () => {
     const t = await setup({ contract: true, provider });
     const doyun = await t.loginAs(MOCK.dev);
     const tv = await home(doyun, '회의실 TV가 안 켜져요');
-    expect(tv.read).toEqual({ understood: '하려는 일 · 문의하기에서 해요', ruleSaid: '요즘 · 내 일(내 예약·초대받은 회의)' });
+    expect(tv.read).toEqual({ understood: '하려는 일 · 문의함에서 해요', ruleSaid: '요즘 · 내 일(내 예약·초대받은 회의)' });
     expect(JSON.stringify(tv)).not.toContain('TV');
     const same = await home(doyun, '법인카드 잃어버렸는데 어디에 말해?');
-    expect(same.read).toEqual({ understood: '하려는 일 · 문의하기에서 해요' });
+    expect(same.read).toEqual({ understood: '하려는 일 · 문의함에서 해요' });
   });
 });

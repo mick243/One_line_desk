@@ -39,7 +39,7 @@ export const OPS_VALUE_RANGE: Record<keyof OpsValues, readonly [number, number]>
   jointPickLeadMinutes: [0, 1440],
 };
 
-export const NAVI_OFF_ONLY_STANDALONE = '문의하기는 공지·회의실이 모두 꺼진 같이 채워요 단독 모드에서만 끌 수 있어요';
+export const NAVI_OFF_ONLY_STANDALONE = '문의함은 공지·회의실이 모두 꺼진 같이 채워요 단독 모드에서만 끌 수 있어요';
 
 function merge(base: OpsSettings, o: Overrides): OpsSettings {
   return {

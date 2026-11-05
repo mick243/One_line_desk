@@ -15,7 +15,7 @@ export interface Feature {
   summary: string;
   placeholder: string;
   submit: string;
-  /** 없으면 "이렇게 써 보세요" 줄을 그리지 않아요. 문의하기는 중요한 일이라 예시 없이 자기 상황을 쓰게 해요(10/28). */
+  /** 없으면 "이렇게 써 보세요" 줄을 그리지 않아요. 문의함은 중요한 일이라 예시 없이 자기 상황을 쓰게 해요(10/28). */
   examples?: string[];
 }
 
@@ -23,7 +23,7 @@ export const FEATURES: Feature[] = [
   {
     module: 'navi',
     page: 'navi',
-    title: '문의하기',
+    title: '문의함',
     question: '무엇을 문의할까요?',
     short: '문의를 쓰면 받을 팀과 지금 할 일을 찾고, 그 팀에 바로 문의해요',
     summary: '업무 분장표에서 받을 팀과 지금 할 일을 찾아 줘요. [○○에 문의하기]를 누르면 문의 양식이 열려요. 받는 곳은 보내기 전에 보고 바꿀 수 있어요.',
@@ -82,16 +82,30 @@ const ROOMS_CONFIRM: Pick<Feature, 'short' | 'summary'> = {
   summary: '한 줄로 쓰면 빈 회의실을 찾아요. 카드에서 확인 한 번이면 예약돼요. 회의실 현황을 물으면 아래에 회의실 카드가 펼쳐져요.',
 };
 
+/**
+ * 문의함(11/5 사용자 결정, ADR-26 보강): 홈 채팅이 켜져 있으면 받을 팀 찾기는 홈이 앞문이라, 이 페이지는 문의를 주고받고 처리하는 곳이에요.
+ * 우리 팀에 온 문의 → 내 문의 → 휴가 신청 → 받을 팀 찾기 순서예요. 홈 채팅을 끈 회사는 지금처럼 찾기가 맨 위예요.
+ */
+const NAVI_INBOX: Pick<Feature, 'question' | 'short' | 'summary'> = {
+  question: '주고받은 문의를 여기서 봐요',
+  short: '받은 문의를 처리하고, 내 문의·휴가 요청의 처리 상태와 답장을 봐요',
+  summary: '우리 팀에 온 문의를 처리하고, 내가 보낸 문의·휴가 요청의 처리 상태와 답장을 봐요. 받을 팀은 홈 채팅이나 맨 아래 칸에서 찾아요.',
+};
+
 /** 지금 스위치에 맞춘 기능 소개. 켬이면 그대로, 링크만·회의실 쓰기 끔이면 "그룹웨어에서 해요", 채팅 자동 실행 끔이면 "확인 한 번으로"로 바꿔요. */
-export function featureFor(feature: Feature, switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; autoActions?: boolean }): Feature {
+export function featureFor(
+  feature: Feature,
+  switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; autoActions?: boolean; homeAsk?: boolean },
+): Feature {
   const value = switches.modules[feature.module];
   if (value === 'link') return { ...feature, ...LINK_COPY[feature.module] };
+  if (feature.module === 'navi' && value === 'on' && switches.homeAsk === true) return { ...feature, ...NAVI_INBOX };
   if (feature.module === 'rooms' && value === 'on' && !switches.roomsWrite) return { ...feature, ...ROOMS_READ_ONLY };
   if (feature.module === 'rooms' && value === 'on' && switches.autoActions === false) return { ...feature, ...ROOMS_CONFIRM };
   return feature;
 }
 
-/** 다른 기능으로 옮길 때 갈 페이지. "모름"은 문의하기로 가요. */
+/** 다른 기능으로 옮길 때 갈 페이지. "모름"은 문의함으로 가요. */
 export function pageOfKind(kind: Kind): AppDestination {
   return FEATURES.find((f) => f.module === kind)?.page ?? 'navi';
 }

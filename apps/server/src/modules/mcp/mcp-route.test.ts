@@ -182,7 +182,7 @@ describe('서버 안내문과 도구 설명(MCP 베타 U5)', () => {
     const init = await mcpRequest(t, at, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } });
     const text: string = init.json().result.instructions;
     expect(text).toContain('담당 부서·할 일 질문');
-    expect(text).toContain(`한 줄 데스크 앱(${BASE}/)의 문의하기`);
+    expect(text).toContain(`한 줄 데스크 앱(${BASE}/)의 문의함`);
     expect(text).toContain('짐작해서 답하지 말고');
   });
 

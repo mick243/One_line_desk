@@ -90,7 +90,7 @@ export function BoardScreen({
   }
 
   async function onDraftAction(action: CardAction, card: Card) {
-    // [문의하기로 옮기기]: 글은 앱 메모리로만 넘겨요(F3-4).
+    // [문의함으로 옮기기]: 글은 앱 메모리로만 넘겨요(F3-4).
     if (action.type === 'navigate' && action.to === 'navi') {
       setDraft(null);
       onMoveToNavi(text);

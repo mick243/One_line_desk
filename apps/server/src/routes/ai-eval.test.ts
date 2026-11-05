@@ -59,7 +59,7 @@ describe('관리자 AI 정답률(11/5 시험)', () => {
       ['회의실 채팅(할 일·장비)', 14, null],
       ['기능 나누기(/ask)', 13, null],
     ]);
-    expect(res.misses.find((m) => m.text === '회의실 TV가 안 켜져요')).toMatchObject({ expect: '문의하기로 옮기기', ruleOk: false, ai: null });
+    expect(res.misses.find((m) => m.text === '회의실 TV가 안 켜져요')).toMatchObject({ expect: '문의함으로 옮기기', ruleOk: false, ai: null });
     expect(res).toMatchObject({ measured: null, run: { running: false, allowed: false, reason: 'AI 공급자가 연결되지 않아 낱말 규칙만 재요' } });
     expect((await op.call('POST', '/api/ops/ai-eval/run')).status).toBe(409);
   });

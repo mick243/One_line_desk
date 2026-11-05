@@ -49,7 +49,7 @@ export const HOME_KIND_LABEL: Record<HomeKind, string> = {
 /** 옮겨 갈 곳 이름("알아들은 것" 라벨, 11/5 시험) */
 export const HOME_MOVE_LABEL: Record<HomeMoveTo, string> = {
   rooms: '회의실',
-  navi: '문의하기',
+  navi: '문의함',
   notices: '공지',
   board: '같이 채워요',
   away: '자리비움 알리기',

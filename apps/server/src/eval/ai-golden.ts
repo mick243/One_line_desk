@@ -38,7 +38,7 @@ export const GOLDEN: readonly GoldenCase[] = [
   { task: 'home', text: '회의실 TV가 안 켜져요', expect: 'move:navi', why: '고장 신고라 담당 팀에 알려야 해요. 내 예약을 묻는 말이 아니에요' },
   { task: 'home', text: '커피머신이 고장 났어요', expect: 'move:navi', why: '탕비실 요청이 아니라 고장 신고예요' },
   { task: 'home', text: '요즘 노트북이 너무 느려요', expect: 'move:navi', why: '장비 대여가 아니라 IT 문의예요' },
-  { task: 'home', text: '신입인데 첫 주에 뭘 해야 해?', expect: 'move:navi', why: '첫 2주 안내는 문의하기에 있어요' },
+  { task: 'home', text: '신입인데 첫 주에 뭘 해야 해?', expect: 'move:navi', why: '첫 2주 안내는 문의함에 있어요' },
   { task: 'home', text: '내 자리 모니터 하나 더 받을 수 있어?', expect: 'move:navi', why: '"내"가 있어도 내 일정을 묻는 말이 아니에요' },
   { task: 'home', text: '이번 주 금요일 팀 회식 장소 공지 났어?', expect: 'move:notices' },
   // 11/5 홈 지시문 보강 뒤에 더한 처음 보는 문장(지시문 예문과 겹치지 않게 골랐어요)

@@ -49,7 +49,7 @@ export function Home({
 
       {homeAsk && <HomeAsk onOpen={onOpen} teamSchedule={switches.teamSchedule === true} modules={modules} initialText={initialText} autoRun={autoRun} />}
 
-      {/* 바로 하기(11/5, 처음 쓰는 직원 점검: 휴가 신청 버튼이 앞에 보였으면): 문의하기가 켜져 있으면 휴가 신청 양식을 바로 열어요. */}
+      {/* 바로 하기(11/5, 처음 쓰는 직원 점검: 휴가 신청 버튼이 앞에 보였으면): 문의함이 켜져 있으면 휴가 신청 양식을 바로 열어요. */}
       {modules.navi === 'on' && (
         <div className='home-quick' aria-label='바로 하기'>
           <LeaveStart />

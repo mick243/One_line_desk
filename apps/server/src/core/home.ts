@@ -228,7 +228,7 @@ const SENDER_STATE: Record<InquiryState, string> = {
 const INVITE_ANSWER = { pending: '아직 답하지 않았어요', accepted: '참석할게요로 답했어요', declined: '못 가요로 답했어요' } as const;
 
 const OPEN_ROOMS: HomeOpen = { text: '회의실에서 보기', to: 'rooms' };
-const OPEN_NAVI: HomeOpen = { text: '문의하기에서 보기', to: 'navi' };
+const OPEN_NAVI: HomeOpen = { text: '문의함에서 보기', to: 'navi' };
 const OPEN_BOARD: HomeOpen = { text: '같이 채워요에서 보기', to: 'board' };
 /** 남은 연차는 본인 화면(문의하기 페이지)의 기존 연차 카드가 열 때 계산해요. 홈은 숫자를 갖지 않아요(ADR-18). */
 const LEAVE_BALANCE_LINK: HomeOpen = { text: '남은 연차 보기', to: 'navi', handoff: '내 남은 연차 알려 줘', auto: true };
@@ -568,7 +568,7 @@ function inlineKindOf(to: HomeMoveTo, text: string, modules: Record<ModuleKind, 
 
 const MOVE: Record<HomeMoveTo, { headline: string; button: string }> = {
   rooms: { headline: '회의실에서 찾아볼게요', button: '회의실로 옮기기' },
-  navi: { headline: '문의하기에서 찾아볼게요', button: '문의하기로 옮기기' },
+  navi: { headline: '문의함에서 찾아볼게요', button: '문의함으로 옮기기' },
   notices: { headline: '공지에서 찾아볼게요', button: '공지로 옮기기' },
   board: { headline: '같이 채워요에서 올려요', button: '같이 채워요로 옮기기' },
   away: { headline: TEAM_SCHEDULE_TEXT.awayMove, button: '' },
@@ -623,16 +623,16 @@ function awayCard(by: 'ai' | 'rule'): Card {
   };
 }
 
-/** 모르는 말: 문의하기로 옮기기만. 담당 찾기가 꺼져 있으면 안내만 해요. */
+/** 모르는 말: 문의함으로 옮기기만. 담당 찾기가 꺼져 있으면 안내만 해요. */
 function unknownCard(naviOn: boolean, by: 'ai' | 'rule'): Card {
   return {
     id: 'home-unknown',
     kind: 'navi',
     label: '안내',
-    headline: naviOn ? '문의하기에서 물어보세요' : '홈에서는 내 일정·요청만 찾아요',
+    headline: naviOn ? '문의함에서 물어보세요' : '홈에서는 내 일정·요청만 찾아요',
     fields: [{ name: '홈에서 찾는 것', value: Object.values(HOME_KIND_LABEL).join(' · ') }],
     evidence: { text: by === 'ai' ? 'AI가 문장을 읽었어요' : '쓴 낱말로 찾았어요', aiSummarized: by === 'ai' },
-    actions: naviOn ? { primary: { type: 'reask', text: '문의하기로 옮기기', kind: 'navi' }, secondary: [] } : { secondary: [] },
+    actions: naviOn ? { primary: { type: 'reask', text: '문의함으로 옮기기', kind: 'navi' }, secondary: [] } : { secondary: [] },
     tail: MOVE_TAIL,
   };
 }

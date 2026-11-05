@@ -35,7 +35,7 @@ function entryFromPath(): { kind: 'consent' } | { kind: 'link'; token: string } 
   return link ? { kind: 'link', token: link[1]! } : null;
 }
 
-/** 운영(S4)은 같이 채워요 탭, 분장표 수정 제안함(S5)은 문의하기 탭 아래에 있어요. */
+/** 운영(S4)은 같이 채워요 탭, 분장표 수정 제안함(S5)은 문의함 탭 아래에 있어요. */
 function tabOf(view: View): Tab {
   if (view === 'ops') return 'board';
   // 관리자 AI 정답률(11/5 시험)은 마이 페이지 아래에 있어요.
@@ -50,7 +50,7 @@ export function App() {
   const [view, setView] = useState<View>('home');
   const [entry, setEntry] = useState(entryFromPath);
   const [offline, setOffline] = useState(false);
-  // 다른 페이지로 옮겨 가는 문장(예시 문장, "종류가 달라요", [문의하기로 옮기기]). 앱 메모리에만 둬요(R13).
+  // 다른 페이지로 옮겨 가는 문장(예시 문장, "종류가 달라요", [문의함으로 옮기기]). 앱 메모리에만 둬요(R13).
   // auto: 다른 기능에서 옮겨 온 문장이면 그 페이지에서 바로 찾아요. 홈 예시 문장은 채우기만 해요.
   const [handoff, setHandoff] = useState<{ to: View; text: string; at: number; auto: boolean } | null>(null);
   // 회의실 입력 칸의 최근 쓴 문장(최대 5개). 이 창 메모리에만 있어요. 저장소·서버에는 두지 않아요(R13).
@@ -174,6 +174,8 @@ export function App() {
     JointRequests,
   } = webModules;
   const isChartOwner = me?.roles.includes('chart-owner') ?? false;
+  // 문의함(11/5 사용자 결정): 홈 채팅이 켜져 있으면 이 페이지는 받은 문의·내 문의를 먼저 보여요.
+  const inbox = current === 'navi' && config.homeAsk === true && config.modules.navi === 'on';
 
   return (
     <div className='app'>
@@ -205,6 +207,17 @@ export function App() {
                 initialText={initial}
                 autoRun={autoRun}
                 onMove={move}
+                // 문의함(11/5): 홈 채팅이 켜져 있으면 받은 문의 → 내 문의 → 휴가 신청을 먼저 두고, 받을 팀 찾기는 아래로 내려요.
+                before={
+                  inbox ? (
+                    <>
+                      <InquiryInbox />
+                      <MyInquiries />
+                      <LeaveStart variant='card' />
+                    </>
+                  ) : undefined
+                }
+                inputHeading={inbox ? '받을 팀 찾기' : undefined}
                 // 회의실이 켜져 있으면 빈 회의실 찾기와 회의실 채팅을 한 입력 칸으로 써요(10/28 통합 개편). 링크만이면 공통 입력이 링크 카드를 줘요.
                 input={
                   current === 'rooms' && config.modules.rooms === 'on'
@@ -233,7 +246,7 @@ export function App() {
                     <MyLoans />
                   </>
                 )}
-                {current === 'navi' && (
+                {current === 'navi' && !inbox && (
                   <>
                     {/* 11/2: "이런 것도 찾아 줘요" 묶음을 뺐어요. IT 오류·첫 2주 화면은 맞는 질문의 카드 버튼(withGuides)으로 들어가요. */}
                     {/* 11/5: 휴가 신청은 찾지 않아도 바로 열 수 있게 칸을 둬요. */}
