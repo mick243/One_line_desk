@@ -1,4 +1,5 @@
 import type { AppDestination, Card } from '../cards';
+import type { ReadNote } from './read-note';
 
 // 홈 AI 채팅 "나에게 해당하는 일"(11/3 사용자 결정, ADR-27, 개선 회의 D8 해제).
 // AI는 질문 뜻(구조 값)만 해석하고, 내 일은 서버가 각 모듈 서비스에서 규칙으로 모아요. 내 자료는 AI에 가지 않아요.
@@ -43,6 +44,46 @@ export const HOME_KIND_LABEL: Record<HomeKind, string> = {
   inbox: '받은 문의',
 };
 
+/** 옮겨 갈 곳 이름("알아들은 것" 라벨, 11/5 시험) */
+export const HOME_MOVE_LABEL: Record<HomeMoveTo, string> = {
+  rooms: '회의실',
+  navi: '문의하기',
+  notices: '공지',
+  board: '같이 채워요',
+  away: '자리비움 알리기',
+};
+
+/** 홈 질문을 해석한 구조 값(AI든 낱말 규칙이든 같은 모양) */
+export interface HomeRead {
+  intent: HomeIntent;
+  period: HomePeriod;
+  kinds: readonly HomeKind[];
+  moveTo: HomeMoveTo | null;
+}
+
+/**
+ * "알아들은 것" 라벨(11/5 시험, AI 보완 2번). 질문 글은 넣지 않고 해석 값만 말로 바꿔요.
+ * 예: "이번 주 · 내 일(내 예약·초대받은 회의)", "하려는 일 · 회의실에서 해요", "오늘 · 같은 팀 일정", "모르는 말"
+ */
+export function homeReadLabel(r: HomeRead): string {
+  switch (r.intent) {
+    case 'mine':
+      return `${HOME_PERIOD_LABEL[r.period]} · 내 일(${r.kinds.length ? r.kinds.map((k) => HOME_KIND_LABEL[k]).join('·') : '전부'})`;
+    case 'move':
+      return r.moveTo ? `하려는 일 · ${HOME_MOVE_LABEL[r.moveTo]}에서 해요` : '하려는 일';
+    case 'team-schedule':
+      return `${HOME_PERIOD_LABEL[r.period]} · 같은 팀 일정`;
+    default:
+      return '모르는 말';
+  }
+}
+
+/** 두 해석이 화면에서 같은 답이 되는지. 라벨이 같으면 같아요(종류 순서는 보지 않아요). */
+export function sameHomeRead(a: HomeRead, b: HomeRead): boolean {
+  const norm = (r: HomeRead) => homeReadLabel({ ...r, kinds: HOME_KINDS.filter((k) => r.kinds.includes(k)) });
+  return norm(a) === norm(b);
+}
+
 /**
  * 기능 페이지로 가는 버튼. 쓰기 버튼은 없어요.
  * handoff는 서버가 정한 고정 문장(사람이 쓴 글 아님)이고, 앱 메모리로만 그 페이지에 넘겨요. auto면 그 페이지가 바로 찾아요(읽기만).
@@ -81,6 +122,8 @@ export interface HomeAskResponse {
   cards: Card[];
   /** 같은 팀 일정(team-schedule일 때). 그 밖에는 null이에요. */
   team: HomeTeamSchedule | null;
+  /** 알아들은 것(11/5 시험). 해석 라벨만이에요. */
+  read?: ReadNote;
 }
 
 /**

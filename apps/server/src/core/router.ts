@@ -93,38 +93,46 @@ export class Router {
   }
 
   private async classify(text: string, rules: ModuleKind[]): Promise<Classification & { byModel: boolean }> {
-    const fallback = (): Classification => {
-      const slots = parseSlots(text, this.now());
-      return {
-        kind: rules[0] ?? 'unknown',
-        ambiguous: rules.length > 1,
-        slots: {
-          date: slots.date ?? null,
-          start: slots.start ?? null,
-          minutes: slots.minutes ?? null,
-          people: slots.people ?? null,
-          equipment: slots.equipment ?? [],
-          floor: slots.floor ?? null,
-          itemName: rules[0] === 'pantry' ? (slots.itemName ?? null) : null,
-        },
-      };
+    return classifyText(this.gateway, text, rules, this.now());
+  }
+}
+
+/**
+ * 앞문 분류(게이트웨이 한 번). 정답률 표(scripts/eval-ai.ts)도 같은 함수를 불러요.
+ * rules는 matchRules가 고른 종류예요. 모델이 없거나 거절하면 rules[0](없으면 unknown)과 규칙 슬롯이에요.
+ */
+export async function classifyText(gateway: AiGateway, text: string, rules: ModuleKind[], now: number): Promise<Classification & { byModel: boolean }> {
+  const fallback = (): Classification => {
+    const slots = parseSlots(text, now);
+    return {
+      kind: rules[0] ?? 'unknown',
+      ambiguous: rules.length > 1,
+      slots: {
+        date: slots.date ?? null,
+        start: slots.start ?? null,
+        minutes: slots.minutes ?? null,
+        people: slots.people ?? null,
+        equipment: slots.equipment ?? [],
+        floor: slots.floor ?? null,
+        itemName: rules[0] === 'pantry' ? (slots.itemName ?? null) : null,
+      },
     };
-    try {
-      const out = await this.gateway.structured({
-        module: 'router',
-        purpose: 'classify',
-        // 묻기 입력은 등급 1이에요. 무보관 계약 확인 전에는 게이트웨이가 거절하고 규칙으로 나눠요(R6).
-        grade: GRADE.internal,
-        system: SYSTEM,
-        input: `오늘: ${kstDate(this.now())}\n문장: ${text}`,
-        schema: ClassifySchema,
-        fallback,
-        effort: 'low',
-      });
-      return { ...out, byModel: this.gateway.modelBacked };
-    } catch {
-      return { ...fallback(), byModel: false };
-    }
+  };
+  try {
+    const out = await gateway.structured({
+      module: 'router',
+      purpose: 'classify',
+      // 묻기 입력은 등급 1이에요. 무보관 계약 확인 전에는 게이트웨이가 거절하고 규칙으로 나눠요(R6).
+      grade: GRADE.internal,
+      system: SYSTEM,
+      input: `오늘: ${kstDate(now)}\n문장: ${text}`,
+      schema: ClassifySchema,
+      fallback,
+      effort: 'low',
+    });
+    return { ...out, byModel: gateway.modelBacked };
+  } catch {
+    return { ...fallback(), byModel: false };
   }
 }
 

@@ -14,6 +14,7 @@ import {
   type TeamEntry,
 } from '@one-line-desk/shared';
 import type { ReactNode } from 'react';
+import { ReadLine } from '../components/ReadLine';
 
 function HomeItemList({ items, onOpen, label }: { items: HomeItem[]; onOpen: (open: HomeOpen) => void; label: string }) {
   return (
@@ -80,6 +81,7 @@ export function HomeAnswer({ answer, onOpen, cards }: { answer: HomeAskResponse;
           {answer.by === 'ai' && <span className='chat-ai'>AI 정리</span>}
         </p>
       )}
+      <ReadLine read={answer.read} ai={answer.by === 'ai'} />
       {answer.team && <TeamScheduleList team={answer.team} oneDay={answer.period === 'today' || answer.period === 'tomorrow'} />}
       {answer.items.length > 0 && <HomeItemList items={answer.items} onOpen={onOpen} label={answer.headline} />}
       {(answer.links.length > 0 || answer.team?.link) && (

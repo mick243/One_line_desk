@@ -8,6 +8,7 @@ import {
   LOAN_KINDS,
   type LoanKind,
   loanKindsIn,
+  type ReadNote,
   RENT_VERB,
   RESERVE_VERB,
   type RoomChatResponse,
@@ -16,6 +17,7 @@ import {
 } from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { AppContext } from '../../context';
+import type { AiGateway } from '../../core/ai/gateway';
 import type { AutoOutcome } from '../../core/plans';
 import { linkCard } from '../../core/router';
 import { parseSlots, parseTime, repeatedSlots } from '../../core/slots';
@@ -45,9 +47,61 @@ const InterpretationSchema = z.object({
   command: z.boolean(),
   kinds: z.array(z.enum(LOAN_KINDS)).max(LOAN_KINDS.length),
 });
-type Interpretation = z.infer<typeof InterpretationSchema>;
-/** byModel: 모델이 해석했는지. held: 시키는 말이지만 바로 실행하지 않은 이유(답 글) */
-type Reading = Interpretation & { byModel: boolean; held?: string };
+export type Interpretation = z.infer<typeof InterpretationSchema>;
+/** byModel: 모델이 해석했는지. held: 시키는 말이지만 바로 실행하지 않은 이유(답 글). rule: 같은 문장을 낱말 규칙이 본 것(11/5 시험) */
+type Reading = Interpretation & { byModel: boolean; held?: string; rule: Interpretation };
+
+/** "알아들은 것" 라벨(11/5 시험, AI 보완 2번). 질문 글은 넣지 않고 해석 값만 말로 바꿔요. */
+const CHAT_INTENT_LABEL: Record<Intent, string> = {
+  reserve: '회의실 찾기·예약',
+  rent: '장비 빌리기',
+  my: '내 예약·대여 보기',
+  overview: '예약 현황 보기',
+  equipment: '장비 현황 보기',
+  cancel: '취소·반납',
+  help: '도움말',
+};
+
+/** 예: "장비 빌리기 · 빔프로젝터·노트북" */
+export function chatReadLabel(r: Pick<Interpretation, 'intent' | 'kinds'>): string {
+  const kinds = LOAN_KINDS.filter((k) => r.kinds.includes(k));
+  return [CHAT_INTENT_LABEL[r.intent], ...(kinds.length ? [kinds.join('·')] : [])].join(' · ');
+}
+
+/** 알아들은 것. 실제 모델이 낱말 규칙과 다르게 봤을 때만 규칙이 본 것도 붙여요. */
+export function chatReadNote(it: Pick<Reading, 'intent' | 'kinds' | 'byModel' | 'rule'>): ReadNote {
+  const understood = chatReadLabel(it);
+  const ruleSaid = chatReadLabel(it.rule);
+  return it.byModel && ruleSaid !== understood ? { understood, ruleSaid } : { understood };
+}
+
+/**
+ * 회의실 채팅 해석: 모델 + 규칙. 정답률 표(scripts/eval-ai.ts)도 같은 함수를 불러요.
+ * 자동 실행은 규칙도 시키는 문장으로 본 것만이에요. 모델은 시키는 문장을 묻는 문장으로 낮출 수만 있어요.
+ * 모델이 고른 일·장비가 규칙과 다르면 그 해석으로 카드만 보여 주고 바로 실행하지 않아요(10/29 회의 A1).
+ */
+export async function interpretChatText(gateway: AiGateway, text: string, now: number): Promise<Reading> {
+  const ruled = interpretByRules(text, now);
+  try {
+    const out = await gateway.structured({
+      module: 'rooms',
+      purpose: 'chat-intent',
+      // 사람이 쓴 글이라 등급 1이에요. 무보관 계약 확인 전에는 게이트웨이가 거절하고 규칙으로 해석해요(R6).
+      grade: GRADE.internal,
+      system: SYSTEM,
+      input: `문장: ${text}`,
+      schema: InterpretationSchema,
+      fallback: () => ruled,
+      effort: 'low',
+      maxTokens: 200,
+    });
+    const kinds = out.kinds.slice(0, MAX_KINDS);
+    const agrees = out.intent === ruled.intent && kinds.every((k) => ruled.kinds.includes(k));
+    return { intent: out.intent, command: out.command && ruled.command && agrees, kinds, byModel: gateway.modelBacked, rule: ruled };
+  } catch {
+    return { ...ruled, byModel: false, rule: ruled };
+  }
+}
 
 const SYSTEM = `회의실 데스크 채팅이에요. 직원이 쓴 한 줄이 무엇을 하려는지만 골라요.
 intent:
@@ -140,7 +194,8 @@ export class RoomChat {
     }
     const rooms = await listRooms(this.ctx.db);
     const room = mentionedRoom(text, rooms);
-    const base = { aiParsed: it.byModel, changed: false };
+    // 알아들은 것(11/5 시험, AI 보완 2번): 해석 라벨만 붙여요. 질문 글은 돌려주지 않아요.
+    const base = { aiParsed: it.byModel, changed: false, read: chatReadNote(it) };
 
     switch (it.intent) {
       case 'reserve':
@@ -164,31 +219,8 @@ export class RoomChat {
     }
   }
 
-  /**
-   * 모델 해석 + 규칙. 자동 실행은 규칙도 시키는 문장으로 본 것만이에요. 모델은 시키는 문장을 묻는 문장으로 낮출 수만 있어요.
-   * 모델이 고른 일·장비가 규칙과 다르면 그 해석으로 카드만 보여 주고 바로 실행하지 않아요(10/29 회의 A1).
-   */
   private async interpret(text: string, now: number): Promise<Reading> {
-    const ruled = interpretByRules(text, now);
-    try {
-      const out = await this.ctx.gateway.structured({
-        module: 'rooms',
-        purpose: 'chat-intent',
-        // 사람이 쓴 글이라 등급 1이에요. 무보관 계약 확인 전에는 게이트웨이가 거절하고 규칙으로 해석해요(R6).
-        grade: GRADE.internal,
-        system: SYSTEM,
-        input: `문장: ${text}`,
-        schema: InterpretationSchema,
-        fallback: () => ruled,
-        effort: 'low',
-        maxTokens: 200,
-      });
-      const kinds = out.kinds.slice(0, MAX_KINDS);
-      const agrees = out.intent === ruled.intent && kinds.every((k) => ruled.kinds.includes(k));
-      return { intent: out.intent, command: out.command && ruled.command && agrees, kinds, byModel: this.ctx.gateway.modelBacked };
-    } catch {
-      return { ...ruled, byModel: false };
-    }
+    return interpretChatText(this.ctx.gateway, text, now);
   }
 
   private autoOn(): boolean {

@@ -3,6 +3,7 @@ import {
   checkInput,
   type Kind,
   type MyLoansResponse,
+  type ReadNote,
   type RoomChatPreview,
   type RoomChatResponse,
   roomChatPreview,
@@ -14,6 +15,7 @@ import { replaceCard, useActions, useListVersion } from '../../components/Action
 import { CardView } from '../../components/CardView';
 import { CheckedInput } from '../../components/CheckedInput';
 import { Icon } from '../../components/Icon';
+import { ReadLine } from '../../components/ReadLine';
 import { ScrollChips } from '../../components/ScrollChips';
 import { RoomChatContext } from './RoomOverviewCard';
 import { useSlow } from '../../components/useSlow';
@@ -46,6 +48,8 @@ interface Turn {
   reply?: string;
   cards: Card[];
   aiParsed?: boolean;
+  /** 알아들은 것(11/5 시험) */
+  read?: ReadNote;
   failed?: boolean;
 }
 
@@ -132,7 +136,7 @@ export function RoomChat({
         requestId: turn.requestId,
         ...(turn.noAuto ? { noAuto: true } : {}),
       });
-      done({ reply: res.reply, cards: res.cards, aiParsed: res.aiParsed, failed: false });
+      done({ reply: res.reply, cards: res.cards, aiParsed: res.aiParsed, read: res.read, failed: false });
       if (res.changed) actions.refresh();
     } catch (e) {
       // 보내지 못한 문장은 대화 줄에 남고 [다시 보내기]가 같은 요청 번호로 보내요. 입력 칸에 돌려놓지 않아요:
@@ -223,6 +227,7 @@ export function RoomChat({
             {t.aiParsed && <span className='chat-ai'>AI 해석</span>}
           </p>
         )}
+        {t.reply !== undefined && !t.failed && <ReadLine read={t.read} ai={Boolean(t.aiParsed)} />}
         {t.failed && !waiting && (
           <button type='button' className='secondary small' onClick={() => resend(t)}>
             다시 보내기

@@ -463,3 +463,23 @@ describe('홈 질문 해석: 게이트웨이(ADR-10·27)', () => {
     expect(res.cards[0]!.evidence.aiSummarized).toBe(false);
   });
 });
+
+describe('알아들은 것(11/5 시험, AI 보완 2번)', () => {
+  it('낱말 규칙으로 해석하면 알아들은 것만 붙여요. 질문 글은 돌려주지 않아요', async () => {
+    const t = await setup({ contract: false });
+    const doyun = await t.loginAs(MOCK.dev);
+    const res = await home(doyun, '이번 주 내 일정 뭐 있어?');
+    expect(res.read).toEqual({ understood: '이번 주 · 내 일(내 예약·장비 대여·초대받은 회의·휴가 요청)' });
+  });
+
+  it('AI가 낱말 규칙과 다르게 보면 규칙이 본 것도 같이 붙여요. 같으면 붙이지 않아요', async () => {
+    const provider = new RecordingProvider('anthropic', { intent: 'move', period: 'recent', kinds: [], moveTo: 'navi' });
+    const t = await setup({ contract: true, provider });
+    const doyun = await t.loginAs(MOCK.dev);
+    const tv = await home(doyun, '회의실 TV가 안 켜져요');
+    expect(tv.read).toEqual({ understood: '하려는 일 · 문의하기에서 해요', ruleSaid: '요즘 · 내 일(내 예약·초대받은 회의)' });
+    expect(JSON.stringify(tv)).not.toContain('TV');
+    const same = await home(doyun, '법인카드 잃어버렸는데 어디에 말해?');
+    expect(same.read).toEqual({ understood: '하려는 일 · 문의하기에서 해요' });
+  });
+});

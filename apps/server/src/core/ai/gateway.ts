@@ -1,4 +1,4 @@
-import { gatewayAllows, type Grade, type ModuleKind } from '@one-line-desk/shared';
+import { GRADE, gatewayAllows, type Grade, type ModuleKind } from '@one-line-desk/shared';
 import type { z } from 'zod';
 import type { Queryable } from '../db';
 import { DeskError } from '../errors';
@@ -61,6 +61,11 @@ export class AiGateway {
   /** 실제 모델이 답을 만드는지. 가짜 공급자는 부르는 쪽의 결정적 대안을 돌려줘서, 카드에 "AI 정리"를 붙이면 안 돼요. */
   get modelBacked(): boolean {
     return this.provider.name !== 'fake';
+  }
+
+  /** 사람이 쓴 글과 같은 등급 1을 보낼 수 있는지(무보관 계약 확인). 관리자 정답률 화면이 [AI로 다시 재기]를 열지 정해요. */
+  get allowsInternal(): boolean {
+    return gatewayAllows(GRADE.internal, this.contractConfirmed);
   }
 
   async structured<T>(req: StructuredRequest<T>): Promise<T> {

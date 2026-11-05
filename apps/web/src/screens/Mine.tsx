@@ -41,7 +41,7 @@ export function Mine({
   me: Me;
   switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; mcp: boolean; teamSchedule?: boolean };
   onLoggedOut: () => void;
-  onOpen: (to: 'ops' | 'chart') => void;
+  onOpen: (to: 'ops' | 'chart' | 'ai-eval') => void;
 }) {
   const { modules } = switches;
   const retention = retentionLines(switches);
@@ -58,6 +58,8 @@ export function Mine({
   // 꺼진 모듈의 화면(S4·S5)으로 가는 버튼은 숨겨요(ADR-12).
   const hasFacilities = me.roles.includes('facilities') && modules.pantry !== 'off';
   const hasChart = me.roles.includes('chart-owner') && modules.navi !== 'off';
+  // 관리자(운영자)만 보는 AI 정답률 화면(11/5 시험, R7 예외)
+  const isOperator = me.roles.includes('operator');
 
   return (
     <div className='mine'>
@@ -85,7 +87,7 @@ export function Mine({
       {switches.modules.navi === 'on' && <MyAway />}
       {joint && <TeamDelegates />}
 
-      {(hasFacilities || hasChart) && (
+      {(hasFacilities || hasChart || isOperator) && (
         <section className='card'>
           <h2>내 역할</h2>
           <div className='actions'>
@@ -97,6 +99,11 @@ export function Mine({
             {hasChart && (
               <button type='button' className='secondary' onClick={() => onOpen('chart')}>
                 {ROLE_LABEL['chart-owner']} · 수정 제안함
+              </button>
+            )}
+            {isOperator && (
+              <button type='button' className='secondary' onClick={() => onOpen('ai-eval')}>
+                {ROLE_LABEL.operator} · AI 정답률
               </button>
             )}
           </div>

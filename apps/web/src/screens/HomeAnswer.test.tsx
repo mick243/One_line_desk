@@ -49,6 +49,25 @@ describe('홈 답 그리기(ADR-27)', () => {
     expect(html).toContain('AI 정리');
   });
 
+  it('알아들은 것(11/5 시험): 라벨을 보여 주고, AI가 낱말 규칙과 다르게 봤으면 그것도 보여 줘요', () => {
+    const plain = renderToStaticMarkup(
+      <HomeAnswer answer={{ ...mine, read: { understood: '이번 주 · 내 일(내 예약·휴가 요청)' } }} onOpen={() => undefined} />,
+    );
+    expect(plain).toContain('알아들은 것');
+    expect(plain).not.toContain('AI가 알아들은 것');
+    expect(plain).not.toContain('낱말로만 보면');
+    const fixed = renderToStaticMarkup(
+      <HomeAnswer
+        answer={{ ...mine, by: 'ai', read: { understood: '하려는 일 · 문의하기에서 해요', ruleSaid: '요즘 · 내 일(내 예약)' } }}
+        onOpen={() => undefined}
+      />,
+    );
+    expect(fixed).toContain('AI가 알아들은 것');
+    expect(fixed).toContain('하려는 일 · 문의하기에서 해요');
+    expect(fixed).toContain('낱말로만 보면 &quot;요즘 · 내 일(내 예약)&quot;예요. AI가 문장 뜻으로 다시 봤어요');
+    expect(renderToStaticMarkup(<HomeAnswer answer={mine} onOpen={() => undefined} />)).not.toContain('알아들은 것');
+  });
+
   it('옮기기 답은 한 줄 말풍선 없이 카드 자리만 그려요', () => {
     const move: HomeAskResponse = { ...mine, intent: 'move', items: [], links: [], headline: '회의실에서 찾아볼게요' };
     const html = renderToStaticMarkup(<HomeAnswer answer={move} onOpen={() => undefined} cards={<p>카드 자리</p>} />);
