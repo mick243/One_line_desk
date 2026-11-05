@@ -9,10 +9,12 @@ import { type CaseResult, evalView, runGolden, score } from '../eval/ai-eval';
 //   남는 것은 게이트웨이 비용 표(본문 없음, 7일)와 감사 한 줄(맞힌 수만)뿐이에요.
 // - 낱말 규칙 칸은 열 때마다 바로 세요(모델 호출 없음).
 // - [AI로 다시 재기]는 서버와 같은 게이트웨이로 문장 48개를 모델에 보내요(등급 1 규칙 그대로: 무보관 계약 확인 전이면 막혀요).
-//   뒤에서 돌고(화면은 몇 초마다 다시 불러요), 한 번에 하나, 5분에 한 번만이에요. 결과는 서버 메모리에만 있어서 다시 켜면 비어요.
+//   뒤에서 돌고(화면은 몇 초마다 다시 불러요), 한 번에 하나, 1시간에 한 번만이에요. 결과는 서버 메모리에만 있어서 다시 켜면 비어요.
+// - 시연 웹(Vercel)은 운영자 API(/api/ops/*)를 넘기지 않는데, 이 두 경로만 예외로 넘겨요(11/5 사용자 결정, vercel.json).
+//   시연은 누구나 가상 운영자로 들어올 수 있어서 재기 간격을 1시간으로 둬요(모델 호출 하루 최대 약 1,150번).
 // 되돌릴 기준: #30 머지 상태(이 파일째 지워요).
 
-const COOLDOWN_MS = 5 * 60_000;
+const COOLDOWN_MS = 60 * 60_000;
 
 export function registerAiEvalRoutes(app: FastifyInstance, ctx: AppContext) {
   const operator = [ctx.guards.user, ctx.guards.role('operator')];

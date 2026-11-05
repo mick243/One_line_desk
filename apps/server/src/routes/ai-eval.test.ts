@@ -4,7 +4,7 @@ import { AiGateway, type LlmProvider, type ProviderResult, type StructuredReques
 import { GOLDEN } from '../eval/ai-golden';
 import { createTestApp, MOCK } from '../testing';
 
-// 관리자 화면 AI 정답률(11/5 시험, R7 예외). 운영자만 보고, AI 재기는 뒤에서 한 번에 하나·5분에 한 번이에요.
+// 관리자 화면 AI 정답률(11/5 시험, R7 예외). 운영자만 보고, AI 재기는 뒤에서 한 번에 하나·1시간에 한 번이에요.
 
 type TestApp = Awaited<ReturnType<typeof createTestApp>>;
 const opened: TestApp[] = [];
@@ -73,7 +73,7 @@ describe('관리자 AI 정답률(11/5 시험)', () => {
     expect(provider.calls).toEqual([]);
   });
 
-  it('재기는 뒤에서 돌고, 끝나면 AI 칸·잰 때·모델이 채워져요. 5분 안에는 다시 못 재고, 감사에는 맞힌 수만 남아요', async () => {
+  it('재기는 뒤에서 돌고, 끝나면 AI 칸·잰 때·모델이 채워져요. 1시간 안에는 다시 못 재고, 감사에는 맞힌 수만 남아요', async () => {
     const provider = new EchoProvider();
     const t = await setup({ provider });
     const op = await t.loginAs(MOCK.operator);
@@ -83,9 +83,12 @@ describe('관리자 AI 정답률(11/5 시험)', () => {
     expect(provider.calls).toHaveLength(GOLDEN.length);
     expect(done.measured).toMatchObject({ model: t.ctx.config.aiModel });
     for (const s of done.scores) expect(s.ai, s.label).toBe(s.rule);
-    expect(done.run.allowed).toBe(false);
-    expect(done.run.reason).toMatch(/부터 다시 잴 수 있어요$/);
+    expect(done.run).toMatchObject({ allowed: false, reason: '10:00부터 다시 잴 수 있어요' });
     expect((await op.call('POST', '/api/ops/ai-eval/run')).status).toBe(409);
+    t.advance(59 * 60_000);
+    expect((await op.call('POST', '/api/ops/ai-eval/run')).status).toBe(409);
+    t.advance(60_000);
+    expect(((await op.call('GET', '/api/ops/ai-eval')).body as AiEvalResponse).run).toMatchObject({ allowed: true, reason: null });
 
     const audit = (await t.ctx.audit.recent(5)).find((a) => a.action === 'ai-eval.run');
     expect(audit).toMatchObject({ channel: 'ops', result: `ai:${done.scores.reduce((n, s) => n + (s.ai ?? 0), 0)}/${GOLDEN.length}` });
