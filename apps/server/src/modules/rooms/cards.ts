@@ -490,7 +490,7 @@ export function chatHelpCard(o: { mode: 'auto' | 'confirm' | 'read-only'; navi?:
     ],
     evidence: { text: '회의실 채팅', aiSummarized: false },
     // 회의실 일이 아니면 담당 찾기로 같은 문장을 옮겨요(통합 입력 칸, 10/28).
-    ...(o.navi ? { secondary: [{ type: 'reask' as const, text: '문의하기에서 찾기', kind: 'navi' as const }] } : {}),
+    ...(o.navi ? { secondary: [{ type: 'reask' as const, text: '문의함에서 찾기', kind: 'navi' as const }] } : {}),
     tail:
       o.mode === 'auto'
         ? '"잡아 줘·빌려 줘"처럼 시키면 바로 예약·대여하고, 물어보면 카드로만 보여 줘요'

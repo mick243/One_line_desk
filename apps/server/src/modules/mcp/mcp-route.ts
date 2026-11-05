@@ -26,7 +26,7 @@ function instructions(appUrl: string): string {
     '한 줄 데스크 읽기 전용 MCP예요. 빈 회의실 후보(정원·장비·설비 포함), 공지 제목·게시일·원문 링크, 업무 분장표의 받을 팀, IT 오류 FAQ 원문 단계, 첫 2주 할 일, 내가 보낸 요청의 상태를 돌려줘요. ' +
     '예약·취소·게시·문의 보내기는 할 수 없어요. 그런 일은 결과의 앱 확인 링크를 사람이 열어 한 줄 데스크 앱에서 한 번 눌러 확정해요. 링크를 여는 것만으로는 아무것도 바뀌지 않아요. ' +
     '결과가 없으면 emptyReason.message에 까닭이 있어요. ' +
-    `담당 부서·할 일 질문(예: "법인카드를 잃어버렸어요")은 navi_find_team 결과의 팀·지금 할 일만 전하고, 분장표에 없는 내용은 짐작해서 답하지 말고 대표 창구나 한 줄 데스크 앱(${appUrl})의 문의하기를 안내해 주세요. ` +
+    `담당 부서·할 일 질문(예: "법인카드를 잃어버렸어요")은 navi_find_team 결과의 팀·지금 할 일만 전하고, 분장표에 없는 내용은 짐작해서 답하지 말고 대표 창구나 한 줄 데스크 앱(${appUrl})의 문의함을 안내해 주세요. ` +
     `남은 연차 숫자·문의와 답장 글은 이 MCP로 보내지 않아요. 앱(${appUrl})에서 보라고 안내해 주세요. ` +
     APP_IS_FOR_PEOPLE
   );
@@ -37,7 +37,7 @@ const APP_IS_FOR_PEOPLE = '앱은 사람이 회사 계정으로 로그인해서 
 
 /** 운영자가 MCP를 껐을 때 안내. 인증 문제가 아니라는 걸 분명히 해요(U4). */
 function offMessage(appUrl: string): string {
-  return `운영자가 한 줄 데스크 MCP를 잠시 껐어요. 인증이나 연결 문제는 아니에요. 그동안 회의실·공지·문의하기는 사람이 한 줄 데스크 앱(${appUrl})을 직접 열어 찾도록 안내해 주세요. ${APP_IS_FOR_PEOPLE}`;
+  return `운영자가 한 줄 데스크 MCP를 잠시 껐어요. 인증이나 연결 문제는 아니에요. 그동안 회의실·공지·문의함은 사람이 한 줄 데스크 앱(${appUrl})을 직접 열어 찾도록 안내해 주세요. ${APP_IS_FOR_PEOPLE}`;
 }
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;

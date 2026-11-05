@@ -238,7 +238,7 @@ describe('잘못 고른 기능 페이지(10/28 사용성 점검)', () => {
     const pantry = await ask(t, me, '탕비실에 제로콜라 떨어졌어요', 'navi');
     expect(pantry.cards[0]).toMatchObject({ id: 'move-pantry', actions: { primary: { type: 'reask', kind: 'pantry', text: '같이 채워요에 올리기' } } });
 
-    // 공지 못 찾음 카드가 이미 [문의하기에서 찾기]를 주면 같은 버튼을 또 만들지 않아요.
+    // 공지 못 찾음 카드가 이미 [문의함에서 찾기]를 주면 같은 버튼을 또 만들지 않아요.
     const fromNotices = await ask(t, me, '내일 3시 회의실 6명', 'notices');
     expect(fromNotices.cards.map((c) => c.id)).toEqual(['move-rooms', 'notices-not-found']);
 

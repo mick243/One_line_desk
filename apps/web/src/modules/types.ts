@@ -16,7 +16,7 @@ export interface WebModules {
   BoardScreen: ComponentType<
     ScreenProps & {
       onOpenOps: () => void;
-      /** 판에 담당 질문을 쓰면 [문의하기로 옮기기]. 글은 앱 메모리로만 넘겨요(F3-4). */
+      /** 판에 담당 질문을 쓰면 [문의함으로 옮기기]. 글은 앱 메모리로만 넘겨요(F3-4). */
       onMoveToNavi: (text: string) => void;
       /** 홈 예시 문장·다른 페이지에서 옮겨 온 글. 요청 쓰기 칸에 채워만 둬요. */
       initialText?: string;

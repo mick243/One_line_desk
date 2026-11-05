@@ -142,7 +142,7 @@ export interface PantryDraftRequest {
   text: string;
 }
 
-/** 게시 초안. 같은 품목 카드(먼저) 또는 공개 미리보기 카드, 담당 질문이면 [문의하기로 옮기기] 카드예요. */
+/** 게시 초안. 같은 품목 카드(먼저) 또는 공개 미리보기 카드, 담당 질문이면 [문의함으로 옮기기] 카드예요. */
 export interface PantryDraftResponse {
   cards: Card[];
 }

@@ -2538,3 +2538,10 @@ select {
     padding-bottom: calc(var(--composer-h, 120px) + 32px);
   }
 }
+
+/* 문의함(11/5): 받은 문의·내 문의 아래로 내려간 "받을 팀 찾기" 칸 제목 */
+.section-title {
+  margin: 8px 0 -4px;
+  font-size: 1rem;
+  font-weight: 700;
+}

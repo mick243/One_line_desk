@@ -1,9 +1,9 @@
 import type { ServerConfig } from '../config';
 import type { Db } from '../core/db';
 import { KeycloakAdapter } from './keycloak';
-import { MockEmployees } from './mock/employees';
+import { MockEmployees, rosterFromJson } from './mock/employees';
 import { MockGroupwareCalendar, MockMessenger } from './mock/groupware';
-import { MockLeave } from './mock/leave';
+import { leaveRecordsFromJson, loadLeaveRecords, MockLeave } from './mock/leave';
 import { OffCalendar, OffLeave, OffMessenger } from './off';
 import { SlackMessenger } from './slack';
 import type { AdapterCapabilities, CalendarAdapter, DirectoryAdapter, IdpAdapter, LeaveAdapter, MessengerAdapter } from './types';
@@ -22,7 +22,13 @@ export interface Adapters {
 
 /** 설정대로 어댑터를 골라요. 임시 IdP(Keycloak)를 켜면 로그인·직원 명단이 그쪽으로 가요. Slack 토큰이 있으면 실제 Slack이에요. */
 export function createAdapters(config: ServerConfig): Adapters {
-  const base: Adapters = config.idp.kind === 'keycloak' ? keycloakAdapters(new KeycloakAdapter(config.idp)) : createMockAdapters();
+  const chosen: Adapters =
+    config.idp.kind === 'keycloak'
+      ? keycloakAdapters(new KeycloakAdapter(config.idp))
+      : createMockAdapters(config.mockRosterJson ? new MockEmployees(rosterFromJson(config.mockRosterJson)) : undefined);
+  // 회사별 분리 시험·시연(11/5): 그 회사 가상 근태 기록(파일 또는 비밀 값)이 있으면 그걸로 모의 근태를 만들어요(시연·개발만).
+  const records = config.mockLeaveJson ? leaveRecordsFromJson(config.mockLeaveJson) : config.mockLeaveFile ? loadLeaveRecords(config.mockLeaveFile) : null;
+  const base: Adapters = records ? { ...chosen, leave: new MockLeave(records) } : chosen;
   if (!config.slackBotToken) return base;
   const messenger = new SlackMessenger(config.slackBotToken);
   return { ...base, messenger, all: () => [...base.all(), messenger.capabilities] };
@@ -56,8 +62,7 @@ function keycloakAdapters(kc: KeycloakAdapter): Adapters {
   return { idp: kc, directory: kc, all: () => [kc.capabilities] };
 }
 
-export function createMockAdapters(): Adapters & { employees: MockEmployees } {
-  const employees = new MockEmployees();
+export function createMockAdapters(employees = new MockEmployees()): Adapters & { employees: MockEmployees } {
   return {
     idp: employees,
     directory: employees,

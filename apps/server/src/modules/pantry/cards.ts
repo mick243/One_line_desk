@@ -135,7 +135,7 @@ export function moveToNaviCard(naviOff: boolean, aiSummarized: boolean): Card {
     label: '안내',
     headline: naviOff ? PANTRY_TEXT.standaloneOnly : PANTRY_TEXT.moveToAsk,
     evidence: { text: '판에는 탕비실 품목만 올라가요', aiSummarized },
-    ...(naviOff ? {} : { primary: { type: 'navigate' as const, text: '문의하기로 옮기기', to: 'navi' as const } }),
+    ...(naviOff ? {} : { primary: { type: 'navigate' as const, text: '문의함으로 옮기기', to: 'navi' as const } }),
     tail: '저장되는 것이 없어요',
   });
 }

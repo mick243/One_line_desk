@@ -99,13 +99,21 @@ export function score(results: readonly CaseResult[]): TaskScore[] {
 
 const HOME_WORD: Record<string, string> = { mine: '내 일', 'team-schedule': '같은 팀 일정', unknown: '모르는 말' };
 const CHAT_INTENTS_FOR_LABEL = new Set(['reserve', 'rent', 'my', 'overview', 'equipment', 'cancel', 'help']);
-const ROUTER_WORD: Record<string, string> = { navi: '문의하기', notices: '공지', rooms: '회의실', pantry: '같이 채워요', unknown: '모르는 말' };
+const ROUTER_WORD: Record<string, string> = { navi: '문의함', notices: '공지', rooms: '회의실', pantry: '같이 채워요', unknown: '모르는 말' };
 
-/** 정답 꼴을 화면 말로 바꿔요("move:navi" → "문의하기로 옮기기") */
+/** "문의함" → "문의함으로", "회의실" → "회의실로": 받침이 있으면(ㄹ 받침 빼고) "으로"예요(11/5 문의함으로 이름이 바뀌며). */
+function toward(word: string): string {
+  const code = word.charCodeAt(word.length - 1) - 0xac00;
+  const jong = code >= 0 && code < 11172 ? code % 28 : 0;
+  return `${word}${jong === 0 || jong === 8 ? '로' : '으로'}`;
+}
+
+/** 정답 꼴을 화면 말로 바꿔요("move:navi" → "문의함으로 옮기기") */
 export function keyLabel(task: EvalTask, key: string | undefined): string {
   if (key === undefined) return '—';
   if (key === 'error') return '답 못 함';
-  if (task === 'home') return key.startsWith('move:') ? `${HOME_MOVE_LABEL[key.slice(5) as HomeMoveTo] ?? key.slice(5)}로 옮기기` : (HOME_WORD[key] ?? key);
+  if (task === 'home')
+    return key.startsWith('move:') ? `${toward(HOME_MOVE_LABEL[key.slice(5) as HomeMoveTo] ?? key.slice(5))} 옮기기` : (HOME_WORD[key] ?? key);
   if (task === 'room-chat') {
     const [intent, kinds] = key.split(':') as [string, string | undefined];
     return CHAT_INTENTS_FOR_LABEL.has(intent) ? chatReadLabel({ intent: intent as never, kinds: kinds ? kinds.split('·') : [] } as never) : key;

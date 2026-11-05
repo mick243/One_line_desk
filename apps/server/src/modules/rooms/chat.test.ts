@@ -353,12 +353,12 @@ describe('채팅으로 예약(자동 실행 허용 목록)', () => {
     expect((await chat(me, '내일 3시 6명 회의실 잡아 줘')).changed).toBe(true);
   });
 
-  it('회의실 일이 아닌 문장은 도움말과 [문의하기에서 찾기]를 줘요', async () => {
+  it('회의실 일이 아닌 문장은 도움말과 [문의함에서 찾기]를 줘요', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.staff);
     const out = await chat(me, '법인카드 잃어버렸어요');
     expect(out.cards[0]!.id).toBe('rooms-chat-help');
-    expect(out.cards[0]!.actions.secondary).toEqual([{ type: 'reask', text: '문의하기에서 찾기', kind: 'navi' }]);
+    expect(out.cards[0]!.actions.secondary).toEqual([{ type: 'reask', text: '문의함에서 찾기', kind: 'navi' }]);
   });
 
   it('빠진 조건을 되물을 때 "알려 주면 바로 예약"이라고 약속하지 않고 한 문장으로 다시 말해 달라고 해요(QA D-B02)', async () => {

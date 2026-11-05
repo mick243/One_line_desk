@@ -15,7 +15,7 @@ export type BlockedReason = (typeof BLOCKED_REASONS)[number];
  * - post: 공개 미리보기의 [올리기]. 이 카드 자체가 확인이에요(게시)
  * - fixed: 고정 버튼 쓰기(+1·표 거두기 등). 모듈 경로를 바로 불러요
  * - link: 바깥 링크(원문·그룹웨어·창구)
- * - reask: 같은 문장을 다른 기능 페이지로 옮겨 다시 찾아요("종류가 달라요", 문의하기에서 찾기)
+ * - reask: 같은 문장을 다른 기능 페이지로 옮겨 다시 찾아요("종류가 달라요", 문의함에서 찾기)
  * - navigate: 앱 안 화면으로 가요
  */
 export type CardAction =

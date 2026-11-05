@@ -1,10 +1,10 @@
-import type { Card, CardAction } from '@one-line-desk/shared';
+import { type Card, type CardAction, DEFAULT_OPS_SETTINGS } from '@one-line-desk/shared';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ActionHost } from '../components/ActionHost';
 import { CardView } from '../components/CardView';
 import { FeaturePage } from './FeaturePage';
-import { FEATURES } from './features';
+import { FEATURES, featureFor } from './features';
 import { inquireFirst } from './inquire-first';
 
 // 문의하기 페이지 한 흐름(11/3 사용자 결정, ADR-26 개정). 모드 전환이 없고, 질문하면 담당 카드를 먼저 보여 줘요.
@@ -44,7 +44,7 @@ describe('문의하기 페이지 한 흐름(ADR-26 개정 11/3)', () => {
         <FeaturePage feature={navi} onMove={() => undefined} />
       </ActionHost>,
     );
-    expect(html).toContain('문의하기');
+    expect(html).toContain('문의함');
     expect(html).toContain('무엇을 문의할까요?');
     expect(html).toContain('받을 팀 찾기');
     expect(html).not.toContain('page-mode');
@@ -111,5 +111,22 @@ describe('문의하기 페이지 한 흐름(ADR-26 개정 11/3)', () => {
     expect(inquireFirst(move)).toBe(move);
     const plain = card({ actions: { primary: { type: 'link', text: '창구 열기', href: 'https://desk.example' }, secondary: [] } });
     expect(inquireFirst(plain)).toBe(plain);
+  });
+});
+
+describe('문의함(11/5 사용자 결정, ADR-26 보강)', () => {
+  it('홈 채팅이 켜져 있으면 제목이 "주고받은 문의를 여기서 봐요"이고, 받은 문의·내 문의 칸이 찾기 칸보다 먼저예요', () => {
+    const inbox = featureFor(navi, { modules: DEFAULT_OPS_SETTINGS.modules, roomsWrite: true, homeAsk: true });
+    expect(inbox.title).toBe('문의함');
+    expect(inbox.question).toBe('주고받은 문의를 여기서 봐요');
+    const html = renderToStaticMarkup(
+      <ActionHost onNavigate={() => undefined} inviteChannels={{ calendar: null, slack: null }}>
+        <FeaturePage feature={inbox} onMove={() => undefined} before={<p>받은 문의 자리</p>} inputHeading='받을 팀 찾기' />
+      </ActionHost>,
+    );
+    expect(html.indexOf('받은 문의 자리')).toBeLessThan(html.indexOf('<h2 class="section-title">받을 팀 찾기</h2>'));
+    expect(html.indexOf('<h2 class="section-title">받을 팀 찾기</h2>')).toBeLessThan(html.indexOf('placeholder='));
+    // 홈 채팅을 끈 회사는 지금처럼 "무엇을 문의할까요?"예요.
+    expect(featureFor(navi, { modules: DEFAULT_OPS_SETTINGS.modules, roomsWrite: true, homeAsk: false }).question).toBe('무엇을 문의할까요?');
   });
 });

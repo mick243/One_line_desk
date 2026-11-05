@@ -74,12 +74,12 @@ describe('홈 답 그리기(ADR-27)', () => {
     expect(plain).not.toContain('낱말만 보면');
     const fixed = renderToStaticMarkup(
       <HomeAnswer
-        answer={{ ...mine, by: 'ai', read: { understood: '하려는 일 · 문의하기에서 해요', ruleSaid: '요즘 · 내 일(내 예약)' } }}
+        answer={{ ...mine, by: 'ai', read: { understood: '하려는 일 · 문의함에서 해요', ruleSaid: '요즘 · 내 일(내 예약)' } }}
         onOpen={() => undefined}
       />,
     );
     expect(fixed).toContain('AI가 알아들은 것');
-    expect(fixed).toContain('하려는 일 · 문의하기에서 해요');
+    expect(fixed).toContain('하려는 일 · 문의함에서 해요');
     expect(fixed).toContain('낱말만 보면 &quot;요즘 · 내 일(내 예약)&quot;인데, AI가 문장 전체 뜻을 보고 바로잡았어요');
     // 11/5: 기본은 접어 두고 누르면 펼쳐요.
     expect(fixed).toContain('<details class="read-line"><summary>AI가 어떻게 알아들었는지 보기</summary>');

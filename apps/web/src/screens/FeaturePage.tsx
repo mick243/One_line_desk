@@ -1,4 +1,4 @@
-// 기능 페이지(문의하기·회의실·공지). 페이지마다 자기 입력 칸이 있고, 결과는 시트 대신 페이지 안에 보여요.
+// 기능 페이지(문의함·회의실·공지). 페이지마다 자기 입력 칸이 있고, 결과는 시트 대신 페이지 안에 보여요.
 import { type Card, type CardAction, checkInput, type Kind } from '@one-line-desk/shared';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
@@ -18,6 +18,8 @@ export function FeaturePage({
   autoRun = false,
   onMove,
   input,
+  before,
+  inputHeading,
   children,
 }: {
   feature: Feature;
@@ -28,6 +30,10 @@ export function FeaturePage({
   onMove: (kind: Kind, text: string) => void;
   /** 기능이 자기 입력 칸을 쓰면(회의실 통합 입력 칸, 10/28) 공통 입력·결과 대신 이걸 그려요. 옮겨 온 문장도 넘겨요. */
   input?: (p: { initialText: string; autoRun: boolean; onMove: (kind: Kind, text: string) => void }) => ReactNode;
+  /** 입력 칸보다 먼저 보여 줄 칸(문의함: 받은 문의·내 문의·휴가 신청, 11/5) */
+  before?: ReactNode;
+  /** 입력 칸 위 제목(문의함에서 찾기가 아래로 갈 때 "받을 팀 찾기") */
+  inputHeading?: string;
   children?: ReactNode;
 }) {
   const actions = useActions();
@@ -101,6 +107,8 @@ export function FeaturePage({
   return (
     <div className='feature-page'>
       {pageHead}
+      {before}
+      {inputHeading && <h2 className='section-title'>{inputHeading}</h2>}
 
       <CheckedInput
         scope='나만 보여요'

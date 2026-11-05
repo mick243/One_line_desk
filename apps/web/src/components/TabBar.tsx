@@ -6,7 +6,7 @@ export type Tab = 'home' | 'navi' | 'rooms' | 'notices' | 'board' | 'mine';
 // 기능마다 페이지가 따로 있어요. 꺼진 모듈의 탭은 숨겨요(ADR-12, R4).
 const TABS: { id: Tab; label: string; icon: IconName; module?: ModuleKind }[] = [
   { id: 'home', label: '홈', icon: 'home' },
-  { id: 'navi', label: '문의하기', icon: 'navi', module: 'navi' },
+  { id: 'navi', label: '문의함', icon: 'navi', module: 'navi' },
   { id: 'rooms', label: '회의실', icon: 'rooms', module: 'rooms' },
   { id: 'notices', label: '공지', icon: 'notices', module: 'notices' },
   { id: 'board', label: '같이 채워요', icon: 'pantry', module: 'pantry' },
