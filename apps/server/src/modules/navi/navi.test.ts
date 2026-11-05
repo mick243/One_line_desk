@@ -168,7 +168,10 @@ describe('[F1] 담당 카드', () => {
     for (const c of noticeCards) {
       expect(c.evidence.href, c.id).toMatch(/^https:\/\/groupware\.example\.com\/board\/notice\/\d+$/);
       expect(c.actions.primary).toMatchObject({ type: 'link', text: '원문 열기', href: c.evidence.href });
-      expect(c.fields.map((f) => f.name)).toEqual(['제목', '게시일']);
+      // 11/5: 질문에 맞는 원문 한 줄을 더해요. 공지 본문 문장 그대로여야 해요(지어낸 문장 0건).
+      expect(c.fields.map((f) => f.name)).toEqual(['제목', '게시일', '원문 한 줄']);
+      // 문장 그대로인지는 공지 시험(notices.test·quote.test)이 봐요. 여기서는 문장 하나인지만 봐요(모듈 사이 import 없이).
+      expect(c.fields.find((f) => f.name === '원문 한 줄')!.value).toMatch(/^“[^“”]+(요|다|니다)\.?”$/);
       expect(c.evidence.aiSummarized).toBe(false);
     }
     const all = JSON.stringify(cards);

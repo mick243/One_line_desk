@@ -29,7 +29,7 @@ async function count(t: TestApp, table: string): Promise<number> {
 }
 
 describe('[F1-7] 공지 찾기', () => {
-  it('[F1-7] 공지 질문은 제목·게시일·원문 링크만 든 공지 카드를 줘요(본문·요약·AI 정리 없음)', async () => {
+  it('[F1-7] 공지 질문은 제목·게시일·원문 링크와 질문에 맞는 원문 한 줄을 그대로 줘요(11/5, 요약·다른 본문 문장·규칙이면 AI 정리 없음)', async () => {
     const t = await setup();
     const me = await t.loginAs(MOCK.staff);
     const res = await me.call('POST', '/api/ask', { text: '건강검진 공지 언제였지' });
@@ -45,15 +45,19 @@ describe('[F1-7] 공지 찾기', () => {
         fields: [
           { name: '제목', value: '하반기 건강검진 일정 안내' },
           { name: '게시일', value: '2026-10-14' },
+          // 때를 물어서 날짜가 든 문장을 골랐어요. 본문 문장을 고치지 않고 그대로예요.
+          { name: '원문 한 줄', value: '“하반기 정기 건강검진은 11월 3일부터 11월 28일까지예요.”' },
         ],
         evidence: { text: '공지 원문 · 전사 공지', href: 'https://groupware.example.com/board/notice/1002', aiSummarized: false },
         actions: { primary: { type: 'link', text: '원문 열기', href: 'https://groupware.example.com/board/notice/1002' }, secondary: [] },
         wrong: { predictedKind: 'notices', candidates: [] },
-        tail: '질문 원문은 저장하지 않아요',
+        tail: '공지 문장을 고치지 않고 그대로 옮겼어요 · 질문 원문은 저장하지 않아요',
       },
     ]);
+    // 고른 한 줄 말고는 본문이 나가지 않아요(카나리 문자열은 문장이 아니라 고를 수도 없어요).
     expect(JSON.stringify(body)).not.toContain(NOTICE_BODY_CANARY);
-    for (const piece of BODY_PIECES) expect(JSON.stringify(body)).not.toContain(piece);
+    const shown = BODY_PIECES.filter((piece) => JSON.stringify(body).includes(piece));
+    expect(shown).toEqual(['하반기 정기 건강검진은 11월 3일부터 11월 28일까지예요']);
     const { rows } = await t.db.query<{ result: string }>('select result from audit_log order by id desc limit 1');
     expect(rows[0]!.result).toBe('card');
   });

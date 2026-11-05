@@ -44,7 +44,7 @@ async function setup(o: { contract?: boolean; provider?: LlmProvider; lines?: st
   // 무보관 계약 스위치(NO_RETENTION_CONTRACT_CONFIRMED)를 시험마다 정해요. 홈은 부를 때마다 ctx.gateway를 읽어요.
   t.ctx.gateway = new AiGateway(o.provider ?? new FakeProvider(), o.contract ?? false, t.db);
   t.ctx.ops.patchValues({ rateLimitPerMinute: 1000 });
-  for (const kind of ['rooms', 'navi', 'pantry'] as const) await t.modules.find((m) => m.kind === kind)!.seed!();
+  for (const kind of ['rooms', 'navi', 'pantry', 'notices'] as const) await t.modules.find((m) => m.kind === kind)!.seed!();
   return t;
 }
 
@@ -290,21 +290,27 @@ describe('홈 AI 채팅: 나에게 해당하는 일(ADR-27)', () => {
       evidence: { aiSummarized: false },
       actions: { primary: { type: 'reask', text: '회의실로 옮기기', kind: 'rooms' }, secondary: [] },
     });
-    for (const [text, kind] of [
-      ['다음 주 화요일 휴가 신청할래', 'navi'],
-      ['제로콜라 채워 주세요', 'pantry'],
-      ['연말정산 공지', 'notices'],
-    ] as const) {
-      const res = await home(doyun, text);
-      expect(res.cards.map((c) => c.actions.primary)).toEqual([expect.objectContaining({ type: 'reask', kind })]);
-    }
+    // 같이 채워요 올리기는 그 페이지로 옮기기만 해요.
+    const pantry = await home(doyun, '제로콜라 채워 주세요');
+    expect(pantry.cards.map((c) => c.actions.primary)).toEqual([expect.objectContaining({ type: 'reask', kind: 'pantry' })]);
+    // 11/5: 읽기 답(담당 찾기·공지·빈 회의실)은 그 기능의 답을 홈에서 바로 보여 줘요.
+    const leave = await home(doyun, '다음 주 화요일 휴가 신청할래');
+    expect(leave.cards.length).toBeGreaterThan(0);
+    expect(leave.cards.every((c) => c.kind === 'navi')).toBe(true);
+    const notice = await home(doyun, '연말정산 공지');
+    expect(notice.cards[0]).toMatchObject({ kind: 'notices', actions: { primary: { type: 'link', text: '원문 열기' } } });
+    expect(notice.cards[0]!.fields.map((f) => f.name)).toContain('원문 한 줄');
+    // 빈 회의실을 물으면 후보를 보여 주되, 새 예약은 회의실 탭에서만 해요(예약 버튼 → 회의실 탭으로 옮기기).
+    const free = await home(doyun, '내일 3시 6명 빈 회의실 있어?');
+    expect(free.cards.length).toBeGreaterThan(0);
+    expect(free.cards.map((c) => c.actions.primary)).toContainEqual({ type: 'reask', text: '회의실 탭에서 예약하기', kind: 'rooms' });
     const unknown = await home(doyun, '점심 메뉴 추천');
-    expect(unknown).toMatchObject({ intent: 'unknown', headline: '문의하기에서 물어보세요' });
-    expect(unknown.cards[0]!.actions.primary).toEqual({ type: 'reask', text: '문의하기로 옮기기', kind: 'navi' });
+    expect(unknown.intent).toBe('unknown');
+    expect(unknown.cards[0]!.kind).toBe('navi');
     for (const text of ['이번 주 내 일정 뭐 있어?', '내 휴가 어떻게 됐어?', '오늘 나한테 온 거 있어?']) await home(doyun, text);
     expect(await rowCounts(t)).toEqual(before);
     // 쓰기 행동(확인 시트·고정 버튼·게시)은 어떤 응답에도 없어요.
-    expect(JSON.stringify(move)).not.toMatch(/proposalToken|"type":"(fixed|propose|post)"/);
+    for (const res of [move, pantry, leave, notice, free, unknown]) expect(JSON.stringify(res)).not.toMatch(/proposalToken|"type":"(fixed|propose|post)"/);
   });
 
   it('[ADR-27·ADR-12 시험] 모듈이 끔이면 그 종류는 안 모으고, 링크만이면 옮기기 대신 그룹웨어 링크 카드예요', async () => {
@@ -445,7 +451,8 @@ describe('홈 질문 해석: 게이트웨이(ADR-10·27)', () => {
 
     const moving = new RecordingProvider('anthropic', { intent: 'move', period: 'recent', kinds: [], moveTo: 'rooms' });
     const t2 = await setup({ contract: true, provider: moving });
-    const card = (await home(await t2.loginAs(MOCK.dev), '다음 주 팀 회의 장소 좀')).cards[0]!;
+    // 규칙으로는 문의하기일 문장이어도 모델 해석(회의실)을 따라요. 시키는 문장이라 새 예약은 회의실 탭으로 옮겨요.
+    const card = (await home(await t2.loginAs(MOCK.dev), '다음 주 팀 회의 장소 좀 잡아 줘')).cards[0]!;
     expect(card).toMatchObject({ kind: 'rooms', evidence: { aiSummarized: true }, actions: { primary: { type: 'reask', kind: 'rooms' } } });
   });
 

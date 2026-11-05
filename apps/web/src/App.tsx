@@ -170,6 +170,7 @@ export function App() {
     InquiryInbox,
     MyInquiries,
     InvitedMeetings,
+    JointRequests,
   } = webModules;
   const isChartOwner = me?.roles.includes('chart-owner') ?? false;
 
@@ -195,7 +196,7 @@ export function App() {
             {entry?.kind === 'link' && (
               <LinkEntry me={me} token={entry.token} InquirySheet={webModules.InquirySheet} LeaveRequestSheet={webModules.LeaveRequestSheet} />
             )}
-            {!entry && current === 'home' && <Home me={me} switches={config} onOpen={go} />}
+            {!entry && current === 'home' && <Home key={pageKey} me={me} switches={config} onOpen={go} initialText={initial} autoRun={autoRun} />}
             {!entry && feature && current !== 'board' && (
               <FeaturePage
                 key={pageKey}
@@ -223,6 +224,8 @@ export function App() {
               >
                 {current === 'rooms' && (
                   <>
+                    {/* 여러 팀 회의 참석자 고르기 요청(ADR-28): 11/5 마이 페이지에서 옮겼어요. 알림도 여기로 와요. */}
+                    {config.roomsWrite && <JointRequests />}
                     <InvitedMeetings />
                     <RoomDirectory me={me} show={roomShow} />
                     <MyReservations />
@@ -261,7 +264,7 @@ export function App() {
             {!entry && current === 'chart' && <ChartScreen me={me} />}
             {!entry && current === 'it-help' && <ItHelpScreen onBack={() => go('navi')} />}
             {!entry && current === 'onboarding' && <OnboardingScreen onBack={() => go('navi')} />}
-            {!entry && current === 'mine' && <Mine me={me} switches={config} onLoggedOut={() => setMe(null)} onOpen={(to) => go(to)} />}
+            {!entry && current === 'mine' && <Mine me={me} switches={config} onLoggedOut={() => setMe(null)} onOpen={(to, text, auto) => go(to, text, auto)} />}
             {/* 관리자 AI 정답률(11/5 시험): 운영자만 그려요. 서버도 운영자가 아니면 403이에요. */}
             {!entry &&
               current === 'ai-eval' &&

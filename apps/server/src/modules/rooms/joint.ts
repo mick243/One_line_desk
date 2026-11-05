@@ -143,7 +143,7 @@ export function createJointService(ctx: AppContext, invites: InviteService) {
           await ctx.notify.toUser(q, p, {
             module: 'rooms',
             title: `${user.displayName}님이 ${team.department} 회의 참석자를 골라 달라고 했어요 · ${when} · ${meeting.roomName}`,
-            page: 'mine',
+            page: 'rooms',
           });
       }
       await recount(q, reservationId);
@@ -165,7 +165,7 @@ export function createJointService(ctx: AppContext, invites: InviteService) {
       return 1 + Number(invited.rows[0]!.n);
     },
 
-    /** 내가 고를 요청(마이 페이지). 내 부서 요청 중 아직 열린 것, 내가 팀장·담당자일 때만이에요. */
+    /** 내가 고를 요청(회의실 페이지·홈 "나에게 온 요청", 11/5). 내 부서 요청 중 아직 열린 것, 내가 팀장·담당자일 때만이에요. */
     async mine(user: DeskUser): Promise<JointRequestsResponse> {
       if (!writeOn(ctx.ops.get()) || !user.department) return { items: [] };
       const now = ctx.now();

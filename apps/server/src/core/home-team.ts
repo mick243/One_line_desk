@@ -2,6 +2,9 @@ import {
   type AbsencePart,
   addDays,
   AWAY_KIND_LABEL,
+  AWAY_MAX_DAYS,
+  type AwayDraft,
+  type AwayKind,
   HOME_PERIOD_LABEL,
   type HomePeriod,
   KST_OFFSET,
@@ -14,6 +17,7 @@ import type { AppContext } from '../context';
 import type { AccessEntry } from './access-record';
 import { pseudonymize } from './pseudonym';
 import type { TeamAway, TeamMeeting } from './services';
+import { parseSlots } from './slots';
 import type { DeskUser } from './user';
 
 // 홈 채팅 "같은 팀 일정"(11/3 사용자 결정). CLAUDE.md "연차는 본인 화면에만"·"사람 이름은 내보내지 않아요"·ADR-06(남의 예약자 비노출)의 좁은 같은 팀 예외예요.
@@ -39,12 +43,52 @@ const OTHER_PERSON =
 const OTHER_ABOUT =
   /일정|스케줄|캘린더|회의|미팅|휴가|연차|반차|병가|부재|출근|퇴근|어디|뭐\s?해|바빠|바쁘|자리|외근|출장|재택|있어|있나|있니|계셔|계세요|왔어|나왔/;
 const SELF = /(^|\s)(내|제|나의|저의|나|저)\s/;
-/** 내 자리비움을 알리는 말("나 오후에 외근이야"). 홈은 정하지 않고 마이 페이지 양식으로 옮겨요. */
+/** 내 자리비움을 알리는 말("나 오후에 외근이야"). 홈은 정하지 않고, 답 아래에 미리 채운 양식을 펼쳐요(11/5). */
 const AWAY_WORDS = /외근|출장|재택|자리\s?비/;
-const SELF_STATEMENT = /(이야|이에요|예요|이라|라서|할게|갈게|가요|해요|합니다|입니다|예정|나가|나갈)/;
+const SELF_STATEMENT = /(이야|이에요|예요|이라|라서|할게|갈게|가요|해요|합니다|입니다|예정|나가|나갈|알릴|알려)/;
 
 /** 내 자리비움을 알리는 문장인지(규칙) */
 export const tellsOwnAway = (text: string) => AWAY_WORDS.test(text) && SELF_STATEMENT.test(text) && !TEAM_WORDS.test(text) && !OTHER_PERSON.test(text);
+
+const AWAY_KIND_WORDS: [AwayKind, RegExp][] = [
+  ['trip', /출장/],
+  ['remote', /재택/],
+  ['outside', /외근/],
+  ['away', /자리\s?비/],
+];
+const pad = (n: number) => String(n).padStart(2, '0');
+const plusMinutes = (hhmm: string, m: number) => {
+  const t = Math.min(Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5)) + m, 23 * 60 + 45);
+  return `${pad(Math.floor(t / 60))}:${pad(t % 60)}`;
+};
+
+/**
+ * 자리비움 알리기 미리 채움(11/5). "내일 오후 외근이에요" → 외근 · 내일 · 13:00~18:00.
+ * 종류·날·시각만 규칙으로 뽑아요(글은 남기지 않고 응답에만 실어요). 말하지 않은 칸은 비워서 양식 기본값을 써요.
+ * 날이 오늘부터 AWAY_MAX_DAYS 밖이면 날을 비워요(양식이 고를 수 있는 날만 채워요).
+ */
+export function awayDraft(text: string, now: number): AwayDraft {
+  const draft: AwayDraft = {};
+  const kind = AWAY_KIND_WORDS.find(([, re]) => re.test(text));
+  if (kind) draft.kind = kind[0];
+  const today = kstDate(now);
+  const slots = parseSlots(text, now);
+  if (slots.date && slots.date >= today && slots.date <= addDays(today, AWAY_MAX_DAYS - 1)) draft.date = slots.date;
+  if (slots.start) {
+    draft.start = slots.start;
+    draft.end = slots.minutes ? plusMinutes(slots.start, slots.minutes) : slots.start < '18:00' ? '18:00' : plusMinutes(slots.start, 60);
+  } else if (/종일|하루|온종일/.test(text)) {
+    draft.start = '09:00';
+    draft.end = '18:00';
+  } else if (/오전/.test(text)) {
+    draft.start = '09:00';
+    draft.end = '12:00';
+  } else if (/오후/.test(text)) {
+    draft.start = '13:00';
+    draft.end = '18:00';
+  }
+  return draft;
+}
 
 /**
  * 같은 팀 일정을 묻는지(규칙). 팀 + 부재·일정 말, 또는 남(호칭·이름) + 일정·자리 말이에요. 쓰기 동사·공지는 부르는 쪽이 먼저 걸러요.

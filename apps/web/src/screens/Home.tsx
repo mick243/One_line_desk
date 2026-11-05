@@ -18,10 +18,15 @@ export function Home({
   me,
   switches,
   onOpen,
+  initialText,
+  autoRun,
 }: {
   me: Me;
   switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; autoActions: boolean; homeAsk?: boolean; teamSchedule?: boolean };
   onOpen: (page: AppDestination, text?: string, auto?: boolean) => void;
+  /** 마이 페이지 안내 버튼이 넘긴 문장(11/5). autoRun이면 홈 채팅이 바로 찾아요. */
+  initialText?: string;
+  autoRun?: boolean;
 }) {
   const { MyReservations, MyRequests, MyInquiries } = webModules;
   const { modules } = switches;
@@ -41,7 +46,7 @@ export function Home({
         </h1>
       </header>
 
-      {homeAsk && <HomeAsk onOpen={onOpen} teamSchedule={switches.teamSchedule === true} />}
+      {homeAsk && <HomeAsk onOpen={onOpen} teamSchedule={switches.teamSchedule === true} modules={modules} initialText={initialText} autoRun={autoRun} />}
 
       {!homeAsk && (
         <section className='card' aria-label='할 수 있는 일'>

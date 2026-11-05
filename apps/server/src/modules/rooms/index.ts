@@ -25,7 +25,7 @@ export function createRoomsModule(ctx: AppContext): DeskModule {
     myReservations: (user) => desk.myReservations(user),
     equipment: equipment.mcpRead(),
     // 홈 "나에게 해당하는 일"(ADR-27): 내 대여·초대받은 회의 읽기만
-    home: { myLoans: (user) => equipment.myLoans(user), invited: (user) => desk.invites.invited(user) },
+    home: { myLoans: (user) => equipment.myLoans(user), invited: (user) => desk.invites.invited(user), jointRequests: (user) => desk.joint.mine(user) },
     // 홈 "같은 팀 일정"(11/3): 같은 부서 사람의 회의 시간·회의실 이름만. 제목·참석자·부른 사람은 없어요(ADR-06 같은 팀 예외).
     team: { meetingsOf: (pseudonymIds, from, to) => repo.teamMeetings(ctx.db, pseudonymIds, from, to) },
   };

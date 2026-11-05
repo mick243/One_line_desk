@@ -562,13 +562,20 @@ describe('[팀 일정] 자리비움(11/3)', () => {
     expect(await count()).toBe(0);
   });
 
-  it('[팀 일정 시험] 홈에서 "나 오후에 외근이야"는 정하지 않고 마이 페이지 양식으로 옮기는 카드만 줘요', async () => {
+  it('[팀 일정 시험] 홈에서 "나 오후에 외근이야"는 정하지 않고, 답 아래 양식에 종류·날·시간만 미리 채워 줘요(11/5)', async () => {
     const t = await setup();
     const doyun = await t.loginAs(MOCK.dev);
     const before = await rowCounts(t);
     const res = await home(doyun, '나 오후에 외근이야');
-    expect(res).toMatchObject({ intent: 'move', headline: '자리비움은 마이 페이지에서 알려요', team: null });
-    expect(res.cards[0]).toMatchObject({ id: 'home-move-away', actions: { primary: { type: 'navigate', to: 'mine' }, secondary: [] } });
+    expect(res).toMatchObject({ intent: 'move', headline: '자리비움은 여기서 알려요', team: null });
+    // 카드에는 버튼이 없어요. 정하기는 양식의 [알리기](고정 버튼)예요.
+    expect(res.cards[0]).toMatchObject({ id: 'home-move-away', actions: { secondary: [] } });
+    expect(res.cards[0]!.actions.primary).toBeUndefined();
+    expect(res.away).toEqual({ kind: 'outside', start: '13:00', end: '18:00' });
+    // 날·시각 범위·종류를 뽑고, 양식이 고를 수 없는 날(7일 밖)은 비워요. 아무것도 쓰지 않아요.
+    expect((await home(doyun, '내일 2시부터 4시까지 재택이에요')).away).toEqual({ kind: 'remote', date: '2026-10-27', start: '14:00', end: '16:00' });
+    expect((await home(doyun, '자리비움 알릴게요')).away).toEqual({ kind: 'away' });
+    expect((await home(doyun, '12월 20일에 출장 가요')).away).toEqual({ kind: 'trip' });
     expect(await rowCounts(t)).toEqual(before);
   });
 });

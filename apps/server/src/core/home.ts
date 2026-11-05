@@ -1,7 +1,9 @@
 import {
   addDays,
+  type AskResponse,
   awayOn,
   type Card,
+  type CardAction,
   dayLabel,
   GRADE,
   HOME_INTENTS,
@@ -26,7 +28,9 @@ import {
   type LeaveDay,
   leaveDayWord,
   type ModuleKind,
+  type ModuleSwitch,
   type ReadNote,
+  ROOM_CONDITIONS_VARIANT,
   sameHomeRead,
   TEAM_SCHEDULE_TEXT,
 } from '@one-line-desk/shared';
@@ -34,7 +38,7 @@ import { z } from 'zod';
 import type { AppContext } from '../context';
 import type { AiGateway } from './ai/gateway';
 import type { AccessEntry } from './access-record';
-import { asksTeamSchedule, gatherTeamSchedule, mentionsOtherTeam, scheduleDates, scheduleHeadline, tellsOwnAway } from './home-team';
+import { asksTeamSchedule, awayDraft, gatherTeamSchedule, mentionsOtherTeam, scheduleDates, scheduleHeadline, tellsOwnAway } from './home-team';
 import { linkCard } from './router';
 import { weekdayOf } from './slots';
 import type { DeskUser } from './user';
@@ -80,6 +84,8 @@ const WRITE_VERB =
 const ROOM_WORDS = /회의실|미팅룸|\d+\s*명|방\s?(잡|예약)|예약|대여|빌려|빌리|장비|빔|프로젝터|노트북|마이크|웹캠|스피커|젠더|반납|초대/;
 const PANTRY_WORDS = /간식|음료|커피|콜라|사이다|과자|라면|비품|탕비실|티백|우유|넣어|채워|사\s?(줘|주세)|주문|같이\s?채워/;
 const NAVI_HOW = /어디서|어디에|누구(한테|에게)|담당|어떻게\s?(해|하|신청)|방법/;
+/** 휴가를 쓰려는 말(11/5): "연차 쓰고 싶어요"는 내 휴가 결과가 아니라 휴가 신청이라 문의하기(인사팀 카드의 [휴가 신청하기])로 가요. */
+const LEAVE_USE = /(연차|휴가|반차|병가|공가|월차)\s?(을|를|좀)?\s?(쓰고\s?싶|쓸래|쓸게|쓰려|쓸\s?거|낼래|낼게|내고\s?싶|내려)/;
 const FREE_ROOM = /빈\s?(회의실|방)|회의실\s?(찾|비어|비었|남)/;
 const MINE =
   /(^|\s)(내|제|나의|저의)(?!일)\s?|나(한테|에게)|저(한테|에게)|일정|스케줄|캘린더|뭐\s?있|무슨\s?일|어떻게\s?(됐|되었|돼\s?가|되고)|왔어|왔나|온\s?(거|게|것)|받은|결과|상태|됐어|남았|남은/;
@@ -131,6 +137,7 @@ export function interpretByRules(text: string, names: string[] = []): HomeInterp
   const move = (moveTo: HomeMoveTo): HomeInterpretation => ({ intent: 'move', period, kinds: [], moveTo });
   if (NOTICE_WORDS.test(text)) return move('notices');
   if (WRITE_VERB.test(text)) return move(moveTargetOf(text));
+  if (LEAVE_USE.test(text)) return move('navi');
   if (tellsOwnAway(text)) return move('away');
   if (asksTeamSchedule(text, names)) return { intent: 'team-schedule', period, kinds: [], moveTo: null };
   if (NAVI_HOW.test(text)) return move('navi');
@@ -233,8 +240,14 @@ interface Gathered {
 
 const overlaps = (start: string, end: string, w: Window) => Date.parse(start) < w.to && Date.parse(end) > w.from;
 
+/** 그 기능의 묻기 답(앞문 라우터에 종류를 정해 물어요). 홈이 담당 찾기·공지·빈 회의실 답을 바로 보여 줄 때 써요(11/5). */
+export type HomeModuleAsk = (user: DeskUser, text: string, kind: InlineKind) => Promise<AskResponse>;
+
 export class HomeDesk {
-  constructor(private readonly ctx: AppContext) {}
+  constructor(
+    private readonly ctx: AppContext,
+    private readonly askModule?: HomeModuleAsk,
+  ) {}
 
   /**
    * 홈 칸 질문. 글은 공통 입력 검사를 지난 것이에요. 이 경로는 아무것도 쓰지 않아요(팀 일정을 보여 주면 법정 접속기록 한 줄만 남아요).
@@ -264,12 +277,37 @@ export class HomeDesk {
       return { intent, period: read.period, kinds: read.kinds, by, headline, items, links, cards: [], team: null };
     }
     if (intent === 'move' && moveTo) {
+      // 읽기 답은 홈에서 바로 보여 줘요(11/5). 새 예약 문장("잡아 줘")·같이 채워요 올리기·자리비움은 아래 옮기기·양식 그대로예요.
+      const inline = inlineKindOf(moveTo, text, settings.modules);
+      const cards = inline ? await this.inlineCards(user, text, inline) : null;
+      if (cards) {
+        await this.audit(user, 'card');
+        return { intent, period: read.period, kinds: [], by, headline: MOVE[moveTo].headline, items: [], links: [], cards, team: null };
+      }
       const module = moduleOf(moveTo);
       const card = moveTo === 'away' ? awayCard(by) : settings.modules[module] === 'link' ? linkCard(module, settings.links[module]) : moveCard(moveTo, by);
       await this.audit(user, 'move');
-      return { intent, period: read.period, kinds: [], by, headline: MOVE[moveTo].headline, items: [], links: [], cards: [card], team: null };
+      const res: HomeAskResponse = {
+        intent,
+        period: read.period,
+        kinds: [],
+        by,
+        headline: MOVE[moveTo].headline,
+        items: [],
+        links: [],
+        cards: [card],
+        team: null,
+      };
+      // 자리비움(11/5): 답 아래에 양식을 펼치고, 문장에서 뽑은 종류·날·시각으로 미리 채워요. 정하는 건 사람이 [알리기]를 눌러서예요.
+      return moveTo === 'away' ? { ...res, away: awayDraft(text, this.ctx.now()) } : res;
     }
     if (intent === 'team-schedule') return this.teamSchedule(user, text, read.period, by, from);
+    // 모르는 말은 앞문처럼 담당 안내(읽기 전용)를 바로 보여 줘요(11/5). "신입 첫 주"·"연차 쓰고 싶어요"도 그 카드의 버튼으로 이어져요.
+    const asked = settings.modules.navi === 'on' ? await this.inlineCards(user, text, 'navi') : null;
+    if (asked) {
+      await this.audit(user, 'card');
+      return { intent: 'unknown', period: read.period, kinds: [], by, headline: asked[0]!.headline, items: [], links: [], cards: asked, team: null };
+    }
     const card = unknownCard(settings.modules.navi !== 'off', by);
     await this.audit(user, 'not-found');
     return { intent: 'unknown', period: read.period, kinds: [], by, headline: card.headline, items: [], links: [], cards: [card], team: null };
@@ -352,6 +390,15 @@ export class HomeDesk {
   }
 
   /** 각 모듈 서비스에서 그 기간·종류의 내 일만 모아요. 꺼진 모듈의 종류는 건너뛰어요. */
+  /** 그 기능의 묻기 답을 홈 답 카드로 가져와요. 회의실 후보는 쓰기 버튼을 회의실 탭으로 옮기는 버튼으로 바꿔요. 답이 없으면 null이에요. */
+  private async inlineCards(user: DeskUser, text: string, kind: InlineKind): Promise<Card[] | null> {
+    if (!this.askModule) return null;
+    const out = await this.askModule(user, text, kind);
+    if (out.cards.length === 0) return null;
+    // 회의실은 후보만 보여요. 조건 칩 카드(고쳐 다시 찾기)는 회의실 탭의 일이라 빼요.
+    return kind === 'rooms' ? out.cards.filter((c) => c.variant !== ROOM_CONDITIONS_VARIANT).map(readOnlyRoomCard) : out.cards;
+  }
+
   private async gather(user: DeskUser, period: HomePeriod, kinds: HomeKind[], o: { pantryAlways: boolean }): Promise<HomeItem[]> {
     const settings = this.ctx.ops.get();
     const now = this.ctx.now();
@@ -399,6 +446,19 @@ export class HomeDesk {
             open: OPEN_ROOMS,
           },
           order: [Date.parse(m.start), 2],
+        });
+      }
+      // 여러 팀 회의 참석자를 골라 달라는 요청(ADR-28, 팀장·회의 담당자에게만). 11/5: 마이 페이지 칸을 홈으로 옮겨 "나에게 온 요청"에 넣어요.
+      for (const r of rooms.home.jointRequests ? (await rooms.home.jointRequests(user)).items : []) {
+        out.push({
+          item: {
+            kind: 'invites',
+            title: `회의 참석자 골라 주세요 · ${r.room}`,
+            when: r.when,
+            detail: `${r.requester}님이 ${r.department}에서 갈 사람을 골라 달라고 했어요`,
+            open: OPEN_ROOMS,
+          },
+          order: later(0),
         });
       }
     }
@@ -488,15 +548,40 @@ function leaveDaysText(days: LeaveDay[]): string {
 
 const moduleOf = (to: HomeMoveTo): ModuleKind => (to === 'board' ? 'pantry' : to === 'away' ? 'navi' : to);
 
+/**
+ * 홈 답 안에 바로 보여 줄 읽기 답인지(11/5). 담당 찾기·공지는 켜져 있으면 늘, 회의실은 묻는 문장("빈 회의실 있어?")일 때만이에요.
+ * 시키는 문장("잡아 줘")은 새 예약이라 회의실 탭으로 옮겨요(사용자 결정). 링크만인 기능은 옮기기 쪽 링크 카드예요.
+ */
+function inlineKindOf(to: HomeMoveTo, text: string, modules: Record<ModuleKind, ModuleSwitch>): InlineKind | null {
+  if (to === 'navi' || to === 'notices') return modules[to] === 'on' ? to : null;
+  if (to === 'rooms') return modules.rooms === 'on' && !WRITE_VERB.test(text) ? 'rooms' : null;
+  return null;
+}
+
 const MOVE: Record<HomeMoveTo, { headline: string; button: string }> = {
   rooms: { headline: '회의실에서 찾아볼게요', button: '회의실로 옮기기' },
   navi: { headline: '문의하기에서 찾아볼게요', button: '문의하기로 옮기기' },
   notices: { headline: '공지에서 찾아볼게요', button: '공지로 옮기기' },
   board: { headline: '같이 채워요에서 올려요', button: '같이 채워요로 옮기기' },
-  away: { headline: TEAM_SCHEDULE_TEXT.awayMove, button: '마이 페이지로 가기' },
+  away: { headline: TEAM_SCHEDULE_TEXT.awayMove, button: '' },
 };
 
-const MOVE_TAIL = '여기서는 예약·신청을 하지 않아요. 같은 문장을 그 페이지 칸에 채워 줘요. 저장되는 것은 없어요';
+// 11/5(사용자 결정, 말 걷어 내기): 칸 아래 문구가 이미 "새 예약·신청은 그 페이지에서 해요"라서 카드마다 같은 경고를 되풀이하지 않아요.
+const MOVE_TAIL = '누르면 같은 문장을 그 페이지 칸에 채워 줘요';
+const EVIDENCE = (by: 'ai' | 'rule') => (by === 'ai' ? 'AI가 문장을 읽고 골랐어요' : '쓴 낱말로 골랐어요');
+
+/** 홈 답 안에 바로 보여 줄 읽기 답(11/5 사용자 결정): 담당 찾기·공지·빈 회의실 찾기는 그 모듈 답을 그대로 가져와요. */
+type InlineKind = 'navi' | 'notices' | 'rooms';
+/** 홈에서는 새 예약을 하지 않아요(11/5 사용자 결정: 새 예약은 회의실 탭). 회의실 후보의 쓰기 버튼은 회의실 탭으로 옮기는 버튼으로 바꿔요. */
+const BOOK_IN_ROOMS: CardAction = { type: 'reask', text: '회의실 탭에서 예약하기', kind: 'rooms' };
+const WRITE_ACTIONS = new Set<CardAction['type']>(['propose', 'post', 'fixed', 'invite']);
+function readOnlyRoomCard(card: Card): Card {
+  const primary = card.actions.primary && WRITE_ACTIONS.has(card.actions.primary.type) ? BOOK_IN_ROOMS : card.actions.primary;
+  return {
+    ...card,
+    actions: { ...card.actions, ...(primary ? { primary } : {}), secondary: card.actions.secondary.filter((a) => !WRITE_ACTIONS.has(a.type)) },
+  };
+}
 
 /** 다른 일: 그 기능 페이지로 같은 문장을 옮기는 카드. 실행하지 않아요(D8 조건). 문장은 앱 메모리로만 넘겨요. */
 function moveCard(to: HomeMoveTo, by: 'ai' | 'rule'): Card {
@@ -507,13 +592,16 @@ function moveCard(to: HomeMoveTo, by: 'ai' | 'rule'): Card {
     label: '안내',
     headline: MOVE[to].headline,
     fields: [],
-    evidence: { text: by === 'ai' ? '쓴 문장을 AI가 해석해 고른 기능' : '쓴 문장의 낱말로 고른 기능', aiSummarized: by === 'ai' },
+    evidence: { text: EVIDENCE(by), aiSummarized: by === 'ai' },
     actions: { primary: { type: 'reask', text: MOVE[to].button, kind }, secondary: [] },
     tail: MOVE_TAIL,
   };
 }
 
-/** 내 자리비움 알리기("나 오후에 외근이야"): 홈은 정하지 않고 마이 페이지 "자리비움 알리기"로 가는 버튼만 줘요(D8 조건). */
+/**
+ * 내 자리비움 알리기("나 오후에 외근이야"). 홈 칸은 정하지 않아요. 11/5 사용자 결정으로 마이 페이지 양식을 홈 답 아래로 옮겨서,
+ * 카드에는 버튼이 없고 웹이 미리 채운 양식을 그 아래에 펼쳐요. 정하기는 양식의 [알리기](고정 버튼)예요.
+ */
 function awayCard(by: 'ai' | 'rule'): Card {
   return {
     id: 'home-move-away',
@@ -521,9 +609,9 @@ function awayCard(by: 'ai' | 'rule'): Card {
     label: '안내',
     headline: TEAM_SCHEDULE_TEXT.awayMove,
     fields: [],
-    evidence: { text: by === 'ai' ? '쓴 문장을 AI가 해석해 고른 기능' : '쓴 문장의 낱말로 고른 기능', aiSummarized: by === 'ai' },
-    actions: { primary: { type: 'navigate', text: '마이 페이지로 가기', to: 'mine' }, secondary: [] },
-    tail: '여기서는 자리비움을 정하지 않아요. 마이 페이지 "자리비움 알리기"에서 종류와 시간을 골라요',
+    evidence: { text: EVIDENCE(by), aiSummarized: by === 'ai' },
+    actions: { secondary: [] },
+    tail: '아래 양식에서 종류·날·시간을 확인하고 [알리기]를 눌러야 정해져요. 같은 팀 사람에게만 보이고, 사유는 적지 않아요',
   };
 }
 
@@ -535,7 +623,7 @@ function unknownCard(naviOn: boolean, by: 'ai' | 'rule'): Card {
     label: '안내',
     headline: naviOn ? '문의하기에서 물어보세요' : '홈에서는 내 일정·요청만 찾아요',
     fields: [{ name: '홈에서 찾는 것', value: Object.values(HOME_KIND_LABEL).join(' · ') }],
-    evidence: { text: by === 'ai' ? '쓴 문장을 AI가 해석했어요' : '쓴 문장의 낱말로 찾았어요', aiSummarized: by === 'ai' },
+    evidence: { text: by === 'ai' ? 'AI가 문장을 읽었어요' : '쓴 낱말로 찾았어요', aiSummarized: by === 'ai' },
     actions: naviOn ? { primary: { type: 'reask', text: '문의하기로 옮기기', kind: 'navi' }, secondary: [] } : { secondary: [] },
     tail: MOVE_TAIL,
   };

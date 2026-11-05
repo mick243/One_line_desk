@@ -1,11 +1,14 @@
 // S6 마이 페이지
-import { type ModuleKind, type ModuleSwitch, RECORD_KEEP_DAYS, ROLE_LABEL } from '@one-line-desk/shared';
+import { MINE_MOVED_ASKS, mineMovedNote, type ModuleKind, type ModuleSwitch, RECORD_KEEP_DAYS, ROLE_LABEL } from '@one-line-desk/shared';
 import { useState } from 'react';
 import { api, type Me } from '../api';
 import { ConfirmSheet } from '../components/ActionHost';
 import { webModules } from '../modules/registry';
 
-// 내 예약·요청, 내 역할 진입점, 연결된 AI 앱, 저장하는 것 안내, 모든 기기 로그아웃이 있어요.
+// 내 역할 진입점, 연결된 AI 앱, 저장하는 것 안내, 모든 기기 로그아웃이 있어요.
+// 11/5 사용자 결정(ADR-27 보강): 홈 채팅이 켜져 있으면 내 예약·내 요청·나에게 온 요청·자리비움 알리기 칸을 빼고 홈 채팅에서 해요.
+// 그 자리에 안내 문구와, 홈 채팅에 정해진 문장을 넣어 바로 찾는 버튼을 둬요. 홈 채팅을 끈 회사는 칸을 그대로 둬요(갈 곳이 없어지지 않게).
+// 여러 팀 회의 참석자 고르기 요청은 회의실 페이지로 옮겼어요(알림도 회의실로 가요).
 // "무엇을 남기나요"(L-42, QA-8). 켜진 기능의 줄만 보여요. 문장은 docs/화면설계.md "보안이 보이는 문구" 표와 같아요.
 // 지우기는 서버가 화면을 열지 않아도 한 시간마다 해요(L-33). 10/28부터 접속기록(법정 1년) 말고는 모두 7일이에요.
 function retentionLines(s: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; mcp: boolean; teamSchedule?: boolean }) {
@@ -39,16 +42,20 @@ export function Mine({
   onOpen,
 }: {
   me: Me;
-  switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; mcp: boolean; teamSchedule?: boolean };
+  switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; mcp: boolean; teamSchedule?: boolean; homeAsk?: boolean };
   onLoggedOut: () => void;
-  onOpen: (to: 'ops' | 'chart' | 'ai-eval') => void;
+  onOpen: (to: 'ops' | 'chart' | 'ai-eval' | 'home', text?: string, auto?: boolean) => void;
 }) {
   const { modules } = switches;
   const retention = retentionLines(switches);
   const [confirmAll, setConfirmAll] = useState(false);
-  const { MyReservations, MyRequests, MyInquiries, MyAway, ConnectedApps, InvitedMeetings, JointRequests, TeamDelegates, DemoInbox } = webModules;
+  const { MyReservations, MyRequests, MyInquiries, MyAway, ConnectedApps, InvitedMeetings, TeamDelegates, DemoInbox } = webModules;
   // 여러 팀 회의(ADR-28): 회의실 쓰기가 켜졌을 때만이에요.
   const joint = modules.rooms === 'on' && switches.roomsWrite;
+  // 홈 채팅으로 옮긴 칸(11/5). 자리비움은 같은 팀 일정·문의하기가 켜졌을 때만 있어요(서버 awayOn과 같아요).
+  const moved = switches.homeAsk === true;
+  const awayShown = modules.navi === 'on' && switches.teamSchedule === true;
+  const movedAsks = MINE_MOVED_ASKS.filter((a) => (a.text === '내 예약 보기' ? modules.rooms !== 'off' : a.text === '자리비움 알리기' ? awayShown : true));
 
   async function logout(all: boolean) {
     await api.logout(all);
@@ -79,12 +86,27 @@ export function Mine({
         </div>
       </section>
 
-      {joint && <JointRequests />}
-      <MyReservations />
-      <InvitedMeetings />
-      <MyRequests />
-      {switches.modules.navi === 'on' && <MyInquiries />}
-      {switches.modules.navi === 'on' && <MyAway />}
+      {moved ? (
+        <section className='card mine-moved' aria-label='홈 채팅에서 해요'>
+          <h2>홈 채팅에서 해요</h2>
+          <p className='hint'>{mineMovedNote(awayShown)}</p>
+          <div className='actions'>
+            {movedAsks.map((a) => (
+              <button key={a.text} type='button' className='secondary' onClick={() => onOpen('home', a.ask, true)}>
+                {a.text}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <>
+          <MyReservations />
+          <InvitedMeetings />
+          <MyRequests />
+          {switches.modules.navi === 'on' && <MyInquiries />}
+          {switches.modules.navi === 'on' && <MyAway />}
+        </>
+      )}
       {joint && <TeamDelegates />}
 
       {(hasFacilities || hasChart || isOperator) && (

@@ -3,14 +3,17 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context';
 import { accessFrom } from '../core/access-record';
 import { HomeDesk } from '../core/home';
+import type { Router } from '../core/router';
 
 // 홈 AI 채팅 "나에게 해당하는 일"(ADR-27, 개선 회의 D8 해제).
 // - POST /api/home/ask: 질문 글은 POST 본문과 이 요청 메모리에서만 다뤄요. DB·로그·감사·응답에 넣지 않아요(ADR-10, R13).
 // 읽기만 해요. 예약·신청·표 만들기는 하지 않고, 다른 일이면 옮기기 카드만 줘요(D8 조건).
+// 11/5: 담당 찾기·공지·빈 회의실 찾기 답은 홈 답에 바로 보여 줘요. 새 예약은 회의실 탭에서만 해요.
 const HOME_OFF = { error: 'home-off', message: '지금은 홈에서 찾지 않아요. 기능 페이지에서 찾아 주세요' };
 
-export function registerHomeRoutes(app: FastifyInstance, ctx: AppContext) {
-  const home = new HomeDesk(ctx);
+export function registerHomeRoutes(app: FastifyInstance, ctx: AppContext, router?: Router) {
+  // 담당 찾기·공지·빈 회의실은 앞문 라우터에 종류를 정해 물어 홈 답에 바로 보여 줘요(11/5, 읽기만).
+  const home = new HomeDesk(ctx, router ? (user, text, kind) => router.ask(user, text, kind) : undefined);
 
   app.post<{ Body: { text: string } }>(
     '/api/home/ask',

@@ -1,4 +1,14 @@
-import { addDays, AWAY_KIND_LABEL, AWAY_KINDS, AWAY_MAX_DAYS, type AwayKind, type AwayListResponse, dayLabel, kstDate } from '@one-line-desk/shared';
+import {
+  addDays,
+  type AwayDraft,
+  AWAY_KIND_LABEL,
+  AWAY_KINDS,
+  AWAY_MAX_DAYS,
+  type AwayKind,
+  type AwayListResponse,
+  dayLabel,
+  kstDate,
+} from '@one-line-desk/shared';
 import { useEffect, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
 import { newRequestId } from '../../net';
@@ -6,6 +16,8 @@ import { newRequestId } from '../../net';
 // 자리비움 알리기(11/3 사용자 결정). 내 외근·출장·재택·자리비움을 정하면 같은 팀 사람이 홈 채팅 "같은 팀 일정"에서 봐요.
 // 종류·날·시간만 골라요. 사유·장소 같은 글 칸은 없어요. 정하기·지우기는 고정 버튼이고 본인 것만 돼요.
 // 같은 팀 일정이나 담당 찾기가 꺼져 있으면 서버가 enabled: false를 줘서 이 칸을 숨겨요.
+// 11/5 사용자 결정: 마이 페이지에서 빼고 홈 채팅 답 아래에 펼쳐요. 홈 문장에서 서버가 뽑은 종류·날·시각(initial)으로 미리 채우고,
+// 정하는 건 사람이 [알리기]를 눌러서예요(AI·서버가 대신 정하지 않아요).
 
 /** ISO 시각 → 한국 시간 "11월 3일(화) 14:00" */
 function awayWhen(iso: string): string {
@@ -15,14 +27,14 @@ function awayWhen(iso: string): string {
 }
 const toIso = (date: string, time: string) => `${date}T${time}:00+09:00`;
 
-export function MyAway() {
+export function MyAway({ initial }: { initial?: AwayDraft }) {
   const [data, setData] = useState<AwayListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const today = kstDate(Date.now());
-  const [kind, setKind] = useState<AwayKind>('outside');
-  const [date, setDate] = useState(today);
-  const [start, setStart] = useState('14:00');
-  const [end, setEnd] = useState('18:00');
+  const [kind, setKind] = useState<AwayKind>(initial?.kind ?? 'outside');
+  const [date, setDate] = useState(initial?.date ?? today);
+  const [start, setStart] = useState(initial?.start ?? '14:00');
+  const [end, setEnd] = useState(initial?.end ?? '18:00');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -85,7 +97,8 @@ export function MyAway() {
         </label>
         <button
           type='button'
-          disabled={busy}
+          className='primary'
+          disabled={busy || end <= start}
           onClick={() =>
             void send(() =>
               apiRequest<AwayListResponse>('POST', '/api/navi/away', { kind, start: toIso(date, start), end: toIso(date, end), requestId: newRequestId() }),
@@ -95,6 +108,7 @@ export function MyAway() {
           알리기
         </button>
       </div>
+      {end <= start && <p className='hint'>끝 시각이 시작보다 늦어야 해요</p>}
       {error && <p className='lock-line'>{error}</p>}
       {data.items.length === 0 ? (
         <p className='empty'>알린 자리비움이 없어요.</p>

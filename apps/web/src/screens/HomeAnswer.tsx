@@ -1,5 +1,8 @@
 // 홈 AI 채팅 답(ADR-27)을 그리는 부품. 상태가 없어서 시험에서 바로 그려 봐요.
 // 항목마다 그 기능 페이지로 가는 버튼만 있어요. 쓰기 버튼(예약·신청·참석 답)은 홈에 없어요(D8 조건).
+// 11/5 사용자 결정(ADR-27 보강): 마이 페이지의 내 예약·내 요청·나에게 온 요청·자리비움 알리기를 홈으로 옮겼어요.
+// 가장 최근 답은 항목 버튼이 그 칸(그 모듈의 기존 부품)을 답 아래에 펼쳐요. 취소·답하기는 그 칸의 확인 시트·고정 버튼이 해요.
+// 새 예약·신청은 여전히 그 기능 페이지에서 해요.
 // 같은 팀 일정(11/3)은 이름·날과 휴가(하루/오전/오후)·회의(시간·회의실)·자리비움(종류·시간)만 그려요. 버튼이 없고,
 // 휴가 종류·사유·회의 참석자 칸은 응답에도 없어요.
 import {
@@ -8,31 +11,76 @@ import {
   dayLabel,
   type HomeAskResponse,
   type HomeItem,
+  type HomeKind,
   type HomeOpen,
   type HomeTeamSchedule,
   TEAM_SCHEDULE_TEXT,
   type TeamEntry,
 } from '@one-line-desk/shared';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { ReadLine } from '../components/ReadLine';
 
-function HomeItemList({ items, onOpen, label }: { items: HomeItem[]; onOpen: (open: HomeOpen) => void; label: string }) {
+/** 답 아래에 펼칠 칸(11/5). 휴가 요청은 "내 문의" 칸에 같이 있어요. */
+export type HomePanel = 'reservations' | 'loans' | 'invites' | 'inquiries' | 'inbox' | 'pantry';
+const PANELS: readonly HomePanel[] = ['invites', 'reservations', 'loans', 'inbox', 'inquiries', 'pantry'];
+const PANEL_OF: Record<HomeKind, HomePanel> = {
+  reservations: 'reservations',
+  loans: 'loans',
+  invites: 'invites',
+  inquiries: 'inquiries',
+  leave: 'inquiries',
+  inbox: 'inbox',
+  pantry: 'pantry',
+};
+export const PANEL_BUTTON: Record<HomePanel, string> = {
+  reservations: '여기서 관리',
+  loans: '여기서 보기',
+  invites: '여기서 답하기',
+  inquiries: '답장 보기',
+  inbox: '받은 문의 보기',
+  pantry: '여기서 보기',
+};
+
+function HomeItemList({
+  items,
+  onOpen,
+  label,
+  open,
+  onToggle,
+}: {
+  items: HomeItem[];
+  onOpen: (open: HomeOpen) => void;
+  label: string;
+  /** 펼칠 수 있으면(가장 최근 답) 펼친 칸들, 아니면 undefined라 그 기능 페이지로 가요. */
+  open?: ReadonlySet<HomePanel>;
+  onToggle: (panel: HomePanel) => void;
+}) {
   return (
     <ul className='home-items' aria-label={label}>
-      {items.map((i) => (
-        <li key={i.id}>
-          <div className='home-item-text'>
-            <strong>{i.title}</strong>
-            <span className='hint'>
-              {i.when}
-              {i.detail ? ` · ${i.detail}` : ''}
-            </span>
-          </div>
-          <button type='button' className='secondary small' onClick={() => onOpen(i.open)}>
-            {i.open.text}
-          </button>
-        </li>
-      ))}
+      {items.map((i) => {
+        const panel = PANEL_OF[i.kind];
+        const expanded = open?.has(panel) ?? false;
+        return (
+          <li key={i.id}>
+            <div className='home-item-text'>
+              <strong>{i.title}</strong>
+              <span className='hint'>
+                {i.when}
+                {i.detail ? ` · ${i.detail}` : ''}
+              </span>
+            </div>
+            {open ? (
+              <button type='button' className='secondary small' aria-expanded={expanded} onClick={() => onToggle(panel)}>
+                {expanded ? '접기' : PANEL_BUTTON[panel]}
+              </button>
+            ) : (
+              <button type='button' className='secondary small' onClick={() => onOpen(i.open)}>
+                {i.open.text}
+              </button>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -71,8 +119,34 @@ function TeamScheduleList({ team, oneDay }: { team: HomeTeamSchedule; oneDay: bo
   );
 }
 
-/** 답 하나. 내 일이면 한 줄 + 목록 + 바로 가기 버튼, 옮기기·모름이면 카드(cards)만 그려요. "AI 정리"는 실제 모델이 해석했을 때만 붙어요. */
-export function HomeAnswer({ answer, onOpen, cards }: { answer: HomeAskResponse; onOpen: (open: HomeOpen) => void; cards?: ReactNode }) {
+/**
+ * 답 하나. 내 일이면 한 줄 + 목록 + 바로 가기 버튼, 옮기기·모름이면 카드(cards)만 그려요. "AI 정리"는 실제 모델이 해석했을 때만 붙어요.
+ * panelFor가 있으면(가장 최근 답) 항목 버튼이 그 칸을 답 아래에 펼쳐요. away는 자리비움 양식이에요(11/5).
+ */
+export function HomeAnswer({
+  answer,
+  onOpen,
+  cards,
+  panelFor,
+  away,
+  emptyHint,
+}: {
+  answer: HomeAskResponse;
+  onOpen: (open: HomeOpen) => void;
+  cards?: ReactNode;
+  panelFor?: (panel: HomePanel) => ReactNode;
+  away?: ReactNode;
+  /** 내 일을 찾지 못한 답 아래에 보여 줄 "해 볼 수 있는 일"(11/5) */
+  emptyHint?: ReactNode;
+}) {
+  const [opened, setOpened] = useState<ReadonlySet<HomePanel>>(new Set());
+  const toggle = (panel: HomePanel) =>
+    setOpened((now) => {
+      const next = new Set(now);
+      if (next.has(panel)) next.delete(panel);
+      else next.add(panel);
+      return next;
+    });
   return (
     <div className='home-answer'>
       {(answer.intent === 'mine' || answer.intent === 'team-schedule') && (
@@ -82,8 +156,18 @@ export function HomeAnswer({ answer, onOpen, cards }: { answer: HomeAskResponse;
         </p>
       )}
       <ReadLine read={answer.read} ai={answer.by === 'ai'} />
+      {answer.intent === 'mine' && answer.items.length === 0 && answer.links.length === 0 && emptyHint}
       {answer.team && <TeamScheduleList team={answer.team} oneDay={answer.period === 'today' || answer.period === 'tomorrow'} />}
-      {answer.items.length > 0 && <HomeItemList items={answer.items} onOpen={onOpen} label={answer.headline} />}
+      {answer.items.length > 0 && (
+        <HomeItemList items={answer.items} onOpen={onOpen} label={answer.headline} open={panelFor ? opened : undefined} onToggle={toggle} />
+      )}
+      {panelFor && opened.size > 0 && (
+        <div className='home-panels'>
+          {PANELS.filter((p) => opened.has(p)).map((p) => (
+            <div key={p}>{panelFor(p)}</div>
+          ))}
+        </div>
+      )}
       {(answer.links.length > 0 || answer.team?.link) && (
         <div className='home-links'>
           {answer.links.map((l) => (
@@ -99,6 +183,7 @@ export function HomeAnswer({ answer, onOpen, cards }: { answer: HomeAskResponse;
         </div>
       )}
       {cards}
+      {away}
     </div>
   );
 }

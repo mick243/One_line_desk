@@ -1,4 +1,4 @@
-import type { CardAction, Kind, RoomShowQuery } from '@one-line-desk/shared';
+import type { AwayDraft, CardAction, Kind, RoomShowQuery } from '@one-line-desk/shared';
 import type { ComponentType } from 'react';
 import type { Me, PublicConfig } from '../api';
 import type { CardViewProps } from '../components/CardView';
@@ -45,8 +45,8 @@ export interface WebModules {
   InquiryInbox: ComponentType;
   /** 담당 찾기 페이지·홈(compact)·마이 페이지: 내가 보낸 문의와 처리 상태 */
   MyInquiries: ComponentType<{ compact?: boolean }>;
-  /** 마이 페이지: 자리비움 알리기(11/3). 같은 팀 일정이 꺼져 있으면 서버가 닫아서 숨어요. */
-  MyAway: ComponentType;
+  /** 홈 채팅 답 아래: 자리비움 알리기(11/3, 11/5 마이 페이지에서 옮김). initial은 홈 문장에서 뽑은 종류·날·시각이에요. 같은 팀 일정이 꺼져 있으면 서버가 닫아서 숨어요. */
+  MyAway: ComponentType<{ initial?: AwayDraft }>;
   /** 회의실 페이지 "모든 회의실": 회의실 카드(그림·정원·상태) → 회의실 자세히(설비·하루 일정·이 시간 예약) */
   /** 모든 회의실. 회의실 카드는 대화에서 현황을 물었을 때(show)만 펼쳐요(10/30). */
   RoomDirectory: ComponentType<ScreenProps & { show?: RoomShowQuery | null }>;

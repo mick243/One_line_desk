@@ -1,9 +1,11 @@
 import { Children, isValidElement, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { Icon } from './Icon';
 
 // 옆으로 넘치는 칩 한 줄(10/28). 휴대폰은 손가락으로 밀고, PC는 마우스 휠이나 끌기(11/3)로도 옆으로 넘겨요.
 // 끌어서 넘긴 뒤 손을 떼면 칩이 눌리지 않아요(5px 넘게 움직였을 때만 끌기로 봐요).
 // 넘칠 때만 가장자리를 흐리게 해서 "옆에 더 있어요"를 보여 주고, PC에서는 얇은 막대도 보여요(styles.css .scroll-x).
 // 줄 끝에 닿았거나 넘치지 않으면 휠은 페이지를 그대로 내려요.
+// 11/5(처음 쓰는 직원 점검: 칩이 잘려 보여요): 넘칠 때 끝에 [›]·[‹] 버튼을 둬서 옆에 더 있다는 걸 보이고, 누르면 한 화면씩 넘겨요.
 
 interface Edges {
   overflow: boolean;
@@ -88,9 +90,26 @@ export function ScrollChips({ label, children }: { label: string; children: Reac
     .join('\n');
   useEffect(measure, [chipKeys, measure]);
 
+  const page = (dir: 1 | -1) => {
+    const el = ref.current;
+    if (el) el.scrollBy({ left: dir * Math.max(120, el.clientWidth * 0.8), behavior: 'smooth' });
+  };
+
   return (
-    <div ref={ref} className='chips scroll scroll-x' aria-label={label} data-overflow={edges.overflow} data-start={edges.start} data-end={edges.end}>
-      {children}
+    <div className='scroll-chips'>
+      <div ref={ref} className='chips scroll scroll-x' aria-label={label} data-overflow={edges.overflow} data-start={edges.start} data-end={edges.end}>
+        {children}
+      </div>
+      {edges.overflow && !edges.start && (
+        <button type='button' className='scroll-chips-arrow prev' aria-label={`${label} 앞으로 넘기기`} onClick={() => page(-1)}>
+          <Icon name='chevron' size={18} />
+        </button>
+      )}
+      {edges.overflow && !edges.end && (
+        <button type='button' className='scroll-chips-arrow next' aria-label={`${label} 더 보기`} onClick={() => page(1)}>
+          <Icon name='chevron' size={18} />
+        </button>
+      )}
     </div>
   );
 }

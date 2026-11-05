@@ -471,14 +471,14 @@ export function createInviteService(ctx: AppContext) {
               await ctx.notify.toUser(q, w.attendeePseudonym, {
                 module: 'rooms',
                 title: `${inviter?.displayName ?? '예약한 사람'}님 회의에 대신 가 달라는 부탁이 취소됐어요 · ${when}`,
-                page: 'mine',
+                page: 'rooms',
               });
           }
           if (row.before !== response || withdrawn.length)
             await ctx.notify.toUser(q, row.inviter, {
               module: 'rooms',
               title: `${user.displayName}님이 참석해요${withdrawn.length ? '. 대신 부탁은 거뒀어요' : ''} · ${when}`,
-              page: 'mine',
+              page: 'rooms',
             });
           const mine = all.find((i) => i.attendeePseudonym === user.pseudonymId);
           if (mine && (row.before !== response || withdrawn.length))
@@ -570,7 +570,7 @@ export function createInviteService(ctx: AppContext) {
           const when = formatKstDateTime(meeting.start);
           followUp = { calendar: all.some((i) => i.viaCalendar), inviterSubject: mine.inviterSubject };
           if (!delegate) {
-            await ctx.notify.toUser(q, mine.inviterPseudonym, { module: 'rooms', title: `${user.displayName}님이 못 온대요 · ${when}`, page: 'mine' });
+            await ctx.notify.toUser(q, mine.inviterPseudonym, { module: 'rooms', title: `${user.displayName}님이 못 온대요 · ${when}`, page: 'rooms' });
             return { ok: true as const, delegated: false };
           }
           const p = pseudonymize(ctx.config.pseudonymSecret, delegate.idpSubject);
@@ -597,12 +597,12 @@ export function createInviteService(ctx: AppContext) {
           await ctx.notify.toUser(q, p, {
             module: 'rooms',
             title: `${inviter?.displayName ?? '예약한 사람'}님 회의에 ${user.displayName}님이 대신 가 달라고 했어요 · ${when}`,
-            page: 'mine',
+            page: 'rooms',
           });
           await ctx.notify.toUser(q, mine.inviterPseudonym, {
             module: 'rooms',
             title: `${user.displayName}님이 못 온대요. ${delegate.displayName}님에게 대신 부탁했어요 · ${when}`,
-            page: 'mine',
+            page: 'rooms',
           });
           return { ok: true as const, delegated: true };
         },
@@ -698,6 +698,6 @@ function invitedCard(m: Meeting, sent: { app: number; calendar: number | null; s
     evidence: { text: '고른 사람만 회의실·시간·내 이름을 봐요. 다른 직원에게는 "예약됨"만 보여요', aiSummarized: false },
     primary: { type: 'link', text: '캘린더 파일 받기', href: icsPath(m.id) },
     secondary: [],
-    tail: `답(${INVITE_RESPONSE_LABEL.accepted}·${INVITE_RESPONSE_LABEL.declined})은 마이 페이지 > 내 예약에서 봐요`,
+    tail: `답(${INVITE_RESPONSE_LABEL.accepted}·${INVITE_RESPONSE_LABEL.declined})은 회의실 아래 "내 예약"에서 봐요`,
   });
 }
