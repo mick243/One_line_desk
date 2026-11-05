@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ProposalTokens } from './proposal-token';
-import { extractItemName, parseDate, parseSlots, parseTime, repeatedSlots } from './slots';
+import { equipmentIn, extractItemName, parseDate, parseSlots, parseTime, repeatedSlots } from './slots';
 
 const NOW = Date.parse('2026-10-26T09:00:00+09:00');
 
@@ -163,5 +163,13 @@ describe('제안 토큰(M3)', () => {
     expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
     const decoded = Buffer.from(token, 'base64url').toString('latin1');
     for (const plain of ['p_secret_person', 'room-5A', '2026-11-03', 'reserve', 'rooms']) expect(decoded).not.toContain(plain);
+  });
+});
+
+describe('모델이 글자로 보낸 설비 이름 맞추기(11/5)', () => {
+  it('비슷한 말은 목록 값으로, 목록에 없는 말은 버려요', () => {
+    expect(equipmentIn(['모니터', '줌', '레이저 포인터'])).toEqual(['화면', '화상회의']);
+    expect(equipmentIn(['화면', '화상회의', '화이트보드'])).toEqual(['화면', '화상회의', '화이트보드']);
+    expect(equipmentIn([])).toEqual([]);
   });
 });

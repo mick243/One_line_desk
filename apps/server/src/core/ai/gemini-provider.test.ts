@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import type { StructuredRequest } from './gateway';
+import { ProviderFailure, type StructuredRequest } from './gateway';
 import { GeminiProvider } from './gemini-provider';
 
 // Gemini 공급자(11/3): 요청 모양, 답 검사, 실패를 오류 본문 없이 다루는지 봐요. 실제 네트워크는 부르지 않아요.
@@ -54,18 +54,24 @@ describe('Gemini 공급자', () => {
       ok('그냥 글이에요'),
       ok('{"kind":"pantry","sure":true}'),
     ];
+    const kinds: string[] = [];
     for (const response of cases) {
       const { impl, calls } = fakeFetch(() => response);
-      await expect(new GeminiProvider('gemini-3.5-flash', 'k', undefined, impl).complete(req())).rejects.toThrow();
+      const err = await new GeminiProvider('gemini-3.5-flash', 'k', undefined, impl).complete(req()).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ProviderFailure);
+      kinds.push((err as ProviderFailure).kind);
       expect(calls).toHaveLength(1);
     }
+    // 비용 표에 남는 실패 종류(11/5)
+    expect(kinds).toEqual(['refusal', 'max_tokens', 'parse', 'parse']);
   });
 
   it('오류 응답은 상태 번호만 남기고, 본문(입력이 되울려 나올 수 있어요)은 읽지 않아요', async () => {
     const canary = '카나리-GEMINI-ERR';
     const { impl } = fakeFetch(() => new Response(JSON.stringify({ error: { message: `bad input: ${canary}` } }), { status: 400 }));
     const err = await new GeminiProvider('gemini-3.5-flash', 'k', undefined, impl).complete(req(canary)).catch((e: unknown) => e as Error);
-    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(ProviderFailure);
+    expect((err as ProviderFailure).kind).toBe('http-400');
     expect((err as Error).message).toContain('400');
     expect((err as Error).message).not.toContain(canary);
   });

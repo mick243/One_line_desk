@@ -55,8 +55,8 @@ describe('관리자 AI 정답률(11/5 시험)', () => {
     const op = await t.loginAs(MOCK.operator);
     const res = (await op.call('GET', '/api/ops/ai-eval')).body as AiEvalResponse;
     expect(res.scores.map((s) => [s.label, s.total, s.ai])).toEqual([
-      ['홈 채팅(무엇을 하려는지)', 22, null],
-      ['회의실 채팅(할 일·장비)', 13, null],
+      ['홈 채팅(무엇을 하려는지)', 25, null],
+      ['회의실 채팅(할 일·장비)', 14, null],
       ['기능 나누기(/ask)', 13, null],
     ]);
     expect(res.misses.find((m) => m.text === '회의실 TV가 안 켜져요')).toMatchObject({ expect: '문의하기로 옮기기', ruleOk: false, ai: null });
