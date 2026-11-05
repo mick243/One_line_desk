@@ -2285,3 +2285,48 @@ select {
   flex-basis: 100%;
   font-size: 0.75rem;
 }
+/* 관리자 AI 정답률(11/5 시험, 운영자만). 표는 좁은 화면에서 옆으로 밀어 봐요. */
+.eval-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.eval-table-wrap {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+.eval-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.eval-table th,
+.eval-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+.eval-table thead th {
+  color: var(--text-quiet);
+  font-weight: 600;
+}
+.eval-table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.eval-total td {
+  font-weight: 700;
+}
+.eval-misses li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.eval-ok {
+  color: var(--ok-text);
+}
+.eval-wrong {
+  color: var(--lock-text);
+}

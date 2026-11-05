@@ -32,6 +32,7 @@ import { registerAuthRoutes } from './routes/auth';
 import { registerHomeRoutes } from './routes/home';
 import { purgeDemoInbox, registerDemoInboxRoutes } from './routes/demo-inbox';
 import { registerPeopleRoutes } from './routes/people';
+import { registerAiEvalRoutes } from './routes/ai-eval';
 import { registerConfigRoutes, registerHealthRoutes } from './routes/config';
 import { registerNotificationRoutes } from './routes/notifications';
 import { registerPlanRoutes } from './routes/plans';
@@ -178,6 +179,8 @@ export async function buildApp(opts: BuildOptions) {
 
   ctx.dataAdapters = () => [...ctx.adapters.all(), ...modules.flatMap((m) => m.adapters?.() ?? [])];
   registerConfigRoutes(app, ctx, ctx.dataAdapters);
+  // 관리자 화면 AI 정답률(11/5 시험, 운영자만)
+  registerAiEvalRoutes(app, ctx);
   registerAuthRoutes(app, ctx);
   registerAskRoutes(app, ctx, router);
   registerHomeRoutes(app, ctx);

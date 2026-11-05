@@ -1,4 +1,4 @@
-import { HOME_MOVE_LABEL, type HomeMoveTo, LOAN_KINDS, MODULES, personNameWords } from '@one-line-desk/shared';
+import { type AiEvalResponse, HOME_MOVE_LABEL, type HomeMoveTo, LOAN_KINDS, MODULES, personNameWords } from '@one-line-desk/shared';
 import type { AiGateway } from '../core/ai/gateway';
 import { interpretByRules as homeByRules, interpretHomeText } from '../core/home';
 import { classifyText } from '../core/router';
@@ -113,6 +113,25 @@ export function keyLabel(task: EvalTask, key: string | undefined): string {
   return ROUTER_WORD[key] ?? key;
 }
 
+/** 관리자 화면(GET /api/ops/ai-eval)에 보낼 표: 맞힌 수와 틀린 문장(라벨로 바꿔요) */
+export function evalView(results: readonly CaseResult[]): Pick<AiEvalResponse, 'scores' | 'misses'> {
+  return {
+    scores: score(results).map((s) => ({ ...s, label: TASK_LABEL[s.task] })),
+    misses: results
+      .filter((r) => r.rule !== r.expect || (r.ai !== undefined && r.ai !== r.expect))
+      .map((r) => ({
+        label: TASK_LABEL[r.task],
+        text: r.text,
+        expect: keyLabel(r.task, r.expect),
+        rule: keyLabel(r.task, r.rule),
+        ruleOk: r.rule === r.expect,
+        ai: r.ai === undefined ? null : keyLabel(r.task, r.ai),
+        aiOk: r.ai === undefined ? null : r.ai === r.expect,
+        why: r.why ?? null,
+      })),
+  };
+}
+
 const pct = (n: number, total: number) => `${n}/${total} (${Math.round((n / total) * 100)}%)`;
 
 /** 마크다운 표. model은 표에 적는 모델 이름이에요(없으면 AI 칸이 "안 잼"). */
@@ -152,6 +171,7 @@ export function renderReport(results: readonly CaseResult[], o: { model: string 
     '- AI는 문장 뜻만 구조 값으로 나눠요. 날짜 계산·회의실 고르기·실행은 서버 규칙이 해요. 모델이 없거나 무보관 계약 확인 전이면 낱말 규칙으로 돌아요.',
     '- 회의실 채팅 바로 실행은 AI와 낱말 규칙이 같은 일로 볼 때만이에요(10/29 회의 A1). 그래서 AI가 맞히고 규칙이 틀린 문장은 카드로만 보여 줘요.',
     '- 화면의 "알아들은 것" 줄(AI 보완 2번)은 AI가 낱말 규칙과 다르게 본 문장에서 "낱말로만 보면 ○○"를 같이 보여 줘요.',
+    '- 운영자는 앱 마이 페이지 > [운영자 · AI 정답률]에서 같은 표를 보고, [AI로 다시 재기]로 시연 모델의 AI 칸을 채워요(5분에 한 번).',
     '',
   );
   return lines.join('\n');

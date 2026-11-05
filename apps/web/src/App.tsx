@@ -21,6 +21,7 @@ import { FEATURES, featureFor, pageOfKind } from './screens/features';
 import { FeaturePage } from './screens/FeaturePage';
 import { Home } from './screens/Home';
 import { Login } from './screens/Login';
+import { AiEvalScreen } from './screens/AiEval';
 import { Mine } from './screens/Mine';
 
 type View = AppDestination;
@@ -36,6 +37,8 @@ function entryFromPath(): { kind: 'consent' } | { kind: 'link'; token: string } 
 /** 운영(S4)은 같이 채워요 탭, 분장표 수정 제안함(S5)은 문의하기 탭 아래에 있어요. */
 function tabOf(view: View): Tab {
   if (view === 'ops') return 'board';
+  // 관리자 AI 정답률(11/5 시험)은 마이 페이지 아래에 있어요.
+  if (view === 'ai-eval') return 'mine';
   if (view === 'chart' || view === 'it-help' || view === 'onboarding') return 'navi';
   return view;
 }
@@ -259,6 +262,10 @@ export function App() {
             {!entry && current === 'it-help' && <ItHelpScreen onBack={() => go('navi')} />}
             {!entry && current === 'onboarding' && <OnboardingScreen onBack={() => go('navi')} />}
             {!entry && current === 'mine' && <Mine me={me} switches={config} onLoggedOut={() => setMe(null)} onOpen={(to) => go(to)} />}
+            {/* 관리자 AI 정답률(11/5 시험): 운영자만 그려요. 서버도 운영자가 아니면 403이에요. */}
+            {!entry &&
+              current === 'ai-eval' &&
+              (me.roles.includes('operator') ? <AiEvalScreen onBack={() => go('mine')} /> : <p className='empty'>운영자만 볼 수 있어요.</p>)}
           </main>
           <TabBar current={tabOf(current)} onChange={(t) => go(t)} modules={config.modules} />
         </ActionHost>
