@@ -11,6 +11,7 @@ import { Icon } from '../components/Icon';
 import { webModules } from '../modules/registry';
 import { FEATURES, featureFor } from './features';
 import { HomeAsk } from './HomeAsk';
+import { LeaveStart } from './LeaveStart';
 
 const ICON = { navi: 'navi', rooms: 'rooms', notices: 'notices', pantry: 'pantry' } as const;
 
@@ -47,6 +48,13 @@ export function Home({
       </header>
 
       {homeAsk && <HomeAsk onOpen={onOpen} teamSchedule={switches.teamSchedule === true} modules={modules} initialText={initialText} autoRun={autoRun} />}
+
+      {/* 바로 하기(11/5, 처음 쓰는 직원 점검: 휴가 신청 버튼이 앞에 보였으면): 문의하기가 켜져 있으면 휴가 신청 양식을 바로 열어요. */}
+      {modules.navi === 'on' && (
+        <div className='home-quick' aria-label='바로 하기'>
+          <LeaveStart />
+        </div>
+      )}
 
       {!homeAsk && (
         <section className='card' aria-label='할 수 있는 일'>

@@ -167,6 +167,35 @@ export function confirmedCard(r: ReservationRow, checkedAt: number): Card {
   });
 }
 
+/**
+ * 채팅으로 바로 잡은 뒤 "다른 빈 회의실"(11/5, 처음 쓰는 직원 점검: 후보를 보고 고르고 싶어요).
+ * 같은 시간·조건에 비어 있는 다른 회의실을 버튼으로 보여 주고, 누르면 확인 뒤 내 예약을 그 회의실로 옮겨요(같은 시간, 회의실만).
+ */
+export function otherRoomsCard(r: ReservationRow, rooms: Pick<RoomRow, 'id' | 'name' | 'floor' | 'capacity'>[]): Card {
+  return makeCard({
+    id: `rooms-other-${r.id}`,
+    kind: 'rooms',
+    label: '제안',
+    headline: '다른 빈 회의실로 바꿀 수 있어요',
+    fields: [{ name: '같은 시간 빈 회의실', value: rooms.map((x) => `${roomLine(x)}(정원 ${x.capacity}명)`).join(' · ') }],
+    evidence: { text: '같은 시간·조건으로 다시 찾은 다른 후보', aiSummarized: false },
+    secondary: rooms.map((x) => ({
+      type: 'fixed' as const,
+      text: `${x.name}로 바꾸기`,
+      method: 'POST' as const,
+      path: `/api/rooms/reservations/${r.id}/move`,
+      body: { roomId: x.id },
+      confirm: {
+        title: '이 회의실로 바꿀까요?',
+        lines: [`${roomLine({ name: r.roomName, floor: r.floor })} → ${roomLine(x)}(정원 ${x.capacity}명)`, whenText(r.start, r.end)],
+        confirmLabel: '바꾸기',
+        note: '[바꾸기]를 누르는 순간 빈 회의실인지 다시 확인해요',
+      },
+    })),
+    tail: '바꾸면 지금 회의실은 놓아줘요',
+  });
+}
+
 /** 취소 뒤: 확정 카드가 "취소됨"으로 바뀌어요. 회의에 붙여 빌린 장비도 함께 취소돼요(ADR-19). */
 export function cancelledCard(r: ReservationRow, at: number, loans: LoanKind[] = []): Card {
   return makeCard({

@@ -2361,6 +2361,21 @@ select {
 .read-diff {
   font-size: 0.75rem;
 }
+/* 홈 바로 하기(11/5): 휴가 신청 같은 자주 하는 일 버튼 줄 */
+.home-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.leave-start {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.leave-start h2,
+.leave-start p {
+  margin: 0;
+}
 /* 내 일이 없다는 답 아래 "이런 것도 물어볼 수 있어요"(11/5) */
 .home-try {
   display: flex;
@@ -2419,4 +2434,107 @@ select {
 }
 .eval-wrong {
   color: var(--lock-text);
+}
+
+/* PC 넓은 화면(11/5, 처음 쓰는 직원 점검: 넓은 화면에 맞는 배치가 없어요).
+   - 아래 탭을 왼쪽 메뉴로 옮기고, 내용 칸을 넓혀요(로그인 화면처럼 탭이 없는 화면은 그대로예요).
+   - 기능 페이지·마이 페이지는 읽기 좋은 폭(820px)으로 두고, 홈은 대화가 생기면 왼쪽 묻기 · 오른쪽 대화 두 칸이에요.
+   - 회의실 입력 칸(떠 있는 칸)은 내용 칸 가운데 맨 아래에 붙여요. 시트·토스트는 화면 가운데 그대로예요. */
+@media (min-width: 1024px) {
+  .app:has(> .tabbar) {
+    --side: 224px;
+    --app-max: 1240px;
+    --app-w: min(100vw, var(--app-max));
+    --app-left: max(0px, (100vw - var(--app-max)) / 2);
+    max-width: var(--app-max);
+  }
+  .app:has(> .tabbar) > .demo-band,
+  .app:has(> .tabbar) > .version-band,
+  .app:has(> .tabbar) > .app-bar,
+  .app:has(> .tabbar) > .screen {
+    margin-left: var(--side);
+  }
+  .app:has(> .tabbar) > .app-bar {
+    padding-left: 32px;
+    padding-right: 24px;
+  }
+  .app:has(> .tabbar) > .screen {
+    padding: 8px 32px 48px;
+  }
+  .app > .tabbar {
+    top: 0;
+    bottom: 0;
+    left: var(--app-left);
+    transform: none;
+    width: var(--side);
+    max-width: none;
+    flex-direction: column;
+    gap: 2px;
+    padding: 72px 12px 24px;
+    border-top: 0;
+    border-right: 1px solid var(--line);
+    background: var(--bg);
+  }
+  .app > .tabbar .tab {
+    flex: none;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: var(--radius-s);
+    font-size: 0.9375rem;
+    text-align: left;
+    overflow-wrap: normal;
+  }
+  .app > .tabbar .tab.active {
+    background: var(--surface);
+  }
+  .feature-page,
+  .board,
+  .mine {
+    width: 100%;
+    max-width: 820px;
+  }
+  /* 홈: 대화가 생기면 두 칸이에요. 묻기 칸은 스크롤해도 왼쪽에 남아요. */
+  .home:has(.home-chat) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+    column-gap: 28px;
+    row-gap: 16px;
+    align-items: start;
+  }
+  .home:has(.home-chat) > .page-head {
+    grid-column: 1 / -1;
+  }
+  .home:has(.home-chat) > .home-ask,
+  .home:has(.home-chat) > .home-quick {
+    grid-column: 1;
+  }
+  .home:has(.home-chat) > .home-ask {
+    position: sticky;
+    top: 72px;
+  }
+  .home:has(.home-chat) > .home-chat {
+    grid-column: 2;
+    grid-row: 2 / span 3;
+  }
+  .home:has(.home-chat) .home-turns {
+    max-height: calc(100dvh - 260px);
+  }
+  .home:not(:has(.home-chat)) {
+    max-width: 820px;
+  }
+  /* 회의실 떠 있는 입력 칸: 내용 칸 가운데, 맨 아래 */
+  .room-composer.floating {
+    left: calc(var(--app-left) + var(--side) + 32px);
+    bottom: 0;
+    transform: none;
+    width: min(820px, var(--app-w) - var(--side) - 64px);
+    max-width: none;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .screen:has(.room-composer.floating) {
+    padding-bottom: calc(var(--composer-h, 120px) + 32px);
+  }
 }
