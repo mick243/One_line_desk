@@ -1,5 +1,6 @@
 import type { Card, CardAction } from '../cards';
 import type { ReservationAttendee } from './invites';
+import type { ReadNote } from './read-note';
 import { EQUIPMENT, type Equipment } from './slots';
 
 /** 빈 회의실 찾기 조건. MCP rooms_find_free 입력과 같아요(ADR-14). */
@@ -295,4 +296,6 @@ export interface RoomChatResponse {
   changed: boolean;
   /** 모델이 실제로 해석했는지("AI 정리" 표시) */
   aiParsed: boolean;
+  /** 알아들은 것(11/5 시험). 해석 라벨만이에요. */
+  read?: ReadNote;
 }

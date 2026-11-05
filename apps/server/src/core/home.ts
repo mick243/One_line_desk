@@ -18,6 +18,7 @@ import {
   type HomeOpen,
   type HomePeriod,
   type HomeTeamSchedule,
+  homeReadLabel,
   type InquiryState,
   KST_OFFSET,
   kstDate,
@@ -25,10 +26,13 @@ import {
   type LeaveDay,
   leaveDayWord,
   type ModuleKind,
+  type ReadNote,
+  sameHomeRead,
   TEAM_SCHEDULE_TEXT,
 } from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { AppContext } from '../context';
+import type { AiGateway } from './ai/gateway';
 import type { AccessEntry } from './access-record';
 import { asksTeamSchedule, gatherTeamSchedule, mentionsOtherTeam, scheduleDates, scheduleHeadline, tellsOwnAway } from './home-team';
 import { linkCard } from './router';
@@ -136,6 +140,41 @@ export function interpretByRules(text: string, names: string[] = []): HomeInterp
   return { intent: 'unknown', period, kinds: [], moveTo: null };
 }
 
+/** 해석 결과 + 같은 문장을 낱말 규칙이 본 것(알아들은 것·정답률 표에 써요, 11/5 시험) */
+export type HomeReading = HomeInterpretation & { byModel: boolean; rule: HomeInterpretation };
+
+/**
+ * 홈 질문 해석(게이트웨이 한 번). 정답률 표(scripts/eval-ai.ts)도 같은 함수를 불러요.
+ * 질문 글만 보내요. 오늘 날짜·이름·내 예약·휴가 같은 내 자료는 넣지 않아요(기간은 상대값으로 받아요).
+ * names(직원 이름 낱말)는 규칙 해석기가 서버 메모리에서 대조만 해요. 모델에는 가지 않아요.
+ */
+export async function interpretHomeText(gateway: AiGateway, text: string, names: string[] = []): Promise<HomeReading> {
+  const rule = interpretByRules(text, names);
+  try {
+    const out = await gateway.structured({
+      module: 'router',
+      purpose: 'home-ask',
+      // 사람이 쓴 글이라 등급 1이에요. 무보관 계약 확인 전에는 게이트웨이가 거절하고 규칙으로 나눠요.
+      grade: GRADE.internal,
+      system: SYSTEM,
+      input: text,
+      schema: IntentSchema,
+      fallback: () => rule,
+      effort: 'low',
+      maxTokens: 512,
+    });
+    return { ...out, kinds: HOME_KINDS.filter((k) => out.kinds.includes(k)), byModel: gateway.modelBacked, rule };
+  } catch {
+    return { ...rule, byModel: false, rule };
+  }
+}
+
+/** 알아들은 것(11/5 시험). 실제 모델이 낱말 규칙과 다르게 봤을 때만 규칙이 본 것도 붙여요. */
+export function homeReadNote(read: HomeReading): ReadNote {
+  const understood = homeReadLabel(read);
+  return read.byModel && !sameHomeRead(read, read.rule) ? { understood, ruleSaid: homeReadLabel(read.rule) } : { understood };
+}
+
 // ── 기간 ─────────────────────────────────────────────────────────────
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -201,6 +240,12 @@ export class HomeDesk {
    */
   async ask(user: DeskUser, text: string, from: Pick<AccessEntry, 'ip' | 'requestId'> = {}): Promise<HomeAskResponse> {
     const read = await this.interpret(text);
+    const res = await this.answer(user, text, read, from);
+    // 알아들은 것(11/5 시험, AI 보완 2번): 해석 라벨만 붙여요. 질문 글은 돌려주지 않아요.
+    return { ...res, read: homeReadNote(read) };
+  }
+
+  private async answer(user: DeskUser, text: string, read: HomeReading, from: Pick<AccessEntry, 'ip' | 'requestId'>): Promise<HomeAskResponse> {
     const by = read.byModel ? ('ai' as const) : ('rule' as const);
     const settings = this.ctx.ops.get();
     let intent: HomeIntent = read.intent;
@@ -298,28 +343,10 @@ export class HomeDesk {
     await this.ctx.audit.record({ pseudonymId: user.pseudonymId, channel: 'ask', module: 'home', result });
   }
 
-  private async interpret(text: string): Promise<HomeInterpretation & { byModel: boolean }> {
+  private async interpret(text: string): Promise<HomeReading> {
     // 직원 이름 낱말은 규칙 해석기가 서버 메모리에서 대조만 해요. 모델에는 가지 않아요.
     const names = this.ctx.ops.get().teamSchedule ? await this.ctx.adapters.directory.personNameWords().catch(() => [] as string[]) : [];
-    const fallback = () => interpretByRules(text, names);
-    try {
-      const out = await this.ctx.gateway.structured({
-        module: 'router',
-        purpose: 'home-ask',
-        // 사람이 쓴 글이라 등급 1이에요. 무보관 계약 확인 전에는 게이트웨이가 거절하고 규칙으로 나눠요.
-        grade: GRADE.internal,
-        system: SYSTEM,
-        // 질문 글만 보내요. 오늘 날짜·이름·내 예약·휴가 같은 내 자료는 넣지 않아요(기간은 상대값으로 받아요).
-        input: text,
-        schema: IntentSchema,
-        fallback,
-        effort: 'low',
-        maxTokens: 512,
-      });
-      return { ...out, kinds: HOME_KINDS.filter((k) => out.kinds.includes(k)), byModel: this.ctx.gateway.modelBacked };
-    } catch {
-      return { ...fallback(), byModel: false };
-    }
+    return interpretHomeText(this.ctx.gateway, text, names);
   }
 
   /** 각 모듈 서비스에서 그 기간·종류의 내 일만 모아요. 꺼진 모듈의 종류는 건너뛰어요. */

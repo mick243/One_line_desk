@@ -16,5 +16,6 @@ export * from './api/pantry';
 export * from './api/mcp';
 export * from './api/pantry-order';
 export * from './api/home';
+export * from './api/read-note';
 export * from './rooms-chat';
 export * from './retention';

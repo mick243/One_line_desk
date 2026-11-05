@@ -693,3 +693,24 @@ describe('현황·장비 현황', () => {
     expect((await t.ctx.audit.recent(1))[0]).toMatchObject({ channel: 'ask', action: 'chat', result: 'locked' });
   });
 });
+
+describe('알아들은 것(11/5 시험, AI 보완 2번)', () => {
+  it('모델 없이(낱말 규칙) 돌면 알아들은 것만 붙여요', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.staff);
+    expect((await chat(me, '지금 빈 회의실 있어?')).read).toEqual({ understood: '예약 현황 보기' });
+  });
+
+  it('AI가 낱말 규칙과 다르게 보면 규칙이 본 것도 같이, 같으면 알아들은 것만 붙여요', async () => {
+    const provider = new ScriptedProvider();
+    const t = await createTestApp({ provider });
+    opened.push(t);
+    await t.modules.find((m) => m.kind === 'rooms')!.seed!();
+    t.ctx.gateway = new AiGateway(provider, true, t.db);
+    const me = await t.loginAs(MOCK.staff);
+    provider.reply = { intent: 'help', command: false, kinds: [] };
+    expect((await chat(me, '회의실 쓰는 법 알려 줘')).read).toEqual({ understood: '도움말', ruleSaid: '회의실 찾기·예약' });
+    provider.reply = undefined;
+    expect((await chat(me, '노트북 몇 대 남았어?')).read).toEqual({ understood: '장비 현황 보기 · 노트북' });
+  });
+});

@@ -28,7 +28,8 @@
     "db:migrate": "npm run db:migrate -w @one-line-desk/server",
     "tenant": "node --import tsx apps/server/scripts/tenant.ts",
     "mcp:spec": "node --import tsx apps/server/scripts/mcp-spec.ts",
-    "mcp:clients": "node --import tsx apps/server/scripts/mcp-clients.ts"
+    "mcp:clients": "node --import tsx apps/server/scripts/mcp-clients.ts",
+    "eval:ai": "node --import tsx apps/server/scripts/eval-ai.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
