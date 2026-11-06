@@ -7,7 +7,7 @@ import { fakeNotices, fakeRooms } from './fixtures/fake-services';
 import { authorize, callTool, connect, mcpRequest, refresh, ROOMS_ARGS, setupMcp, type TestApp } from './fixtures/oauth-flow';
 import { DEMO_CLIENT } from './index';
 
-// 월간 보고용 날마다 셈(11/3 사용자 결정, 530_mcp_daily_counts.sql, ADR-21 예외 13개월).
+// 월간 보고용 날마다 셈(11/3 사용자 결정, 510_mcp.sql, ADR-21 예외 13개월).
 // 감사 로그를 남기는 자리에서 그때그때 더하고, 표에는 날·종류·앱 이름·수만 있어요.
 
 vi.setConfig({ testTimeout: 30_000 });

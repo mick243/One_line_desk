@@ -1,6 +1,7 @@
 -- 한 줄 데스크 공통 표. 칸은 docs/ADR.md를 따라요.
 -- 원칙: 질문 원문·사람 이름·투표자를 다시 잇는 칸을 두지 않아요. 사람은 가명 ID(p_…)로만 남아요.
 -- 10/30: 옛 001~006을 한 파일로 합쳤어요(파일럿 DB 전 한 번만, docs/CONVENTIONS.md). 모듈 표는 각 모듈 파일로 옮겼어요.
+-- 11/6: 020(인덱스)·030(AI 실패 종류)·040·050(사내 카페 제약·역할 알림)을 이 파일로 합쳤어요(최종 구조는 같아요).
 
 -- 회의실·장비의 같은 칸 겹침 제약(exclude using gist)에 써요.
 create extension if not exists btree_gist;
@@ -22,10 +23,11 @@ create index audit_log_at on audit_log (at);
 
 -- 쓰기 경계(ADR-03). 매개변수는 검증된 구조 값만 담고 자유 문장은 넣지 않아요.
 -- result: plan 결과 카드(JSON). 같은 plan_id 확인이 다시 와도 결과만 돌려줘요.
+-- module cafeteria(11/6, ADR-29): 카페 주문도 확인 시트(plan 'cafeteria:order')로만 들어가요.
 create table plans (
   id uuid primary key,
   pseudonym_id text not null,
-  module text not null check (module in ('navi', 'notices', 'rooms', 'pantry')),
+  module text not null check (module in ('navi', 'notices', 'rooms', 'pantry', 'cafeteria')),
   action text not null,
   params jsonb not null,
   created_at timestamptz not null default now(),
@@ -34,6 +36,8 @@ create table plans (
   result_ref text,
   result jsonb
 );
+-- 보관 지우기(7일, RECORD_KEEP_DAYS, 11/3): plans.purge가 created_at < $1로 걸러요.
+create index plans_created on plans (created_at);
 
 -- 쓰기 영수증(멱등 키, ADR-03). 같은 키가 다시 오면 저장한 결과만 돌려줘요.
 create table action_receipts (
@@ -44,8 +48,15 @@ create table action_receipts (
   result jsonb not null,
   created_at timestamptz not null default now()
 );
+-- 회의실 채팅의 자동 실행 영수증 찾기(11/3, core/plans.ts autoReceipts·autoCountToday).
+-- 멱등 키 앞부분(starts_with)으로는 기본 키 인덱스를 못 써서, 가명 ID로 좁히고 시각 순서로 읽어요.
+create index action_receipts_person on action_receipts (pseudonym_id, created_at);
+-- 보관 지우기(11/3)
+create index action_receipts_created on action_receipts (created_at);
 
 -- AI 비용 집계(본문 없음, ADR-10 운영 표).
+-- fail_kind(11/5): 실패 종류 코드만 남겨요(refusal · max_tokens · no-output · parse · http-<상태 번호> · timeout · error).
+--   정답률 표에서 회의실 채팅 해석이 실패한 이유가 남지 않아 찾기 어려웠어요. 글·오류 본문은 입력이나 모델 출력이 섞일 수 있어 넣지 않아요.
 create table ai_usage (
   id bigserial primary key,
   at timestamptz not null default now(),
@@ -54,25 +65,35 @@ create table ai_usage (
   provider text not null,
   input_tokens integer not null default 0,
   output_tokens integer not null default 0,
-  ok boolean not null
+  ok boolean not null,
+  fail_kind text check (fail_kind is null or fail_kind ~ '^[a-z0-9_-]{1,40}$')
 );
+-- 보관 지우기(11/3, gateway.purgeUsage)
+create index ai_usage_at on ai_usage (at);
 
--- 앱 안 알림(10/26, ADR-16). 받는 쪽은 한 사람(가명 ID) 또는 한 부서예요.
--- 알림 글에는 내용(문의 글 등)을 넣지 않고, 무슨 일인지와 어느 페이지를 보면 되는지만 넣어요(R12와 같은 뜻).
+-- 앱 안 알림(10/26, ADR-16). 받는 쪽은 한 사람(가명 ID)·한 부서·한 역할 중 하나예요.
+-- 알림 글에는 내용(문의 글·이름·금액 등)을 넣지 않고, 무슨 일인지와 어느 페이지를 보면 되는지만 넣어요(R12와 같은 뜻).
+-- 사내 카페(11/6, ADR-29): 모듈 cafeteria, 페이지 cafe(주문)·cafe-settle(총무 정산 S9).
+-- audience_role(11/6): 직원의 카페 한도 요청은 총무(역할 facilities)에게 가요. 총무는 IdP 그룹이라 사람 목록을 들고 있지 않고,
+--   받는 쪽 역할은 읽을 때마다 다시 계산해서(R17) 역할이 빠지면 더는 보이지 않아요.
 create table notifications (
   id bigserial primary key,
   audience_pseudonym text,
   audience_department text,
   -- 부서 알림에서 빼는 사람(보낸 사람이 같은 부서일 때)
   exclude_pseudonym text,
-  module text not null check (module in ('navi', 'notices', 'rooms', 'pantry', 'core')),
+  module text not null check (module in ('navi', 'notices', 'rooms', 'pantry', 'cafeteria', 'core')),
   title text not null check (char_length(title) between 1 and 120),
-  page text not null check (page in ('home', 'navi', 'rooms', 'notices', 'board', 'mine', 'ops', 'chart')),
+  page text not null check (page in ('home', 'navi', 'rooms', 'notices', 'board', 'mine', 'ops', 'chart', 'cafe', 'cafe-settle')),
   created_at timestamptz not null default now(),
-  check ((audience_pseudonym is null) <> (audience_department is null))
+  audience_role text check (audience_role in ('facilities')),
+  constraint notifications_audience_check check (num_nonnulls(audience_pseudonym, audience_department, audience_role) = 1)
 );
 create index notifications_person on notifications (audience_pseudonym, created_at desc);
 create index notifications_department on notifications (audience_department, created_at desc);
+create index notifications_role on notifications (audience_role, created_at desc) where audience_role is not null;
+-- 보관 지우기(11/3, notify.purge). 위 인덱스들은 앞 칸이 달라서 지우기에 못 써요.
+create index notifications_created on notifications (created_at);
 
 -- 읽음은 사람마다 따로예요(부서 알림도 사람마다 읽어요).
 create table notification_reads (
