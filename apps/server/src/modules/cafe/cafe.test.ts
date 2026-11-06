@@ -171,7 +171,7 @@ describe('[F4] 확인 시트로만 들어가는 주문', () => {
     expect(await orders(t)).toHaveLength(1);
   });
 
-  it('[F4-1] 확인 시트에 메뉴·옵션·수량·합계·픽업 칸·이번 달 지금까지와 꼬리 문구가 있고, 자동 실행 목록이 아니에요', async () => {
+  it('[F4-1] 확인 시트에 메뉴·옵션·수량·합계·픽업 칸·이번 달 지금까지·남은 한도와 꼬리 문구가 있고, 자동 실행 목록이 아니에요', async () => {
     const { t, staff, barista } = await setup();
     await openCafe(barista);
     expect((await order(staff, [{ menuId: 'latte', qty: 1, options: [] }])).status).toBe('done');
@@ -180,7 +180,7 @@ describe('[F4] 확인 시트로만 들어가는 주문', () => {
     if (created.body.status !== 'sheet') throw new Error('확인 시트가 아니에요');
     expect(created.body.sheet).toEqual({
       title: '이대로 주문할까요?',
-      lines: ['아메리카노(아이스·연하게) × 2 · 4,000원', '합계 4,000원', '픽업 09:20–09:30', '이번 달 지금까지 2,500원'],
+      lines: ['아메리카노(아이스·연하게) × 2 · 4,000원', '합계 4,000원', '픽업 09:20–09:30', '이번 달 지금까지 2,500원 · 남은 한도 497,500원'],
       confirmLabel: '주문하기',
       note: '이번 달 카페 값은 다음 달 1일에 청구돼요. 7일 안에 회사 계좌로 보내 주세요',
     });
@@ -469,7 +469,7 @@ describe('[F4-15] 스위치', () => {
 });
 
 describe('[ADR-21·29] 보관과 감사 로그', () => {
-  it('취소한 주문은 취소하고 7일 뒤 지워지고, 다른 주문은 청구 묶음 전까지 남아요', async () => {
+  it('취소한 주문은 취소하고 7일 뒤 지워지고, 다른 주문은 청구서가 나와도 입금 확인 전에는 남아요', async () => {
     const { t, staff, barista } = await setup();
     await openCafe(barista);
     const kept = idOf(await order(staff));

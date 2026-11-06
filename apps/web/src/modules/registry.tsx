@@ -26,9 +26,10 @@ const OnboardingScreen = lazyPart(() => import('./navi/OnboardingScreen').then((
 const LeaveRequestSheet = lazyPart(() => import('./navi/LeaveRequestSheet').then((m) => m.LeaveRequestSheet));
 const ConsentScreen = lazyPart(() => import('./mcp/entry').then((m) => m.ConsentScreen));
 const LinkEntry = lazyPart(() => import('./mcp/entry').then((m) => m.LinkEntry));
-// 사내 카페(11/6, ADR-29, 출시 기본 끔): 카페 주문(S7)·카페 판(S8, 바리스타 홈)은 처음 열 때 불러요.
+// 사내 카페(11/6, ADR-29, 출시 기본 끔): 카페 주문(S7)·카페 판(S8, 바리스타 홈)·카페 정산(S9, 총무)은 처음 열 때 불러요.
 const CafePage = lazyPart(() => import('./cafe/CafePage').then((m) => m.CafePage));
 const CafeBoard = lazyPart(() => import('./cafe/CafeBoard').then((m) => m.CafeBoard));
+const CafeSettle = lazyPart(() => import('./cafe/CafeSettle').then((m) => m.CafeSettle));
 
 // 모듈 화면 부품 목록. 공통 화면은 여기서만 꺼내 써요.
 export const webModules: WebModules = {
@@ -58,6 +59,7 @@ export const webModules: WebModules = {
   LinkEntry,
   CafePage,
   CafeBoard,
+  CafeSettle,
 };
 
 export const cardRenderers = webModules.cardRenderers;

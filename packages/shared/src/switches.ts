@@ -33,6 +33,11 @@ export interface OpsSettings {
    * [그룹웨어 팀 일정 열기] 버튼으로 붙어요. 빈 글이면 버튼 없이 글 안내만 해요.
    */
   links: Record<OpsLinkKey, string>;
+  /**
+   * 사내 카페 회사 계좌 안내 글(11/6 2묶음, ADR-29). 직원 청구서에 그대로 보여요. 80자 안, 줄바꿈 없음, 운영자가 바꿔요.
+   * 비어 있으면 "계좌는 총무에게 물어봐 주세요"를 보여요. 앱은 돈을 받거나 보내지 않아서 계좌 글은 안내일 뿐이에요.
+   */
+  cafeAccount: string;
   values: {
     /** 아래 값은 아직 정하지 않은 임시값이에요. 운영 설정에서 바꿔요. */
     defaultMeetingMinutes: number;
@@ -53,6 +58,10 @@ export interface OpsSettings {
     jointPickLeadMinutes: number;
     /** 사내 카페 10분 픽업 칸마다 받는 잔 수 상한(11/6, ADR-29 피크, 기본 10잔). 꽉 찬 칸은 고를 수 없어요. */
     cafeSlotCapacity: number;
+    /** 사내 카페 한 사람의 한 달 주문 합계 한도(원, 11/6 2묶음, 기본 50만 원). 총무가 [늘려 주기]로 그 달만 늘려요. */
+    cafeMonthlyLimitWon: number;
+    /** 사내 카페 납부 기한(청구일부터 며칠, 기본 7일). 다음 날부터 미납자의 새 주문을 막아요(ADR-29). */
+    cafeDueDays: number;
   };
 }
 
@@ -75,6 +84,7 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     cafeteria: 'https://groupware.example.com/cafe',
     teamSchedule: 'https://groupware.example.com/calendar/team',
   },
+  cafeAccount: '',
   values: {
     defaultMeetingMinutes: 60,
     proposalTtlSeconds: 600,
@@ -88,6 +98,8 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     sickNoteOverDays: 3,
     jointPickLeadMinutes: 60,
     cafeSlotCapacity: 10,
+    cafeMonthlyLimitWon: 500_000,
+    cafeDueDays: 7,
   },
 };
 

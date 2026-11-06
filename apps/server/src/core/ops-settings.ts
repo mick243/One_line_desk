@@ -1,4 +1,13 @@
-import { DEFAULT_OPS_SETTINGS, isPantryStandalone, type ModuleKind, type ModuleSwitch, type OpsLinkKey, type OpsSettings } from '@one-line-desk/shared';
+import {
+  CAFE_BILLING_LIMITS,
+  DEFAULT_OPS_SETTINGS,
+  hasControlChar,
+  isPantryStandalone,
+  type ModuleKind,
+  type ModuleSwitch,
+  type OpsLinkKey,
+  type OpsSettings,
+} from '@one-line-desk/shared';
 import type { AuditEntry, AuditLog } from './audit';
 import type { Db } from './db';
 import { DeskError } from './errors';
@@ -20,6 +29,7 @@ interface Overrides {
   homeAsk?: boolean;
   teamSchedule?: boolean;
   links?: Partial<Record<OpsLinkKey, string>>;
+  cafeAccount?: string;
   values?: Partial<OpsValues>;
 }
 
@@ -39,6 +49,9 @@ export const OPS_VALUE_RANGE: Record<keyof OpsValues, readonly [number, number]>
   jointPickLeadMinutes: [0, 1440],
   // 사내 카페 10분 픽업 칸마다 잔 수 상한(11/6, ADR-29)
   cafeSlotCapacity: [1, 60],
+  // 사내 카페 한 사람의 한 달 한도(원)와 납부 기한(청구일부터 며칠). 기한 다음 날부터 미납자의 새 주문을 막아요(11/6 2묶음, ADR-29).
+  cafeMonthlyLimitWon: [CAFE_BILLING_LIMITS.minLimitWon, CAFE_BILLING_LIMITS.maxLimitWon],
+  cafeDueDays: [1, 28],
 };
 
 export const NAVI_OFF_ONLY_STANDALONE = '문의함은 공지·회의실이 모두 꺼진 같이 채워요 단독 모드에서만 끌 수 있어요';
@@ -54,6 +67,7 @@ function merge(base: OpsSettings, o: Overrides): OpsSettings {
     homeAsk: o.homeAsk ?? base.homeAsk,
     teamSchedule: o.teamSchedule ?? base.teamSchedule,
     links: { ...base.links, ...o.links },
+    cafeAccount: o.cafeAccount ?? base.cafeAccount,
     values: { ...base.values, ...o.values },
   };
 }
@@ -151,6 +165,20 @@ export class OpsSettingsStore {
         action: 'link.set',
         result: 'ok',
       },
+    );
+  }
+
+  /**
+   * 사내 카페 회사 계좌 안내 글(11/6 2묶음, ADR-29). 직원 청구서에 그대로 보여요. 80자 안, 줄바꿈·제어 문자 없음이고 빈 글이면 지워요.
+   * 계좌 번호가 들어가는 글이라 공통 입력 검사(개인정보 잠금)는 걸지 않아요. 감사 로그에는 글 없이 ok·cleared만 남아요.
+   */
+  async setCafeAccount(operatorId: string, text: string): Promise<OpsSettings> {
+    const value = text.trim();
+    if (value.length > CAFE_BILLING_LIMITS.accountMaxLength || /[\r\n]/.test(value) || hasControlChar(value))
+      throw new DeskError('bad-request', 400, `계좌 안내는 줄바꿈 없이 ${CAFE_BILLING_LIMITS.accountMaxLength}자까지 넣어 주세요`);
+    return this.save(
+      { ...this.overrides, cafeAccount: value },
+      { pseudonymId: operatorId, channel: 'ops', module: 'cafeteria', action: 'cafeAccount.set', result: value ? 'ok' : 'cleared' },
     );
   }
 

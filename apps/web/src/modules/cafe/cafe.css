@@ -185,3 +185,225 @@
     background: var(--accent-soft);
   }
 }
+
+/* S7 내 청구 · S9 카페 정산(11/6 2묶음, ADR-29). 색·간격은 styles.css의 변수만 써요. */
+.cafe-band.blocked {
+  background: var(--lock-bg);
+  color: var(--lock-text);
+}
+.cafe-blocked {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cafe-left {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.9375rem;
+}
+.cafe-bills {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cafe-bill {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--radius-m);
+  background: var(--surface-2);
+}
+.cafe-bill.status-overdue {
+  box-shadow: inset 4px 0 0 var(--lock-text);
+}
+.cafe-bill-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cafe-bill-head strong {
+  font-size: 1.0625rem;
+}
+.cafe-bill-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 0.9375rem;
+}
+.cafe-bill-facts dt {
+  color: var(--text-quiet);
+}
+.cafe-bill-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.cafe-code {
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
+.cafe-bill details summary {
+  cursor: pointer;
+  color: var(--accent-text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.cafe-bill-orders {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9375rem;
+}
+.cafe-bill-orders li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.chip.cafe-bill-overdue {
+  background: var(--lock-bg);
+  color: var(--lock-text);
+}
+.chip.cafe-bill-paid {
+  background: var(--ok-bg);
+  color: var(--ok-text);
+}
+.cafe-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cafe-won {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cafe-won input,
+.cafe-menu-edit input:not([type='checkbox']) {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  color: var(--text);
+  min-width: 0;
+}
+.cafe-ask .cafe-won input {
+  flex: 1;
+  font-size: 1.0625rem;
+}
+.cafe-settle-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cafe-month {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cafe-table-wrap {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+.cafe-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+.cafe-table th,
+.cafe-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 10px 6px;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.cafe-table thead th {
+  color: var(--text-quiet);
+  font-weight: 600;
+}
+.cafe-table .num {
+  text-align: right;
+}
+.cafe-table tr.status-paid td {
+  color: var(--text-quiet);
+}
+.cafe-requests,
+.cafe-menu-admin {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cafe-request {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.cafe-request:first-child {
+  border-top: 0;
+}
+.cafe-request-body {
+  flex: 1 1 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cafe-request .actions {
+  flex-wrap: nowrap;
+}
+.cafe-menu-edit {
+  display: grid;
+  grid-template-columns: minmax(120px, 2fr) minmax(110px, 1fr) minmax(140px, 2fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.cafe-menu-edit:first-child {
+  border-top: 0;
+}
+.cafe-menu-edit.off input:not([type='checkbox']) {
+  color: var(--text-quiet);
+}
+.cafe-menu-edit .lock-line {
+  grid-column: 1 / -1;
+}
+.cafe-menu-edit .cafe-won input {
+  width: 100%;
+}
+.cafe-active {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-size: 0.9375rem;
+}
+@media (max-width: 720px) {
+  .cafe-menu-edit {
+    grid-template-columns: 1fr 1fr;
+  }
+  .cafe-menu-edit > input:first-child {
+    grid-column: 1 / -1;
+  }
+  .cafe-menu-edit > input:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+}
