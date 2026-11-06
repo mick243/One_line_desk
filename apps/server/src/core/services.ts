@@ -82,6 +82,12 @@ export interface NoticesService {
   search(query: string, limit: number): Promise<{ mock: boolean; hits: NoticeHit[] }>;
   /** 찾아보는 허용 게시판 이름. 결과가 없을 때 어디를 찾았는지 알려 줘요. */
   boards(): string[];
+  /**
+   * 규정 한 줄(11/6 휴가 A안 신청 전 카드): 서버가 정한 찾기 말(사람이 쓴 글 아님)로 허용 게시판 공지를 찾아,
+   * 맞는 공지 본문 문장 하나를 고쳐 쓰지 않고 그대로 줘요("원문 한 줄"과 같은 방식, 낱말 규칙만, LLM 없음).
+   * mustHave에 맞는 문장이 없으면 null이에요(지어내지 않아요).
+   */
+  ruleLine?(query: string, mustHave: RegExp): Promise<{ sentence: string; title: string; url: string } | null>;
 }
 
 export interface NaviService {
@@ -127,6 +133,11 @@ interface NaviHomeRequest {
 export interface NaviHomeRead {
   /** 본인이 보낸 문의·휴가 요청(보관 기간 7일 안) */
   myRequests(pseudonymId: string): Promise<NaviHomeRequest[]>;
+  /**
+   * "내 휴가 신청 어떻게 됐어?"(11/6 휴가 A안): 근태 기록에 들어간(승인된) 본인 휴가 중 [from, to] 날의 카드와,
+   * 결재 중인 신청은 그룹웨어 결재함에서 보라는 안내([결재함 열기]). 앱은 그룹웨어 결재 문서를 읽지 않아요. 본인 것만이에요.
+   */
+  leaveStatus?(user: DeskUser, from: string, to: string): Promise<Card>;
   /** 내 부서가 받은 새 문의 수만. 받는 부서가 아니면 null이에요. 보낸 사람·글은 없어요. */
   newInboxCount(user: Pick<DeskUser, 'department'>): Promise<number | null>;
 }
@@ -173,6 +184,8 @@ export interface NaviMcpRead {
   ): { ok: true; token: string; days: LeaveDay[] } | { ok: false; code: string; message: string };
   /** 링크를 열 때(앱, 본인 로그인): 그 날짜·종류로 채운 휴가 신청 양식 행동. 앱에서 휴가를 신청할 수 없으면 null이에요. */
   leaveTarget(user: DeskUser, link: LeaveLink): Promise<Extract<CardAction, { type: 'leave-request' }> | null>;
+  /** 링크를 열 때, 앱 안 휴가 결재가 꺼져 있으면(11/6 A안, 운영 기본): 그 날짜·종류의 신청 전 카드(본인 것만) */
+  leaveCheck(user: DeskUser, link: LeaveLink): Promise<Card>;
 }
 
 /** 휴가 준비 링크 값. 날짜·하루/반차·종류만이에요. */

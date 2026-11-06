@@ -12,7 +12,9 @@ type LimitedAction =
   /** MCP 도구마다 따로 세요. 이름은 도구 레지스트리 이름 그대로예요. */
   | `mcp.${string}`
   | 'people.search'
-  | 'invite';
+  | 'invite'
+  /** 시연 전용 가상 그룹웨어 기안·결재(11/6) */
+  | 'demo-groupware';
 
 const WINDOW_MS = 60_000;
 

@@ -67,7 +67,7 @@ const LeaveFileSchema = z.record(
         date: z.iso.date(),
         kind: z.enum(['full', 'half']),
         half: z.enum(['am', 'pm']).optional(),
-        type: z.enum(['annual', 'official', 'sick']).optional(),
+        type: z.enum(['annual', 'official', 'sick', 'family-event']).optional(),
       }),
     ),
   }),

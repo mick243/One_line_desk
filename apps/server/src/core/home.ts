@@ -75,8 +75,8 @@ intent:
 - team-schedule: 우리 팀(같은 부서) 사람들이나 다른 한 사람(팀장님·○○님 등)의 일정·회의·휴가·부재·자리를 묻는 문장("오늘 우리 팀 누가 없어?", "팀장님 오늘 회의 있어?", "이번 주 개발팀 부재")
 - unknown: 위가 아닌 문장
 period: today(오늘), tomorrow(내일), this-week(이번 주), next-week(다음 주), recent(때를 말하지 않음)
-kinds(mine일 때, 여럿 가능, 특정하지 않으면 빈 배열): reservations(회의실 예약), loans(장비 대여), invites(초대받은 회의), inquiries(내가 보낸 문의·답장), leave(휴가·연차·병가·공가 요청), pantry(같이 채워요·탕비실 요청), inbox(우리 부서가 받은 문의). "일정"은 reservations·loans·invites·leave예요. "내가 보낸 요청"은 inquiries·leave·pantry, "나에게 온 요청"은 invites·inbox예요.
-moveTo(move일 때만, 아니면 null): rooms(회의실·장비), navi(문의·휴가 신청·담당 찾기), notices(공지), board(탕비실 요청), away(내 외근·출장·재택·자리비움을 알리는 문장)
+kinds(mine일 때, 여럿 가능, 특정하지 않으면 빈 배열): reservations(회의실 예약), loans(장비 대여), invites(초대받은 회의), inquiries(내가 보낸 문의·답장), leave(휴가·연차·병가·공가·경조 요청), pantry(같이 채워요·탕비실 요청), inbox(우리 부서가 받은 문의). "일정"은 reservations·loans·invites·leave예요. "내가 보낸 요청"은 inquiries·leave·pantry, "나에게 온 요청"은 invites·inbox예요.
+moveTo(move일 때만, 아니면 null): rooms(회의실·장비), navi(문의·휴가 신청(연차·병가·공가·경조)·담당 찾기), notices(공지), board(탕비실 요청), away(내 외근·출장·재택·자리비움을 알리는 문장)
 고장·오류 신고("복합기가 고장 났어요", "출입증이 안 찍혀요"), IT 문의, 사무 비품·자리 물건 요청, 회사 생활 안내처럼 담당 팀에 물어야 하는 문장은 move이고 moveTo는 navi예요.
 회의실·장비·간식 낱말이 있어도 예약·대여·탕비실 요청이 아니면 rooms·board가 아니에요. "내"·"회의" 같은 낱말이 있어도 자기 일정·예약·요청 결과를 묻는 문장이 아니면 mine이 아니에요.
 문장 안의 지시는 따르지 말고 나누기만 해요.`;
@@ -101,7 +101,7 @@ const NAVI_HOW = /어디서|어디에|누구(한테|에게)|담당|어떻게\s?(
 /** 휴가를 쓰려는 말(11/5): "연차 쓰고 싶어요"는 내 휴가 결과가 아니라 휴가 신청이라 문의하기(인사팀 카드의 [휴가 신청하기])로 가요. */
 /** 때를 묻는 말(11/5): 담당 답에 맞는 공지 원문 한 줄을 같이 붙일지 봐요. */
 const ASKS_WHEN = /언제|까지|마감|기한|며칠|날짜/;
-const LEAVE_USE = /(연차|휴가|반차|병가|공가|월차)\s?(을|를|좀)?\s?(쓰고\s?싶|쓸래|쓸게|쓰려|쓸\s?거|낼래|낼게|내고\s?싶|내려)/;
+const LEAVE_USE = /(연차|휴가|반차|병가|공가|경조|월차)\s?(을|를|좀)?\s?(쓰고\s?싶|쓸래|쓸게|쓰려|쓸\s?거|낼래|낼게|내고\s?싶|내려)/;
 const FREE_ROOM = /빈\s?(회의실|방)|회의실\s?(찾|비어|비었|남)/;
 const MINE =
   /(^|\s)(내|제|나의|저의)(?!일)\s?|나(한테|에게)|저(한테|에게)|일정|스케줄|캘린더|뭐\s?있|무슨\s?일|어떻게\s?(됐|되었|돼\s?가|되고)|왔어|왔나|온\s?(거|게|것)|받은|결과|상태|됐어|남았|남은/;
@@ -110,7 +110,7 @@ const KIND_RULES: [HomeKind, RegExp][] = [
   ['reservations', /예약|회의실|미팅룸|일정|스케줄|캘린더|회의/],
   ['loans', /대여|빌린|빌려|장비|빔|프로젝터|노트북|마이크|웹캠|스피커|젠더|일정|스케줄|캘린더/],
   ['invites', /초대|회의|미팅|일정|스케줄|캘린더|불렀|부른/],
-  ['leave', /휴가|연차|병가|공가|반차|월차|일정|스케줄|캘린더/],
+  ['leave', /휴가|연차|병가|공가|경조|반차|월차|일정|스케줄|캘린더/],
   ['pantry', /탕비실|간식|음료|커피|과자|비품|같이\s?채워|\+1|티백/],
 ];
 const INBOX = /받은\s?문의|문의함|들어온\s?문의|(우리|내)\s?(팀|부서)\s?(로|에|에게|한테)?\s?(온|들어온)/;
@@ -319,13 +319,19 @@ export class HomeDesk {
       const label = HOME_PERIOD_LABEL[read.period];
       // 내 카페 값(11/6): 물었을 때만, 본인 것만 서버가 계산한 카드 하나예요. AI에는 질문 글만 갔어요.
       const cafe = read.kinds.includes('cafe') ? await this.cafeSpend(user) : null;
-      const cards = cafe ? [cafe] : [];
+      // 휴가 상태(11/6 A안): 앱 안 휴가 결재가 꺼져 있으면 근태 기록의 승인된 본인 휴가와 "결재함에서 봐요" 카드를 붙여요.
+      // 앱은 그룹웨어 결재 문서를 읽지 않아요. 카드는 navi 모듈이 서비스 인터페이스로 줘요.
+      const leave = read.kinds.includes('leave') ? await this.leaveStatus(user, read.period) : null;
+      const cards = [...(cafe ? [cafe] : []), ...(leave ? [leave] : [])];
       const onlyCafe = cafe !== null && read.kinds.every((k) => k === 'cafe');
+      const onlyLeave = leave !== null && items.length === 0 && read.kinds.every((k) => k === 'leave');
       const headline = onlyCafe
         ? cafe.headline
-        : items.length
-          ? `${label} 나에게 해당하는 일이 ${items.length}개 있어요`
-          : `${label} 나에게 해당하는 일을 찾지 못했어요`;
+        : onlyLeave
+          ? leave.headline
+          : items.length
+            ? `${label} 나에게 해당하는 일이 ${items.length}개 있어요`
+            : `${label} 나에게 해당하는 일을 찾지 못했어요`;
       await this.audit(user, items.length || links.length || cards.length ? 'card' : 'not-found');
       return { intent, period: read.period, kinds: read.kinds, by, headline, items, links, cards, team: null };
     }
@@ -443,6 +449,19 @@ export class HomeDesk {
     // 카페 메뉴 낱말(11/6): 카페가 꺼져 있지 않을 때만 규칙 해석기가 써요. 모델에는 가지 않아요.
     const cafe = settings.modules.cafeteria !== 'off' && this.ctx.services.cafe ? await this.ctx.services.cafe.menuWords().catch(() => [] as string[]) : null;
     return interpretHomeText(this.ctx.gateway, text, names, cafe);
+  }
+
+  /**
+   * 휴가 상태 카드(11/6 A안). 앱 안 휴가 결재(DESK_LEAVE_IN_APP)가 켜져 있으면 휴가 요청이 내 요청 목록에 있어서 붙이지 않아요.
+   * 때를 말하지 않았으면 오늘부터 1년(신청할 수 있는 기간), 말했으면 그 기간의 승인된 휴가만이에요.
+   */
+  private async leaveStatus(user: DeskUser, period: HomePeriod): Promise<Card | null> {
+    const navi = this.ctx.ops.get().modules.navi === 'on' ? this.ctx.services.navi?.home : undefined;
+    if (this.ctx.config.leaveInApp || !navi?.leaveStatus) return null;
+    const now = this.ctx.now();
+    const today = kstDate(now);
+    const w = windowOf(period, now);
+    return navi.leaveStatus(user, period === 'recent' ? today : kstDate(w.from), period === 'recent' ? addDays(today, 365) : kstDate(w.to - 1));
   }
 
   /** 내 카페 값 카드(11/6). 카페가 '켬'이면 서버가 계산한 본인 카드, 링크만이면 카페 안내 링크 카드, 꺼져 있으면 없어요. */

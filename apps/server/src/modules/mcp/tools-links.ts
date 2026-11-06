@@ -147,9 +147,14 @@ export const EQUIPMENT_OUTPUT = z
 
 const CONFIRM_LINE = '확정은 앱에서 한 번 · 링크는 본인만 · 짧은 시간만 유효해요';
 
+/**
+ * inApp: 앱 안 휴가 결재(DESK_LEAVE_IN_APP)가 켜졌는지. 11/6 A안(운영 기본, 꺼짐)이면 링크는 신청 전 카드를 열고
+ * 신청·결재는 회사 그룹웨어에서 해서 안내 글이 달라요.
+ */
 export function shapeLeave(
   type: LeaveType,
   result: { ok: true; days: LeaveDay[]; link: string } | { ok: false; code: string; message: string },
+  inApp = true,
 ): z.infer<typeof LEAVE_OUTPUT> {
   const typeLabel = LEAVE_TYPE_LABEL[type];
   if (!result.ok) return { type, typeLabel, days: [], emptyReason: { code: result.code, message: result.message }, confirm: CONFIRM_LINE };
@@ -163,8 +168,10 @@ export function shapeLeave(
       return kind ? [{ date: d.date, kind, label: `${dayLabel(d.date)} ${leaveDayWord(d)}` }] : [];
     }),
     link: result.link,
-    linkText: `한 줄 데스크에서 ${typeLabel} 신청 열기`,
-    confirm: `${CONFIRM_LINE}. ${reason}. 남은 연차는 앱에서 봐요`,
+    linkText: inApp ? `한 줄 데스크에서 ${typeLabel} 신청 열기` : `한 줄 데스크에서 ${typeLabel} 신청 전 확인 열기`,
+    confirm: inApp
+      ? `${CONFIRM_LINE}. ${reason}. 남은 연차는 앱에서 봐요`
+      : `링크는 본인만 · 짧은 시간만 유효해요. 앱에서 남은 연차와 그날 일정을 확인하고, 신청·결재는 회사 그룹웨어에서 해요`,
   };
 }
 

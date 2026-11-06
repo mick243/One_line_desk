@@ -5,6 +5,7 @@ import {
   INQUIRY_STATE_LABEL,
   kstDate,
   LEAVE_REQUEST_MAX_DAYS,
+  type LeaveKind,
   LEAVE_TYPES,
   type LeaveDay,
   mergeLeaveHalves,
@@ -21,7 +22,7 @@ import { weekdayOf } from '../../core/slots';
 import { GENERAL_TASK } from './cards';
 import { GENERAL_DESK } from './fixtures';
 import type { ItHelpService } from './it-help';
-import { findLeaveRequestRow, leaveLinkAction } from './leave';
+import { findLeaveRequestRow, leaveCheckForLink, leaveLinkAction } from './leave';
 import * as repo from './repo';
 import { type NaviService, rankRows, topTied } from './service';
 
@@ -87,8 +88,12 @@ const isRealDate = (d: string) => DATE.test(d) && addDays(d, 0) === d;
 /**
  * 휴가 준비 링크의 날 검사(앱 신청 검사와 같은 규칙): 오늘부터 1년 안의 평일, 겹치지 않게. 병가는 지난 3일까지 받아요.
  * 연차 자료(등급 2)는 읽지 않아요. 남은 연차가 모자라는지는 앱 양식이 본인 화면에서 보여 줘요.
+ * 11/6: 신청 전 카드 [이 날로 보기](경조 포함 LeaveKind)도 같은 검사를 써요.
  */
-export function checkLeaveLink(link: LeaveLink, today: string): { ok: true; days: LeaveDay[] } | { ok: false; code: string; message: string } {
+export function checkLeaveLink(
+  link: { days: readonly LeaveDay[]; type: LeaveKind },
+  today: string,
+): { ok: true; days: LeaveDay[] } | { ok: false; code: string; message: string } {
   if (!link.days.length) return { ok: false, code: 'no-days', message: '쓸 날을 하나 이상 골라 주세요' };
   if (link.days.length > LEAVE_REQUEST_MAX_DAYS) return { ok: false, code: 'too-many', message: `한 번에 ${LEAVE_REQUEST_MAX_DAYS}일까지 신청할 수 있어요` };
   // 11/3: 반차는 오전·오후 중 하나가 꼭 있어야 해요. AI가 짐작하지 않게 사람에게 물어보라고 돌려줘요.
@@ -226,6 +231,11 @@ export function createNaviMcpRead(
       const target = findLeaveRequestRow(await repo.allRows(ctx.db));
       if (!target) return null;
       return leaveLinkAction(ctx, user, target, link.days, link.type);
+    },
+
+    // 11/6 A안: 앱 안 휴가 결재가 꺼져 있으면 링크는 신청 전 카드를 열어요. 신청은 카드의 [그룹웨어에서 신청하기]예요.
+    leaveCheck(user, link) {
+      return leaveCheckForLink(ctx, user, link.days, link.type);
     },
   };
 }

@@ -16,6 +16,7 @@ import { DemoBand } from './components/DemoBand';
 import { VersionBand } from './components/VersionBand';
 import { NotificationBell } from './components/NotificationBell';
 import { isBaristaMenu, TabBar, type Tab, visibleTabs } from './components/TabBar';
+import { lazyPart } from './components/LazyPart';
 import { webModules } from './modules/registry';
 import { FEATURES, featureFor, pageOfKind } from './screens/features';
 import { FeaturePage } from './screens/FeaturePage';
@@ -23,15 +24,23 @@ import { Home } from './screens/Home';
 import { Login } from './screens/Login';
 import { AiEvalScreen } from './screens/AiEval';
 import { BoardOnly } from './screens/BoardOnly';
+import type { GroupwarePage } from './screens/GroupwareDemo';
 import { LeaveStart } from './screens/LeaveStart';
 import { Mine } from './screens/Mine';
 
 type View = AppDestination;
 
-/** 바깥에서 들어오는 길(M3·M4): 연결 동의 시트, 앱 확인 링크. 로그인 뒤에 열려요. */
-function entryFromPath(): { kind: 'consent' } | { kind: 'link'; token: string } | null {
+// 시연 전용 가상 그룹웨어(11/6 휴가 A안)는 시연에서만 쓰여서 처음 열 때 따로 불러요(첫 화면 JS를 줄여요).
+const GroupwareDemo = lazyPart(() => import('./screens/GroupwareDemo').then((m) => m.GroupwareDemo));
+
+/**
+ * 바깥에서 들어오는 길(M3·M4): 연결 동의 시트, 앱 확인 링크. 로그인 뒤에 열려요.
+ * 11/6: 시연 전용 가상 그룹웨어(/demo/groupware/leave·inbox)도 여기서 열어요. 서버가 시연일 때만 그 주소와 API를 줘요.
+ */
+function entryFromPath(): { kind: 'consent' } | { kind: 'link'; token: string } | { kind: 'groupware'; page: GroupwarePage } | null {
   const path = window.location.pathname;
   if (path.startsWith('/oauth/consent')) return { kind: 'consent' };
+  if (path === '/demo/groupware/leave' || path === '/demo/groupware/inbox') return { kind: 'groupware', page: path.endsWith('leave') ? 'leave' : 'inbox' };
   const link = path.match(/^\/r\/([A-Za-z0-9_.-]+)$/);
   return link ? { kind: 'link', token: link[1]! } : null;
 }
@@ -199,6 +208,9 @@ export function App() {
       ) : me.board ? (
         // 카운터 기기의 카페 판 전용 세션(11/6 3묶음, ADR-20 예외): 탭·알림 없이 카페 판만 그려요.
         <BoardOnly leftMs={me.board.leftMs} onLoggedOut={() => setMe(null)} />
+      ) : entry?.kind === 'groupware' ? (
+        // 시연 전용 가상 그룹웨어(11/6): 한 줄 데스크 탭·알림 없이 다른 색 화면으로 그려요. 기안자는 지금 로그인한 사람이에요.
+        <GroupwareDemo page={entry.page} onExit={() => go('home')} />
       ) : (
         <ActionHost onNavigate={navigate} InviteSheet={webModules.InviteSheet} inviteChannels={config.inviteChannels}>
           <div className='app-bar'>
@@ -225,7 +237,7 @@ export function App() {
                     <>
                       <InquiryInbox />
                       <MyInquiries />
-                      <LeaveStart variant='card' />
+                      <LeaveStart variant='card' inApp={config.leaveInApp !== false} />
                     </>
                   ) : undefined
                 }
@@ -262,7 +274,7 @@ export function App() {
                   <>
                     {/* 11/2: "이런 것도 찾아 줘요" 묶음을 뺐어요. IT 오류·첫 2주 화면은 맞는 질문의 카드 버튼(withGuides)으로 들어가요. */}
                     {/* 11/5: 휴가 신청은 찾지 않아도 바로 열 수 있게 칸을 둬요. */}
-                    <LeaveStart variant='card' />
+                    <LeaveStart variant='card' inApp={config.leaveInApp !== false} />
                     <InquiryInbox />
                     <MyInquiries />
                   </>

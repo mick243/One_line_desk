@@ -38,6 +38,11 @@ export const HTML_CACHE = 'no-store';
 
 /** index.html로 대신 답하는 화면 주소예요. 그 밖의 주소는 404라서 /api·/assets에 HTML이 오지 않아요. */
 export const SCREEN_PATHS = ['/', '/oauth/consent', '/r/:token'] as const;
+/**
+ * 시연 전용 가상 그룹웨어 화면(11/6 휴가 A안). 시연일 때만 index.html로 답하고, 운영에는 이 주소가 없어요(404).
+ * 웹만 Vercel에 올린 시연(vercel.json)도 같은 주소를 넘겨요.
+ */
+export const DEMO_SCREEN_PATHS = ['/demo/groupware/leave', '/demo/groupware/inbox'] as const;
 
 interface WebFile {
   body: Buffer;
@@ -103,8 +108,8 @@ function send(req: FastifyRequest, reply: FastifyReply, file: WebFile, cache: st
   return reply.send(encoding === 'br' ? file.br : encoding === 'gzip' ? file.gzip : file.body);
 }
 
-/** dist의 화면 파일을 내보내는 경로를 붙여요. 운영 시작(index.ts)만 불러요. */
-export function registerWebFiles(app: FastifyInstance, dir: string) {
+/** dist의 화면 파일을 내보내는 경로를 붙여요. 운영 시작(index.ts)만 불러요. demo면 가상 그룹웨어 화면 주소도 붙여요. */
+export function registerWebFiles(app: FastifyInstance, dir: string, opts: { demo?: boolean } = {}) {
   const files = loadWebFiles(dir);
   const index = files.get('/index.html')!;
 
@@ -113,6 +118,7 @@ export function registerWebFiles(app: FastifyInstance, dir: string) {
     return send(req, reply, index, HTML_CACHE);
   };
   for (const path of SCREEN_PATHS) app.get(path, screen);
+  if (opts.demo) for (const path of DEMO_SCREEN_PATHS) app.get(path, screen);
 
   // 없는 /assets 파일은 index.html이 아니라 404예요. 옛 화면이 지워진 파일을 부르면 바로 실패해야 오류 경계가 잡아요.
   app.get('/assets/*', async (req, reply) => {

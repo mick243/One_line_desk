@@ -15,7 +15,9 @@
     },
     { "source": "/oauth/:path(authorize|token|revoke)", "destination": "https://one-line-desk-demo.fly.dev/oauth/:path" },
     { "source": "/oauth/consent", "destination": "/index.html" },
-    { "source": "/r/:token", "destination": "/index.html" }
+    { "source": "/r/:token", "destination": "/index.html" },
+    { "source": "/demo/groupware/leave", "destination": "/index.html" },
+    { "source": "/demo/groupware/inbox", "destination": "/index.html" }
   ],
   "headers": [
     {
@@ -38,6 +40,8 @@
     { "source": "/", "headers": [{ "key": "cache-control", "value": "no-store" }] },
     { "source": "/index.html", "headers": [{ "key": "cache-control", "value": "no-store" }] },
     { "source": "/oauth/consent", "headers": [{ "key": "cache-control", "value": "no-store" }] },
-    { "source": "/r/:token", "headers": [{ "key": "cache-control", "value": "no-store" }] }
+    { "source": "/r/:token", "headers": [{ "key": "cache-control", "value": "no-store" }] },
+    { "source": "/demo/groupware/leave", "headers": [{ "key": "cache-control", "value": "no-store" }] },
+    { "source": "/demo/groupware/inbox", "headers": [{ "key": "cache-control", "value": "no-store" }] }
   ]
 }

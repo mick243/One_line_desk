@@ -3,7 +3,7 @@ import type { AppContext } from '../../context';
 import { makeCard } from '../../core/cards';
 import type { AskInput, AskOutcome } from '../../core/module';
 import { ALLOWED_BOARDS, type BoardNotice, MOCK_BOARD } from './fixtures';
-import { type NoticeQuote, quoteFor } from './quote';
+import { type NoticeQuote, pickByRules, quoteFor, sentencesOf } from './quote';
 import * as repo from './repo';
 import { bigramSet, bigramsOf, coverage, keywords } from './text';
 
@@ -117,6 +117,20 @@ export function createNoticesService(ctx: AppContext) {
       const body = bodies.get(hit.id);
       const quote = body ? await quoteFor(ctx.gateway, input.text, hit.title, body) : null;
       return { cards: [noticeCard(hit, quote)], found: true };
+    },
+
+    /**
+     * 규정 한 줄(11/6 휴가 A안 신청 전 카드). query는 서버가 정한 찾기 말이에요(사람이 쓴 글이 아니에요).
+     * 찾은 공지 본문에서 mustHave에 맞는 문장 하나를 낱말 규칙으로 골라 그대로 줘요. LLM은 부르지 않아요. 없으면 null이에요.
+     */
+    async ruleLine(query: string, mustHave: RegExp): Promise<{ sentence: string; title: string; url: string } | null> {
+      const { hits } = await search(query, 3);
+      for (const hit of hits) {
+        const body = bodies.get(hit.id);
+        const sentences = body ? sentencesOf(body).filter((x) => mustHave.test(x)) : [];
+        if (sentences.length) return { sentence: sentences[pickByRules(query, sentences)]!, title: hit.title, url: hit.url };
+      }
+      return null;
     },
 
     /** 비어 있을 때만 허용 게시판 사본을 색인해요. 여러 번 불러도 한 번만 들어가요. */
