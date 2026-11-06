@@ -89,7 +89,22 @@ export type InquiryRouteBy = 'ai' | 'rule' | 'none';
 /** 앱 안 페이지. 기능마다 페이지가 따로 있어요(10/26 화면 구조 변경, ADR-02 개정). */
 // ai-eval: 관리자(운영자)만 보는 AI 정답률 화면(11/5 시험, R7 예외). 마이 페이지 아래에 있어요.
 // cafe: 사내 카페 주문(S7, 11/6 ADR-29, 출시 기본 끔). 바리스타의 카페 판(S8)은 바리스타 홈이라 따로 페이지가 없어요.
-export const APP_DESTINATIONS = ['home', 'navi', 'rooms', 'notices', 'board', 'mine', 'ops', 'chart', 'it-help', 'onboarding', 'ai-eval', 'cafe'] as const;
+// cafe-settle: 카페 정산(S9, 총무만, 11/6 2묶음). 마이 페이지 > 내 역할 아래에 있어요.
+export const APP_DESTINATIONS = [
+  'home',
+  'navi',
+  'rooms',
+  'notices',
+  'board',
+  'mine',
+  'ops',
+  'chart',
+  'it-help',
+  'onboarding',
+  'ai-eval',
+  'cafe',
+  'cafe-settle',
+] as const;
 export type AppDestination = (typeof APP_DESTINATIONS)[number];
 
 /** "틀렸어요" 시트에 필요한 것. 안내·제안 카드에만 붙어요(화면설계 카드 문법). */

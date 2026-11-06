@@ -161,4 +161,14 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
     },
     async (req) => ctx.ops.setLink(req.deskUser!.pseudonymId, req.body.module, req.body.url),
   );
+
+  // 사내 카페 회사 계좌 안내 글(11/6 2묶음, ADR-29). 직원 청구서에 그대로 보여요. 80자 안, 줄바꿈 없음, 빈 글이면 지워요.
+  app.put<{ Body: { text: string } }>(
+    '/api/ops/cafe-account',
+    {
+      preHandler: opsWrite,
+      schema: { body: { type: 'object', required: ['text'], additionalProperties: false, properties: { text: { type: 'string', maxLength: 200 } } } },
+    },
+    async (req) => ctx.ops.setCafeAccount(req.deskUser!.pseudonymId, req.body.text),
+  );
 }

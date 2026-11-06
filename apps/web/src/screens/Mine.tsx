@@ -44,7 +44,7 @@ export function Mine({
   me: Me;
   switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; mcp: boolean; teamSchedule?: boolean; homeAsk?: boolean };
   onLoggedOut: () => void;
-  onOpen: (to: 'ops' | 'chart' | 'ai-eval' | 'home', text?: string, auto?: boolean) => void;
+  onOpen: (to: 'ops' | 'chart' | 'ai-eval' | 'cafe-settle' | 'home', text?: string, auto?: boolean) => void;
 }) {
   const { modules } = switches;
   const retention = retentionLines(switches);
@@ -67,6 +67,8 @@ export function Mine({
   const hasChart = me.roles.includes('chart-owner') && modules.navi !== 'off';
   // 관리자(운영자)만 보는 AI 정답률 화면(11/5 시험, R7 예외)
   const isOperator = me.roles.includes('operator');
+  // 카페 정산(S9, 11/6 ADR-29): 총무이고 사내 카페가 켜져 있을 때만이에요.
+  const hasCafeSettle = me.roles.includes('facilities') && modules.cafeteria === 'on';
 
   return (
     <div className='mine'>
@@ -109,13 +111,18 @@ export function Mine({
       )}
       {joint && <TeamDelegates />}
 
-      {(hasFacilities || hasChart || isOperator) && (
+      {(hasFacilities || hasChart || isOperator || hasCafeSettle) && (
         <section className='card'>
           <h2>내 역할</h2>
           <div className='actions'>
             {hasFacilities && (
               <button type='button' className='secondary' onClick={() => onOpen('ops')}>
                 {ROLE_LABEL.facilities} · 운영
+              </button>
+            )}
+            {hasCafeSettle && (
+              <button type='button' className='secondary' onClick={() => onOpen('cafe-settle')}>
+                {ROLE_LABEL.facilities} · 카페 정산
               </button>
             )}
             {hasChart && (

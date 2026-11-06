@@ -94,4 +94,6 @@ export interface WebModules {
   CafePage: ComponentType;
   /** S8 카페 판. 바리스타 메뉴일 때 홈 자리에 그려요(이름·금액 없음). */
   CafeBoard: ComponentType;
+  /** S9 카페 정산(총무만, 11/6 2묶음). 마이 페이지 > 내 역할 > [카페 정산]으로 열려요. 열 때마다 서버 접속기록에 남아요. */
+  CafeSettle: ComponentType<{ onBack: () => void }>;
 }

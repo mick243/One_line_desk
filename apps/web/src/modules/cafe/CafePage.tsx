@@ -1,8 +1,13 @@
 import {
+  CAFE_BILL_STATUS_LABEL,
+  CAFE_BILLING_LIMITS,
   CAFE_LIMITS,
   CAFE_STATUS_LABEL,
   CAFE_TEXT,
+  type CafeBill,
+  cafeLimitText,
   type CafeMenuItem,
+  type CafeMyBilling,
   type CafeMyOrder,
   type CafeProposeResponse,
   type CafeResponse,
@@ -12,12 +17,14 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
 import { useActions, useListVersion } from '../../components/ActionHost';
 import { CardView } from '../../components/CardView';
+import { Sheet } from '../../components/Sheet';
 import { linkSummary } from '../../screens/features';
 import './cafe.css';
 
-// S7 카페 주문(직원, F4 1묶음, ADR-29). 영업 띠 → 메뉴(옵션 칩·수량) → 픽업 칸 → [주문하기](확인 시트) → 오늘 내 주문 → 이번 달 지금까지.
-// 금액은 서버가 메뉴 직원가로 계산해요. 화면은 메뉴 ID·잔 수·옵션 이름·픽업 칸만 보내요.
-// 고른 것은 이 페이지 메모리에만 있어요(R13). 내 청구·한도는 다음 묶음이에요.
+// S7 카페 주문(직원, F4, ADR-29). 영업 띠(미납이면 막힘 띠와 청구서) → 메뉴(옵션 칩·수량) → 픽업 칸 → [주문하기](확인 시트)
+// → 오늘 내 주문 → 내 청구(이번 달 지금까지·남은 한도·지난 청구서) → [한도 늘려 달라고 하기].
+// 금액·한도는 서버가 계산해요. 화면은 메뉴 ID·잔 수·옵션 이름·픽업 칸, 한도 요청 금액만 보내요.
+// 고른 것·적은 금액은 이 페이지 메모리에만 있어요(R13). 내 청구는 나만 보여요(총무는 입금을 확인할 때만 봐요).
 
 /** 바리스타가 영업을 시작했는지 등을 따라가려고 가끔 다시 불러요(사람이 누른 게 아니라 쉬는 시간을 늘리지 않아요, ADR-20). */
 const REFRESH_MS = 30_000;
@@ -39,6 +46,7 @@ export function CafePage() {
   const [slot, setSlot] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -110,7 +118,10 @@ export function CafePage() {
   const lineCount = chosen.length;
   const menuById = new Map(data.menu.map((m) => [m.id, m]));
   const total = chosen.reduce((sum, [id, p]) => sum + (menuById.get(id)?.priceWon ?? 0) * p.qty, 0);
-  const canOrder = data.open && lineCount > 0 && slot !== null && !busy;
+  const { billing } = data;
+  // 미납(기한 지남)이면 막히고, 고른 합계가 남은 한도를 넘으면 막혀요. 서버도 제안·확인 시트·실행에서 다시 막아요.
+  const overLimit = total > billing.leftWon;
+  const canOrder = data.open && !billing.blocked && !overLimit && lineCount > 0 && slot !== null && !busy;
 
   function setQty(m: CafeMenuItem, qty: number) {
     setError(null);
@@ -149,6 +160,7 @@ export function CafePage() {
       <p className={data.open ? 'cafe-band open' : 'cafe-band closed'} role='status'>
         {data.open ? CAFE_TEXT.open : CAFE_TEXT.closed}
       </p>
+      {billing.blocked && <UnpaidBlock billing={billing} />}
 
       <section className='card cafe-menu' aria-label='메뉴'>
         <h2>메뉴</h2>
@@ -240,6 +252,21 @@ export function CafePage() {
 
       <div className='cafe-order-bar'>
         {lineCount > 0 && <p className='cafe-total'>합계 {wonText(total)}</p>}
+        <p className='cafe-left'>
+          이번 달 지금까지 {wonText(data.monthTotalWon)} · 남은 한도 {wonText(billing.leftWon)}
+        </p>
+        {overLimit && !billing.blocked && (
+          <>
+            <p className='lock-line' role='alert'>
+              {cafeLimitText(billing.limitWon)}
+            </p>
+            {billing.request?.status !== 'pending' && (
+              <button type='button' className='secondary' onClick={() => setAsking(true)}>
+                한도 늘려 달라고 하기
+              </button>
+            )}
+          </>
+        )}
         {error && (
           <p className='lock-line' role='alert'>
             {error}
@@ -249,15 +276,184 @@ export function CafePage() {
           {busy ? '주문하는 중' : '주문하기'}
         </button>
         {!data.open && <p className='hint'>{CAFE_TEXT.closed}</p>}
+        {billing.blocked && <p className='hint'>{CAFE_TEXT.unpaid}</p>}
       </div>
 
       <MyOrders orders={data.orders} />
 
-      <section className='card' aria-label='이번 달 카페 값'>
-        <h2>이번 달 지금까지 {wonText(data.monthTotalWon)}</h2>
-        <p className='hint'>취소한 주문은 빼고 셌어요.</p>
-      </section>
+      <MyBilling monthTotalWon={data.monthTotalWon} billing={billing} onAsk={() => setAsking(true)} />
+
+      {asking && (
+        <LimitAskSheet
+          billing={billing}
+          need={data.monthTotalWon + total}
+          onClose={() => setAsking(false)}
+          onSent={() => {
+            setAsking(false);
+            // 고른 메뉴는 그대로 두고 내 청구만 다시 불러요.
+            actions.reload();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/** 미납 막힘(8일부터, ADR-29): 주문 위에 막힘 띠와 기한 지난 청구서를 보여 줘요. */
+function UnpaidBlock({ billing }: { billing: CafeMyBilling }) {
+  return (
+    <section className='card cafe-blocked' aria-label='미납 막힘'>
+      <p className='cafe-band blocked' role='alert'>
+        {CAFE_TEXT.unpaid}
+      </p>
+      <ul className='cafe-bills'>
+        {billing.bills
+          .filter((b) => b.status === 'overdue')
+          .map((b) => (
+            <BillCard key={b.id} bill={b} account={billing.account} />
+          ))}
+      </ul>
+    </section>
+  );
+}
+
+/** 내 청구(본인만): 이번 달 지금까지·남은 한도, 지난 청구서, 한도 요청 상태, [한도 늘려 달라고 하기] */
+export function MyBilling({ monthTotalWon, billing, onAsk }: { monthTotalWon: number; billing: CafeMyBilling; onAsk: () => void }) {
+  // 미납 막힘 칸에 이미 보인 청구서는 여기서 빼요.
+  const bills = billing.blocked ? billing.bills.filter((b) => b.status !== 'overdue') : billing.bills;
+  const request = billing.request;
+  return (
+    <section className='card' aria-label='내 청구'>
+      <h2>내 청구</h2>
+      <p className='hint'>{CAFE_TEXT.myBill}</p>
+      <p>
+        <strong>이번 달 지금까지 {wonText(monthTotalWon)}</strong> · 남은 한도 {wonText(billing.leftWon)}
+      </p>
+      <p className='hint'>
+        이번 달 한도 {wonText(billing.limitWon)} · 취소한 주문은 빼고 셌어요. 한 달치를 모아 다음 달 1일에 청구하고, {billing.dueDays}일 안에 회사 계좌로 보내
+        주세요.
+      </p>
+      {bills.length > 0 && (
+        <ul className='cafe-bills'>
+          {bills.map((b) => (
+            <BillCard key={b.id} bill={b} account={billing.account} />
+          ))}
+        </ul>
+      )}
+      {!billing.blocked && bills.length === 0 && <p className='empty'>지난 청구서가 없어요</p>}
+      {request?.status === 'pending' && (
+        <p className='hint'>이번 달 한도를 {wonText(request.amountWon)}으로 늘려 달라고 했어요. 총무가 처리하면 알려 드려요.</p>
+      )}
+      {request?.status === 'approved' && <p className='hint'>총무가 이번 달 한도를 늘려 줬어요. 다음 달에는 원래 한도로 돌아가요.</p>}
+      {request?.status === 'rejected' && <p className='hint'>이번 달 한도 요청이 반려됐어요.</p>}
+      {request?.status !== 'pending' && (
+        <div className='actions'>
+          <button type='button' className='secondary' onClick={onAsk}>
+            한도 늘려 달라고 하기
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** 청구서 한 장: 달·합계·상태·입금 코드·기한·회사 계좌 안내·건별 내역(접기) */
+function BillCard({ bill, account }: { bill: CafeBill; account: string }) {
+  return (
+    <li className={`cafe-bill status-${bill.status}`}>
+      <div className='cafe-bill-head'>
+        <strong>
+          {bill.monthLabel} 카페 값 {wonText(bill.totalWon)}
+        </strong>
+        <span className={`chip cafe-bill-${bill.status}`}>{CAFE_BILL_STATUS_LABEL[bill.status]}</span>
+      </div>
+      <dl className='cafe-bill-facts'>
+        <dt>입금 코드</dt>
+        <dd className='cafe-code'>{bill.code}</dd>
+        <dt>기한</dt>
+        <dd>{bill.dueLabel}까지</dd>
+        <dt>보낼 곳</dt>
+        <dd>{account}</dd>
+      </dl>
+      {bill.status === 'paid' ? (
+        <p className='hint'>입금을 확인했어요. 7일 뒤 이 청구서와 그 달 주문 내역이 지워져요.</p>
+      ) : (
+        <p className='hint'>보낼 때 입금자명에 입금 코드 {bill.code}를 넣어 주세요. 총무가 통장을 보고 입금을 확인해요.</p>
+      )}
+      <details>
+        <summary>건별 내역 {bill.count}건</summary>
+        <ul className='cafe-bill-orders'>
+          {bill.orders.map((o, i) => (
+            <li key={`${o.dayLabel}-${i}`}>
+              <span>
+                {o.dayLabel} · {o.lines.map(lineText).join(' · ')}
+              </span>
+              <span>{wonText(o.totalWon)}</span>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </li>
+  );
+}
+
+/** [한도 늘려 달라고 하기] 시트: 이번 달 한도로 바라는 금액만 적어요(사유 글 없음). 보내기는 고정 버튼이에요. */
+function LimitAskSheet({ billing, need, onClose, onSent }: { billing: CafeMyBilling; need: number; onClose: () => void; onSent: () => void }) {
+  const step = 10_000;
+  const suggest = Math.min(CAFE_BILLING_LIMITS.maxLimitWon, Math.max(billing.limitWon + step, Math.ceil(need / step) * step));
+  const [amount, setAmount] = useState(String(suggest));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const won = Number(amount);
+  const valid = Number.isInteger(won) && won > billing.limitWon && won <= CAFE_BILLING_LIMITS.maxLimitWon;
+
+  async function send() {
+    if (!valid || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await apiRequest('POST', '/api/cafe/limit/request', { amountWon: won });
+      onSent();
+    } catch (e) {
+      setError(e instanceof ApiFailure ? e.message : '지금 보내지 못했어요');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet title='한도 늘려 달라고 하기' onClose={busy ? () => undefined : onClose}>
+      <div className='cafe-ask'>
+        <p>
+          이번 달 한도 {wonText(billing.limitWon)} · 남은 한도 {wonText(billing.leftWon)}
+        </p>
+        <label className='cafe-won'>
+          <input
+            aria-label='이번 달 한도로 바라는 금액(원)'
+            type='number'
+            inputMode='numeric'
+            min={billing.limitWon + 1}
+            max={CAFE_BILLING_LIMITS.maxLimitWon}
+            step={step}
+            value={amount}
+            onChange={(e) => {
+              setError(null);
+              setAmount(e.target.value);
+            }}
+          />
+          <span>원</span>
+        </label>
+        <p className='hint'>금액만 총무에게 가요. 사유는 적지 않아요. 총무가 늘려 주면 이번 달에만 써요.</p>
+        {!valid && amount !== '' && <p className='hint'>지금 한도보다 크고 {wonText(CAFE_BILLING_LIMITS.maxLimitWon)}까지인 금액을 적어 주세요.</p>}
+        {error && (
+          <p className='lock-line' role='alert'>
+            {error}
+          </p>
+        )}
+        <button type='button' className='primary' disabled={!valid || busy} onClick={() => void send()}>
+          {busy ? '보내는 중' : '보내기'}
+        </button>
+      </div>
+    </Sheet>
   );
 }
 

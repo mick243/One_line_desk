@@ -1,8 +1,8 @@
-import { type AppDestination, type DeskNotification, type ModuleKind, type NotificationsResponse, recordCutoff } from '@one-line-desk/shared';
+import { type AppDestination, type DeskNotification, type ModuleKind, type NotificationsResponse, recordCutoff, type Role } from '@one-line-desk/shared';
 import type { Db, Queryable } from './db';
 import type { DeskUser } from './user';
 
-// 앱 안 알림(10/26, ADR-16). 받는 쪽은 한 사람 또는 한 부서예요.
+// 앱 안 알림(10/26, ADR-16). 받는 쪽은 한 사람 또는 한 부서, 또는 한 역할(11/6 사내 카페 총무)이에요.
 // 알림 글에는 내용(문의 글 등)을 넣지 않아요. 무슨 일인지와 볼 페이지만 넣고, 내용은 그 페이지에서 권한을 확인한 뒤 보여 줘요.
 
 interface NotifyInput {
@@ -10,6 +10,12 @@ interface NotifyInput {
   title: string;
   page: AppDestination;
 }
+
+/** 알림을 받을 수 있는 역할. 역할은 IdP 그룹이라 사람 목록이 없어서, 읽을 때 그 사람의 지금 역할로 걸러요(R17). */
+type AudienceRole = Extract<Role, 'facilities'>;
+
+/** 알림 목록·읽음 표시에 필요한 사람 정보. roles가 없으면 역할 알림은 보이지 않아요. */
+type Reader = Pick<DeskUser, 'pseudonymId' | 'department'> & { roles?: readonly Role[] };
 
 const LIST_LIMIT = 30;
 const KST_MS = 9 * 60 * 60 * 1000;
@@ -44,6 +50,21 @@ export class Notifier {
     ]);
   }
 
+  /**
+   * 한 역할 전체에 보내요(11/6 사내 카페: 한도 요청 → 총무). 보낸 사람이 그 역할이면 그 사람은 빼요.
+   * 받는 사람은 읽을 때 역할을 다시 계산해서 정해요. 역할이 빠진 사람에게는 더는 보이지 않아요.
+   */
+  async toRole(q: Queryable, role: AudienceRole, n: NotifyInput, excludePseudonym?: string): Promise<void> {
+    await q.query('insert into notifications (audience_role, exclude_pseudonym, module, title, page, created_at) values ($1, $2, $3, $4, $5, $6)', [
+      role,
+      excludePseudonym ?? null,
+      n.module,
+      n.title.slice(0, 120),
+      n.page,
+      new Date(this.now()).toISOString(),
+    ]);
+  }
+
   /** 7일(RECORD_KEEP_DAYS) 지난 알림을 지워요(읽음 표시도 같이 지워져요). 서버가 한 시간마다 불러요(L-33). */
   async purge(): Promise<void> {
     const cutoff = new Date(recordCutoff(this.now())).toISOString();
@@ -51,10 +72,10 @@ export class Notifier {
   }
 
   /**
-   * 내 알림(나에게 온 것 + 내 부서에 온 것). 7일 지난 알림은 보여 주지 않아요.
+   * 내 알림(나에게 온 것 + 내 부서에 온 것 + 내 역할에 온 것). 7일 지난 알림은 보여 주지 않아요.
    * 읽기에서는 지우지 않아요. 15초마다 오는 폴링이 사람마다 DELETE를 돌리지 않게 해요(10/29 개선 회의 A6). 지우기는 보관 잡이 해요.
    */
-  async list(user: Pick<DeskUser, 'pseudonymId' | 'department'>): Promise<NotificationsResponse> {
+  async list(user: Reader): Promise<NotificationsResponse> {
     const cutoff = new Date(recordCutoff(this.now())).toISOString();
     const { rows } = await this.db.query<{ id: string; title: string; page: DeskNotification['page']; created: number; read: boolean }>(
       `select n.id::text as id, n.title, n.page,
@@ -62,25 +83,27 @@ export class Notifier {
               (r.notification_id is not null) as read
          from notifications n
          left join notification_reads r on r.notification_id = n.id and r.pseudonym_id = $1
-        where (n.audience_pseudonym = $1 or (n.audience_department = $2 and coalesce(n.exclude_pseudonym, '') <> $1))
+        where (n.audience_pseudonym = $1
+               or ((n.audience_department = $2 or n.audience_role = any($4::text[])) and coalesce(n.exclude_pseudonym, '') <> $1))
           and n.created_at >= $3
         order by n.created_at desc, n.id desc
         limit ${LIST_LIMIT}`,
-      [user.pseudonymId, user.department, cutoff],
+      [user.pseudonymId, user.department, cutoff, [...(user.roles ?? [])]],
     );
     const items = rows.map((r) => ({ id: r.id, title: r.title, page: r.page, createdAt: kstIso(r.created), read: r.read }));
     return { unread: items.filter((i) => !i.read).length, items };
   }
 
   /** 읽음 표시. ids가 없으면 내게 보이는 알림을 모두 읽음으로 해요. 남의 알림 ID는 걸러져요. */
-  async markRead(user: Pick<DeskUser, 'pseudonymId' | 'department'>, ids?: string[]): Promise<void> {
+  async markRead(user: Reader, ids?: string[]): Promise<void> {
     await this.db.query(
       `insert into notification_reads (notification_id, pseudonym_id)
        select n.id, $1 from notifications n
-        where (n.audience_pseudonym = $1 or (n.audience_department = $2 and coalesce(n.exclude_pseudonym, '') <> $1))
+        where (n.audience_pseudonym = $1
+               or ((n.audience_department = $2 or n.audience_role = any($4::text[])) and coalesce(n.exclude_pseudonym, '') <> $1))
           and ($3::bigint[] is null or n.id = any($3::bigint[]))
        on conflict do nothing`,
-      [user.pseudonymId, user.department, ids ?? null],
+      [user.pseudonymId, user.department, ids ?? null, [...(user.roles ?? [])]],
     );
   }
 }

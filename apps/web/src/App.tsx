@@ -38,8 +38,8 @@ function entryFromPath(): { kind: 'consent' } | { kind: 'link'; token: string } 
 /** 운영(S4)은 같이 채워요 탭, 분장표 수정 제안함(S5)은 문의함 탭 아래에 있어요. */
 function tabOf(view: View): Tab {
   if (view === 'ops') return 'board';
-  // 관리자 AI 정답률(11/5 시험)은 마이 페이지 아래에 있어요.
-  if (view === 'ai-eval') return 'mine';
+  // 관리자 AI 정답률(11/5 시험)과 카페 정산(S9, 총무, 11/6)은 마이 페이지 아래에 있어요.
+  if (view === 'ai-eval' || view === 'cafe-settle') return 'mine';
   if (view === 'chart' || view === 'it-help' || view === 'onboarding') return 'navi';
   return view;
 }
@@ -177,6 +177,7 @@ export function App() {
     JointRequests,
     CafePage,
     CafeBoard,
+    CafeSettle,
   } = webModules;
   const isChartOwner = me?.roles.includes('chart-owner') ?? false;
   // 문의함(11/5 사용자 결정): 홈 채팅이 켜져 있으면 이 페이지는 받은 문의·내 문의를 먼저 보여요.
@@ -288,6 +289,14 @@ export function App() {
             {!entry && current === 'it-help' && <ItHelpScreen onBack={() => go('navi')} />}
             {!entry && current === 'onboarding' && <OnboardingScreen onBack={() => go('navi')} />}
             {!entry && current === 'mine' && <Mine me={me} switches={config} onLoggedOut={() => setMe(null)} onOpen={(to, text, auto) => go(to, text, auto)} />}
+            {/* 카페 정산(S9, 11/6 ADR-29): 총무이고 카페가 켜져 있을 때만 그려요. 서버도 총무가 아니면 403, 카페가 꺼지면 409예요. */}
+            {!entry &&
+              current === 'cafe-settle' &&
+              (me.roles.includes('facilities') && config.modules.cafeteria === 'on' ? (
+                <CafeSettle onBack={() => go('mine')} />
+              ) : (
+                <p className='empty'>총무만 볼 수 있어요.</p>
+              ))}
             {/* 관리자 AI 정답률(11/5 시험): 운영자만 그려요. 서버도 운영자가 아니면 403이에요. */}
             {!entry &&
               current === 'ai-eval' &&

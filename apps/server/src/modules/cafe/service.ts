@@ -1,5 +1,6 @@
 import {
   type CafeBoardResponse,
+  cafeLimitText,
   CAFE_LIMITS,
   CAFE_TEXT,
   type CafeMyOrder,
@@ -12,7 +13,6 @@ import {
   kstDate,
   kstTime,
   type PlanSheet,
-  recordCutoff,
   wonText,
 } from '@one-line-desk/shared';
 import { z } from 'zod';
@@ -21,11 +21,13 @@ import type { Queryable } from '../../core/db';
 import { DeskError } from '../../core/errors';
 import type { ExecContext, ExecOutcome, PlanHandler } from '../../core/module';
 import type { DeskUser } from '../../core/user';
+import { CafeBilling, type CafeGate } from './billing';
 import { blockedCard, cafeLinkCard, cancelledCard, expiredCard, lineText, linesOf, orderedCard, slotLabel } from './cards';
 import { CAFE_MENU_FIXTURES } from './fixtures';
 import * as repo from './repo';
 
 // F4 사내 카페 주문 1묶음(11/6, ADR-29): 직원이 주문하면 카페 판으로 가고, 바리스타가 만들어 건네요.
+// 2묶음(11/6): 제안·확인 시트·실행 모두 미납 막힘(기한 지난 미납 청구서)과 한 달 한도를 다시 봐요(billing.ts gate).
 // - 주문은 'cafeteria:order' plan(확인 시트 한 번)으로만 들어가요. 돈이 걸려서 자동 실행 허용 목록(ADR-19)에 넣지 않아요.
 // - 영업 중(바리스타가 [영업 시작]을 누르고 카페 판이 2분 안에 서버에 보임)일 때만 제안·확인 시트·실행이 돼요. 실행은 트랜잭션 안에서 다시 봐요.
 // - 금액은 서버가 메뉴 표의 지금 직원가 × 수량으로 계산해요. 토큰·화면이 보낸 값을 쓰지 않아요. AI는 부르지 않아요.
@@ -57,6 +59,20 @@ const featureOff = () => new DeskError('feature-off', 409, '지금은 이 기능
 const closed = () => new DeskError('cafe-closed', 409, CAFE_TEXT.closed);
 const slotPast = () => new DeskError('slot-past', 409, '고른 픽업 시간이 지났어요. 다시 골라 주세요');
 const priceChanged = () => new DeskError('price-changed', 409, '메뉴 값이 바뀌었어요. 다시 골라 주세요');
+
+/** 미납 막힘·한도 막힘을 오류로(제안·확인 시트). 막히지 않았으면 그대로 돌려줘요. */
+function gateError(gate: CafeGate): Exclude<CafeGate, { block: 'unpaid' }> {
+  if (gate.block === 'unpaid') throw new DeskError('cafe-unpaid', 409, CAFE_TEXT.unpaid);
+  if (gate.block === 'limit') throw new DeskError('cafe-limit', 409, cafeLimitText(gate.limitWon));
+  return gate;
+}
+
+/** 미납 막힘·한도 막힘을 막힘 카드로(실행). 주문은 들어가지 않아요. */
+function gateCard(gate: CafeGate): Card | null {
+  if (gate.block === 'unpaid') return blockedCard('unpaid', CAFE_TEXT.unpaid);
+  if (gate.block === 'limit') return blockedCard('limit', cafeLimitText(gate.limitWon), [{ name: '남은 한도', value: wonText(gate.leftWon) }]);
+  return null;
+}
 
 /** 바리스타가 영업 중이고(open) 카페 판이 2분 안에 서버에 보였을 때만 주문을 받아요(ADR-29). */
 export function acceptingOrders(duty: repo.DutyRow, now: number): boolean {
@@ -108,7 +124,11 @@ function slotFullMessage(next: number | null): string {
 }
 
 export class CafeDesk {
-  constructor(private readonly ctx: AppContext) {}
+  readonly billing: CafeBilling;
+
+  constructor(private readonly ctx: AppContext) {
+    this.billing = new CafeBilling(ctx);
+  }
 
   /** 비어 있을 때만 가상 메뉴를 넣어요. */
   async seed(): Promise<void> {
@@ -160,13 +180,15 @@ export class CafeDesk {
       totalWon: o.totalWon,
       cancellable: o.status === 'waiting',
     }));
+    const monthTotalWon = await repo.monthTotal(db, user.pseudonymId, monthStart(now));
     return {
       status: 'on',
       open: acceptingOrders(duty, now),
       menu: menu.map((m) => ({ id: m.id, name: m.name, priceWon: m.priceWon, options: m.options, soldOut: m.soldOut })),
       slots,
       orders,
-      monthTotalWon: await repo.monthTotal(db, user.pseudonymId, monthStart(now)),
+      monthTotalWon,
+      billing: await this.billing.mine(user, monthTotalWon),
     };
   }
 
@@ -185,6 +207,7 @@ export class CafeDesk {
 
     const priced = price(body.lines, await repo.menuByIds(db, ids(body.lines)));
     if ('problem' in priced) throw problemError(priced);
+    gateError(await this.billing.gate(db, user.pseudonymId, now, priced.totalWon));
     const used = (await repo.slotCups(db, slot, slot + SLOT_MS)).get(slot) ?? 0;
     if (used + priced.cups > this.capacity()) throw new DeskError('slot-full', 409, slotFullMessage(await this.nextFree(db, slot, priced.cups, now)));
 
@@ -196,7 +219,7 @@ export class CafeDesk {
     return { proposalToken: this.ctx.plans.propose(user, 'cafeteria', 'order', params) };
   }
 
-  /** 확인 시트. 영업·품절·값·칸을 다시 보고, 메뉴·옵션·수량·합계·픽업 칸·이번 달 지금까지를 보여 줘요. */
+  /** 확인 시트. 영업·품절·값·미납·한도·칸을 다시 보고, 메뉴·옵션·수량·합계·픽업 칸·이번 달 지금까지·남은 한도를 보여 줘요. */
   private async sheet(p: OrderParams, user: DeskUser): Promise<PlanSheet> {
     const db = this.ctx.db;
     const now = this.ctx.now();
@@ -206,16 +229,16 @@ export class CafeDesk {
     const priced = price(p.lines, await repo.menuByIds(db, ids(p.lines)));
     if ('problem' in priced) throw problemError(priced);
     if (priced.totalWon !== p.quotedWon) throw priceChanged();
+    const gate = gateError(await this.billing.gate(db, user.pseudonymId, now, priced.totalWon));
     const used = (await repo.slotCups(db, slot, slot + SLOT_MS)).get(slot) ?? 0;
     if (used + priced.cups > this.capacity()) throw new DeskError('slot-full', 409, slotFullMessage(await this.nextFree(db, slot, priced.cups, now)));
-    const month = await repo.monthTotal(db, user.pseudonymId, monthStart(now));
     return {
       title: '이대로 주문할까요?',
       lines: [
         ...priced.items.map((i) => `${lineText(i)} · ${wonText(i.priceWon * i.qty)}`),
         `합계 ${wonText(priced.totalWon)}`,
         `픽업 ${slotLabel(slot)}`,
-        `이번 달 지금까지 ${wonText(month)}`,
+        `이번 달 지금까지 ${wonText(gate.monthWon)} · 남은 한도 ${wonText(gate.leftWon)}`,
       ],
       confirmLabel: '주문하기',
       note: CAFE_TEXT.sheetTail,
@@ -223,8 +246,9 @@ export class CafeDesk {
   }
 
   /**
-   * [주문하기] 실행(plan 트랜잭션 ex.q 안). 주문 잠금을 잡고 영업 중·품절·값·칸 상한을 다시 본 뒤 주문 행을 만들어요.
-   * 같은 칸 동시 주문·같은 날 픽업 번호는 잠금 하나로 한 번에 하나씩만 세요.
+   * [주문하기] 실행(plan 트랜잭션 ex.q 안). 주문 잠금을 잡고 영업 중·품절·값·미납·한도·칸 상한을 다시 본 뒤 주문 행을 만들어요.
+   * 같은 칸 동시 주문·같은 날 픽업 번호·한 사람의 두 탭 동시 주문(한 달 한도)은 잠금 하나로 한 번에 하나씩만 세요.
+   * 청구서 발행도 같은 잠금을 잡아서, 말일 자정에 들어가는 주문이 청구에서 빠지지 않아요.
    */
   private async execute(p: OrderParams, ex: ExecContext): Promise<ExecOutcome> {
     await repo.lockOrders(ex.q);
@@ -235,6 +259,8 @@ export class CafeDesk {
     if ('problem' in priced) return { status: 'blocked', card: problemCard(priced) };
     if (priced.totalWon !== p.quotedWon)
       return { status: 'blocked', card: blockedCard('price', '메뉴 값이 바뀌었어요', [{ name: '지금 합계', value: wonText(priced.totalWon) }]) };
+    const gated = gateCard(await this.billing.gate(ex.q, ex.user.pseudonymId, ex.now, priced.totalWon));
+    if (gated) return { status: 'blocked', card: gated };
     const used = (await repo.slotCups(ex.q, slot, slot + SLOT_MS)).get(slot) ?? 0;
     if (used + priced.cups > this.capacity()) {
       const next = await this.nextFree(ex.q, slot, priced.cups, ex.now);
@@ -247,6 +273,7 @@ export class CafeDesk {
     const pickupNo = await repo.nextPickupNo(ex.q, day);
     const id = await repo.insertOrder(ex.q, {
       pseudonymId: ex.user.pseudonymId,
+      subject: ex.user.idpSubject,
       planId: ex.planId,
       day,
       pickupNo,
@@ -364,10 +391,5 @@ export class CafeDesk {
         return { id, soldOut };
       },
     });
-  }
-
-  /** 보관(ADR-21 예외, ADR-29): 취소한 주문만 7일 뒤 지워요. 다른 주문은 repo.purgeCancelled 주석을 봐요. */
-  async purge(): Promise<void> {
-    await repo.purgeCancelled(this.ctx.db, recordCutoff(this.ctx.now()));
   }
 }
