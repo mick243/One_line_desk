@@ -1,5 +1,6 @@
 -- 담당 안내(ADR-09). 10/30: 옛 001의 navi 표와 101·102를 한 파일로 합쳤어요.
--- 11/2: 120(휴가 요청)·130(행 출처)·140(온보딩 주차)·150(문의 주간 셈)·160(IT FAQ)·170(공가)를 이 파일로 합쳤어요(최종 구조는 같아요).
+-- 11/2: 120(휴가 요청)·130(행 출처)·140(온보딩 주차)·150(문의 주간 셈)·160(IT FAQ)·170(공가)를 이 파일로 합쳤어요.
+-- 11/6: 120(병가)·130(보관 회차 인덱스)·140(자리비움)을 이 파일로 합쳤어요(최종 구조는 같아요).
 -- 사람 이름 칸은 없어요(가져오기에서 버려요, D9).
 
 -- 분장표 행. desk_url: [창구 열기]·IT 헬프데스크 링크가 여기서 와요.
@@ -35,6 +36,8 @@ create table navi_feedback (
 );
 -- S5 기록 묶음은 예측 행으로 모아요.
 create index navi_feedback_predicted_row on navi_feedback (predicted_row);
+-- 보관 회차(11/3, ADR-21 개정): 7일 지난 기록을 at로 찾아요.
+create index navi_feedback_at on navi_feedback (at);
 
 -- 담당 팀에 문의 보내기(10/26, ADR-16).
 -- 사람이 확인 시트에서 [보내기]를 누른 글만 저장해요. 묻기(검색) 문장과 달리 받는 팀이 읽어야 하는 글이에요.
@@ -42,7 +45,9 @@ create index navi_feedback_predicted_row on navi_feedback (predicted_row);
 -- 휴가 요청(10/30, ADR-24): kind = 'leave'. 승인된 휴가는 우리 DB가 아니라 인사 근태 기록(어댑터)에 들어가요. 연차 숫자는 저장하지 않아요(ADR-18).
 --   leave_days: 쓸 날 [{date, kind}]. sender_subject: 보낸 사람 IdP 주체(받은 팀이 남은 연차를 계산하고 승인 때 근태 기록에 넣으려고 써요.
 --   화면·LLM에는 내보내지 않아요). leave_recorded: 승인했을 때 근태 기록에 넣었는지(근태 연결 안 함이면 false).
--- 공가(11/1): leave_type(annual·official)과 공가 사유 코드. 공가는 연차에서 빠지지 않고, 승인하면 근태 기록에 공가로 들어가요.
+-- 공가(11/1): leave_type(annual·official·sick)과 공가 사유 코드. 공가는 연차에서 빠지지 않고, 승인하면 근태 기록에 공가로 들어가요.
+-- 병가(11/3, ADR-24 개정, docs/병가준비_2026-11-01.md): sick_reason_code는 정해진 선택지만 받아요(자유 글·병명·증상 칸 없음, 사용자 결정 1).
+--   unwell(몸이 안 좋아요)·clinic(병원 진료)·family(가족 돌봄). 병가도 연차에서 빠지지 않고 쓴 날 수는 저장하지 않아요(ADR-18).
 create table navi_inquiries (
   id bigserial primary key,
   row_id text references navi_rows (id) on delete set null,
@@ -66,6 +71,7 @@ create table navi_inquiries (
   leave_recorded boolean,
   leave_type text,
   leave_reason_code text check (leave_reason_code in ('reserve', 'vote', 'summons', 'duty')),
+  sick_reason_code text check (sick_reason_code in ('unwell', 'clinic', 'family')),
   constraint navi_inquiries_leave_shape check (
     (kind = 'leave' and leave_days is not null and sender_subject is not null)
     or (kind = 'general' and leave_days is null and sender_subject is null)
@@ -76,16 +82,22 @@ create table navi_inquiries (
     or (state = 'approved' and kind = 'leave' and decision_reason is null)
     or (state in ('new', 'seen', 'done') and decision_reason is null)
   ),
-  -- leave_type 값 검사도 이 모양 검사 하나가 해요. check는 결과가 null이면 통과라서 휴가 요청은 leave_type is not null을 맨 앞에 둬요.
+  -- leave_type 값 검사도 이 모양 검사 하나가 해요. 공가 사유는 공가일 때만, 병가 사유는 병가일 때만 있어요(둘 다 그때는 꼭 있어요).
+  -- check는 결과가 null이면 통과라서 휴가 요청은 leave_type is not null을 맨 앞에 둬요.
   constraint navi_inquiries_leave_type_shape check (
     case kind
-      when 'leave' then leave_type is not null and leave_type in ('annual', 'official') and (leave_type = 'annual') = (leave_reason_code is null)
-      else leave_type is null and leave_reason_code is null
+      when 'leave' then leave_type is not null
+        and leave_type in ('annual', 'official', 'sick')
+        and (leave_type = 'official') = (leave_reason_code is not null)
+        and (leave_type = 'sick') = (sick_reason_code is not null)
+      else leave_type is null and leave_reason_code is null and sick_reason_code is null
     end
   )
 );
 create index navi_inquiries_department on navi_inquiries (department, created_at desc);
 create index navi_inquiries_sender on navi_inquiries (sender_pseudonym, created_at desc);
+-- 보관 회차(11/3, ADR-21 개정): 문의는 한 시간 보관 회차에서만 지워요. 앞 칸이 부서·보낸 사람인 위 인덱스로는 7일 지난 행을 못 찾아요.
+create index navi_inquiries_created on navi_inquiries (created_at);
 
 -- 받은 팀의 답장(10/30, ADR-24). 답장한 사람(받은 팀) 이름이 보낸 사람 화면에 보여요. 7일이 지나면 지워요(ADR-21).
 create table navi_inquiry_replies (
@@ -130,3 +142,20 @@ create table navi_it_faqs (
   row_id text references navi_rows (id) on delete set null,
   source text not null default 'upload' check (source in ('demo', 'upload'))
 );
+
+-- 자리비움(11/3 사용자 결정, 홈 채팅 "같은 팀 일정"). 직원이 자기 외근·출장·재택·자리비움을 알려요.
+-- 칸은 가명 ID·종류 코드·시작·끝뿐이에요. 자유 글(사유·장소)·이름·부서 칸은 없어요(보여 줄 때 디렉터리로 찾아요).
+-- 정하기·지우기는 본인만, 고정 버튼(ctx.fixed.run)으로만 해요. 같은 부서 사람에게만 홈 채팅으로 보여요.
+-- 기록 보관 7일(ADR-21): 정한 지 7일 지난 줄과 끝난 지 7일 지난 줄을 한 시간 보관 회차가 지워요(navi 모듈 retention).
+create table navi_away (
+  id bigserial primary key,
+  pseudonym_id text not null,
+  kind text not null check (kind in ('outside', 'trip', 'remote', 'away')),
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  constraint navi_away_range check (ends_at > starts_at and ends_at - starts_at <= interval '8 days')
+);
+create index navi_away_who on navi_away (pseudonym_id, starts_at);
+create index navi_away_created on navi_away (created_at);
+create index navi_away_ends on navi_away (ends_at);

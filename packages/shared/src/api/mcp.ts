@@ -124,7 +124,7 @@ export interface McpClientCreateResponse {
 }
 
 /**
- * MCP 날마다 셈의 종류(11/3, 530_mcp_daily_counts.sql의 check 목록과 같아요). 감사 로그를 남기는 자리에서 그때그때 +1 해요.
+ * MCP 날마다 셈의 종류(11/3, 510_mcp.sql의 check 목록과 같아요). 감사 로그를 남기는 자리에서 그때그때 +1 해요.
  * - call.*: 도구 호출 결과(감사 로그 결과 found·none·refused·error)
  * - connect·connect.denied: 동의 시트 [연결 허락]·[허락하지 않기]
  * - disconnect: 끊긴 연결(기기) 수 — 본인 [끊기]·기기 폐기(RFC 7009)·모든 기기 로그아웃·퇴사 확인

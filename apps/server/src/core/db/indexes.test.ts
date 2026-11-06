@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestDb } from './test-db';
 import type { Db } from './types';
 
-// 공통 인덱스(11/3, 020_core_indexes·320_rooms_indexes). 회의실 채팅 영수증 찾기와 보관 지우기가 인덱스를 써요.
+// 공통 인덱스(11/3, 010_core·310_rooms). 회의실 채팅 영수증 찾기와 보관 지우기가 인덱스를 써요.
 
 let db: Db;
 beforeAll(async () => {
