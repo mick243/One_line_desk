@@ -1,0 +1,187 @@
+/* S7 카페 주문 · S8 카페 판(11/6, ADR-29). 색·간격은 styles.css의 변수만 써요. */
+.cafe-band {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--radius-s);
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+.cafe-band.open {
+  background: var(--ok-bg);
+  color: var(--ok-text);
+}
+.cafe-band.closed {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+.cafe-menu-list,
+.cafe-my-orders,
+.cafe-board-list,
+.cafe-board-lines,
+.cafe-soldout-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cafe-menu-list {
+  display: flex;
+  flex-direction: column;
+}
+.cafe-menu-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+.cafe-menu-row:first-child {
+  border-top: 0;
+}
+.cafe-menu-row.sold-out {
+  color: var(--text-quiet);
+}
+.cafe-menu-name {
+  flex: 1 1 160px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.cafe-price {
+  color: var(--text-2);
+  font-size: 0.9375rem;
+}
+.cafe-menu-row .chips {
+  flex: 1 1 100%;
+  order: 3;
+}
+.cafe-qty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+.cafe-qty span {
+  min-width: 2.5em;
+  text-align: center;
+}
+.cafe-slots .chip:disabled {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+.cafe-order-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cafe-total {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+.cafe-my-orders,
+.cafe-board-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cafe-my-order,
+.cafe-board-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--radius-m);
+  background: var(--surface-2);
+}
+.cafe-my-order.ready {
+  box-shadow: inset 0 0 0 2px var(--ok-text);
+}
+.cafe-my-order-body,
+.cafe-board-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cafe-no {
+  flex: none;
+  min-width: 2.4em;
+  font-size: 1.5rem;
+  font-weight: 800;
+  text-align: center;
+  color: var(--accent-text);
+}
+.cafe-duty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.cafe-duty-state {
+  flex: 1;
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 800;
+}
+.cafe-duty .primary {
+  width: auto;
+  flex: 1 1 180px;
+}
+.cafe-duty.open .cafe-duty-state {
+  color: var(--ok-text);
+}
+.cafe-board-lines li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 1.0625rem;
+}
+.cafe-opts {
+  color: var(--text-2);
+  font-size: 0.9375rem;
+}
+.cafe-qty-text {
+  font-weight: 700;
+}
+.cafe-board-row.status-making {
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+.cafe-board-row.status-ready {
+  box-shadow: inset 4px 0 0 var(--ok-text);
+}
+.cafe-board-row.fresh {
+  animation: cafe-blink 1s var(--ease) 3;
+}
+@keyframes cafe-blink {
+  50% {
+    background: var(--accent-soft);
+  }
+}
+.cafe-step {
+  flex: none;
+  width: auto;
+  min-height: 48px;
+}
+.cafe-soldout-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cafe-soldout-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cafe-soldout-list li > span:first-child {
+  flex: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cafe-board-row.fresh {
+    animation: none;
+    background: var(--accent-soft);
+  }
+}

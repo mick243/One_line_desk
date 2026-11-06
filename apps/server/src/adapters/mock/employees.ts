@@ -17,7 +17,7 @@ const person = (n: number, displayName: string, id: string, department: string, 
 });
 
 // 시연용 가상 직원이에요. 실제 사람이 아니에요. 임시 IdP(idp/realm-one-line-desk.json)와 같은 사람들이에요.
-// 로그인 고르기 목록에는 앞의 다섯 명과 IT지원팀 하린만 보이고, 나머지는 참석자 검색에서만 찾을 수 있어요.
+// 로그인 고르기 목록에는 앞의 다섯 명과 디자인팀장 지우·IT지원팀 하린·카페팀 바리스타 하준만 보이고, 나머지는 참석자 검색에서만 찾을 수 있어요.
 const EMPLOYEES: MockEmployee[] = [
   person(1, '가상 직원 하늘', 'haneul', '재무팀', '3층', [], true),
   person(2, '가상 직원 도윤', 'doyun', '개발팀', '5층', ['team-lead'], true),
@@ -37,11 +37,13 @@ const EMPLOYEES: MockEmployee[] = [
   person(15, '가상 직원 주원', 'juwon', '개발팀', '5층'),
   // IT 오류 붙여넣기에서 보낸 문의를 받을 사람(11/1 QA M2). 로그인 목록에 보여요.
   person(16, '가상 IT 하린', 'harin', 'IT지원팀', '4층', [], true),
+  // 사내 카페 바리스타(11/6, ADR-29). 역할 그룹 /역할/cafe라 로그인하면 홈이 카페 판이에요(카페가 켜져 있을 때).
+  person(17, '가상 바리스타 하준', 'hajun', '카페팀', '1층', ['cafe'], true),
 ];
 
 /**
  * 다른 가상 회사의 직원 명단(11/5, 회사별 분리 시연). 시연·개발에서 DESK_MOCK_ROSTER_JSON으로만 받아요(저장소에 두지 않아요).
- * 앱에 든 가상 직원 16명 대신 이 명단으로 로그인·직원 검색을 해요. 주체는 "mock|" 로 시작해요. 모두 지어낸 사람이어야 해요.
+ * 앱에 든 가상 직원 17명 대신 이 명단으로 로그인·직원 검색을 해요. 주체는 "mock|" 로 시작해요. 모두 지어낸 사람이어야 해요.
  * 모양: [{ "subject": "mock|b-001", "name": "가상 직원 보람", "email": "boram@company-b.example", "department": "재무팀", "floor": "3층", "groups": [], "login": true }]
  */
 const RosterSchema = z
@@ -52,7 +54,7 @@ const RosterSchema = z
       email: z.email(),
       department: z.string().min(1).max(40),
       floor: z.string().min(1).max(10),
-      groups: z.array(z.enum(['facilities', 'operator', 'team-lead'])).default([]),
+      groups: z.array(z.enum(['facilities', 'operator', 'team-lead', 'cafe'])).default([]),
       login: z.boolean().default(false),
     }),
   )
@@ -80,7 +82,7 @@ export class MockEmployees implements IdpAdapter, DirectoryAdapter {
   readonly capabilities = { name: 'mock-oidc', label: '사내 로그인·직원 디렉터리(모의 OIDC, 가상 직원)', mock: true };
   private readonly people: MockEmployee[];
 
-  /** people가 없으면 앱에 든 가상 직원 16명이에요. 다른 가상 회사 시연은 rosterFromJson으로 읽은 명단을 넘겨요. */
+  /** people가 없으면 앱에 든 가상 직원 17명이에요. 다른 가상 회사 시연은 rosterFromJson으로 읽은 명단을 넘겨요. */
   constructor(people: MockEmployee[] = EMPLOYEES) {
     this.people = people.map((e) => ({ ...e, groups: [...e.groups] }));
   }

@@ -1,4 +1,4 @@
-import { MODULES, type ModuleKind } from './kinds';
+import { MODULES, type ModuleKind, ROUTER_MODULES, type RouterModule } from './kinds';
 
 // 끄기 스위치(ADR-12, R4). 운영자만 바꾸고, 바꿀 때마다 감사 로그에 남겨요.
 export type ModuleSwitch = 'on' | 'link' | 'off';
@@ -51,11 +51,14 @@ export interface OpsSettings {
     sickNoteOverDays: number;
     /** 여러 팀 회의 참석자 고르기 마감: 회의 시작 이만큼(분) 전까지(11/4, ADR-28, 기본 60분). 지나면 짐작한 인원 그대로예요. */
     jointPickLeadMinutes: number;
+    /** 사내 카페 10분 픽업 칸마다 받는 잔 수 상한(11/6, ADR-29 피크, 기본 10잔). 꽉 찬 칸은 고를 수 없어요. */
+    cafeSlotCapacity: number;
   };
 }
 
 export const DEFAULT_OPS_SETTINGS: OpsSettings = {
-  modules: { navi: 'on', notices: 'on', rooms: 'on', pantry: 'on' },
+  // 사내 카페(11/6, ADR-29)는 출시 기본 끔이에요. 개발·시연도 운영자가 켜야 보여요(시연 배포는 DESK_DEMO_SWITCHES=cafeteria).
+  modules: { navi: 'on', notices: 'on', rooms: 'on', pantry: 'on', cafeteria: 'off' },
   roomsWrite: true,
   mcp: false,
   mcpToolsOff: [],
@@ -69,6 +72,7 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     notices: 'https://groupware.example.com/board',
     rooms: 'https://groupware.example.com/resources',
     pantry: 'https://groupware.example.com/supplies',
+    cafeteria: 'https://groupware.example.com/cafe',
     teamSchedule: 'https://groupware.example.com/calendar/team',
   },
   values: {
@@ -83,6 +87,7 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     sickLeaveYearDays: 0,
     sickNoteOverDays: 3,
     jointPickLeadMinutes: 60,
+    cafeSlotCapacity: 10,
   },
 };
 
@@ -110,9 +115,9 @@ export function roomsWriteOn(settings: OpsSettings): boolean {
   return settings.modules.rooms === 'on' && settings.roomsWrite;
 }
 
-/** 라우터 후보에 남는 종류. 끔인 종류는 빠지고, 링크만은 남아서 링크 카드를 받아요. */
-export function routableModules(settings: OpsSettings): ModuleKind[] {
-  return MODULES.filter((m) => settings.modules[m] !== 'off');
+/** 라우터 후보에 남는 종류. 끔인 종류는 빠지고, 링크만은 남아서 링크 카드를 받아요. 카페는 아직 라우터 종류가 아니에요(ADR-29). */
+export function routableModules(settings: OpsSettings): RouterModule[] {
+  return ROUTER_MODULES.filter((m) => settings.modules[m] !== 'off');
 }
 
 /** 자리비움 알리기(11/3)가 열려 있는지. 보는 곳이 같은 팀 일정뿐이라 같은 팀 일정과 담당 찾기가 모두 켬일 때만이에요. */

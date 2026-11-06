@@ -8,5 +8,7 @@ export function computeRoles(profile: EmployeeProfile, chartOwnerDepartments: Se
   if (chartOwnerDepartments.has(profile.department)) roles.push('chart-owner');
   if (profile.groups.includes('operator')) roles.push('operator');
   if (profile.groups.includes('team-lead')) roles.push('team-lead');
+  // 바리스타(11/6, ADR-29): 회사 IdP 역할 그룹 /역할/cafe. 다른 역할과 같은 길이에요.
+  if (profile.groups.includes('cafe')) roles.push('cafe');
   return roles;
 }

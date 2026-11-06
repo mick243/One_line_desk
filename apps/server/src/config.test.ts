@@ -84,7 +84,7 @@ describe('운영 설정이 실수하면 닫혀요(L-15)', () => {
       'teamSchedule',
     ]);
     expect(problemsOf({ ...demo, DESK_DEMO_SWITCHES: 'roomsWrite,mcp' })).toContain(
-      'DESK_DEMO_SWITCHES에는 roomsWrite·autoActions·teamSchedule만 넣을 수 있어요(mcp)',
+      'DESK_DEMO_SWITCHES에는 roomsWrite·autoActions·teamSchedule·cafeteria만 넣을 수 있어요(mcp)',
     );
     expect(loadConfig({ ...PROD, DESK_DEMO_SWITCHES: 'roomsWrite' }).demoSwitches).toEqual([]);
 
@@ -92,6 +92,27 @@ describe('운영 설정이 실수하면 닫혀요(L-15)', () => {
     try {
       const built = await buildApp({ config: loadConfig({ ...demo, DESK_DEMO_SWITCHES: 'roomsWrite,teamSchedule' }), db, seed: true });
       expect(built.ctx.ops.get()).toMatchObject({ roomsWrite: true, teamSchedule: true, autoActions: false, mcp: false });
+      // 사내 카페(출시 기본 끔)는 넣지 않으면 끔 그대로예요.
+      expect(built.ctx.ops.get().modules.cafeteria).toBe('off');
+      await built.app.close();
+    } finally {
+      await db.close();
+    }
+  });
+
+  it('[ADR-29] 시연 배포에 DESK_DEMO_SWITCHES=cafeteria를 넣으면 사내 카페 모듈이 켬으로 시작해요. 운영 배포는 무시해요(11/6)', async () => {
+    const demo = { NODE_ENV: 'production', DESK_MOCK_LOGIN: 'true', PUBLIC_BASE_URL: 'https://demo.example.com', ...SECRETS };
+    expect(loadConfig({ ...demo, DESK_DEMO_SWITCHES: 'roomsWrite,cafeteria' }).demoSwitches).toEqual(['roomsWrite', 'cafeteria']);
+    expect(problemsOf({ ...demo, DESK_DEMO_SWITCHES: 'cafeteria' })).not.toContain('DESK_DEMO_SWITCHES');
+    expect(loadConfig({ ...PROD, DESK_DEMO_SWITCHES: 'cafeteria' }).demoSwitches).toEqual([]);
+    const db = await createTestDb();
+    try {
+      const built = await buildApp({ config: loadConfig({ ...demo, DESK_DEMO_SWITCHES: 'roomsWrite,cafeteria' }), db, seed: true });
+      const s = built.ctx.ops.get();
+      expect(s.modules).toMatchObject({ cafeteria: 'on', navi: 'on', rooms: 'on' });
+      expect(s).toMatchObject({ roomsWrite: true, autoActions: false, mcp: false });
+      // 깃발 이름으로 새는 값(cafeteria: true)은 없어요.
+      expect('cafeteria' in s).toBe(false);
       await built.app.close();
     } finally {
       await db.close();

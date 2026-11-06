@@ -119,7 +119,7 @@ describe('도구 레지스트리', () => {
 
   it('[R4] 같이 채워요 단독 모드는 navi·notices·rooms가 모두 끔일 때예요', () => {
     expect(isPantryStandalone(DEFAULT_OPS_SETTINGS)).toBe(false);
-    expect(isPantryStandalone(settings({ modules: { navi: 'off', notices: 'off', rooms: 'off', pantry: 'on' } }))).toBe(true);
+    expect(isPantryStandalone(settings({ modules: { navi: 'off', notices: 'off', rooms: 'off', pantry: 'on', cafeteria: 'off' } }))).toBe(true);
   });
 });
 

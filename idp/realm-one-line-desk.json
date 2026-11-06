@@ -54,6 +54,11 @@
           "name": "영업팀",
           "path": "/부서/영업팀",
           "subGroups": []
+        },
+        {
+          "name": "카페팀",
+          "path": "/부서/카페팀",
+          "subGroups": []
         }
       ]
     },
@@ -61,6 +66,11 @@
       "name": "층",
       "path": "/층",
       "subGroups": [
+        {
+          "name": "1층",
+          "path": "/층/1층",
+          "subGroups": []
+        },
         {
           "name": "2층",
           "path": "/층/2층",
@@ -100,6 +110,11 @@
         {
           "name": "team-lead",
           "path": "/역할/team-lead",
+          "subGroups": []
+        },
+        {
+          "name": "cafe",
+          "path": "/역할/cafe",
           "subGroups": []
         }
       ]
@@ -440,6 +455,24 @@
         }
       ],
       "groups": ["/부서/IT지원팀", "/층/4층"],
+      "requiredActions": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000017",
+      "username": "hajun",
+      "firstName": "하준",
+      "lastName": "가상 바리스타",
+      "email": "hajun@corp.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "desk-demo",
+          "temporary": false
+        }
+      ],
+      "groups": ["/부서/카페팀", "/층/1층", "/역할/cafe"],
       "requiredActions": []
     },
     {

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 // 선 아이콘 한 벌(10/26 디자인 정리). 색은 글자색(currentColor)을 따라가서 컴포넌트에 색 값을 쓰지 않아요.
 
-export type IconName = 'home' | 'navi' | 'rooms' | 'notices' | 'pantry' | 'mine' | 'bell' | 'chevron' | 'lock' | 'people' | 'close';
+export type IconName = 'home' | 'navi' | 'rooms' | 'notices' | 'pantry' | 'cafe' | 'mine' | 'bell' | 'chevron' | 'lock' | 'people' | 'close';
 
 const PATHS: Record<IconName, ReactNode> = {
   home: <path d='M3.5 10.2 12 3.5l8.5 6.7V19a1.5 1.5 0 0 1-1.5 1.5h-4.2v-5.6H9.2v5.6H5A1.5 1.5 0 0 1 3.5 19z' />,
@@ -30,6 +30,15 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d='M4.5 9h12v4.5a5.5 5.5 0 0 1-5.5 5.5h-1a5.5 5.5 0 0 1-5.5-5.5z' />
       <path d='M16.5 10.5h1.3a2.4 2.4 0 0 1 0 4.8h-1.6' />
       <path d='M8.5 3.5v2.5M12.5 3.5v2.5' />
+    </>
+  ),
+  // 사내 카페(11/6, ADR-29): 뚜껑 덮인 테이크아웃 컵
+  cafe: (
+    <>
+      <path d='M5.5 7.5h13' />
+      <path d='M7 7.5 6.4 5.6A1 1 0 0 1 7.4 4.3h9.2a1 1 0 0 1 1 1.3L17 7.5' />
+      <path d='m6.8 7.5 1.3 12a1.5 1.5 0 0 0 1.5 1.3h4.8a1.5 1.5 0 0 0 1.5-1.3l1.3-12' />
+      <path d='M7.6 12.5h8.8' />
     </>
   ),
   mine: (

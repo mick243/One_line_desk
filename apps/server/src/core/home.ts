@@ -31,6 +31,7 @@ import {
   type ModuleSwitch,
   type ReadNote,
   ROOM_CONDITIONS_VARIANT,
+  type RouterModule,
   sameHomeRead,
   TEAM_SCHEDULE_TEXT,
 } from '@one-line-desk/shared';
@@ -554,7 +555,7 @@ function leaveDaysText(days: LeaveDay[]): string {
   return days.length > 3 ? `${shown.join(' · ')} 외 ${days.length - 3}일` : shown.join(' · ');
 }
 
-const moduleOf = (to: HomeMoveTo): ModuleKind => (to === 'board' ? 'pantry' : to === 'away' ? 'navi' : to);
+const moduleOf = (to: HomeMoveTo): RouterModule => (to === 'board' ? 'pantry' : to === 'away' ? 'navi' : to);
 
 /**
  * 홈 답 안에 바로 보여 줄 읽기 답인지(11/5). 담당 찾기·공지는 켜져 있으면 늘, 회의실은 묻는 문장("빈 회의실 있어?")일 때만이에요.

@@ -90,4 +90,8 @@ export interface WebModules {
    * 휴가 준비 링크면 휴가 신청 양식(LeaveRequestSheet)을 그 날짜·종류로 채워 열어요(11/3).
    */
   LinkEntry: ComponentType<ScreenProps & { token: string; InquirySheet: WebModules['InquirySheet']; LeaveRequestSheet: WebModules['LeaveRequestSheet'] }>;
+  /** S7 카페 주문(탭 "카페", 11/6 ADR-29). 링크만이면 카페 안내 링크 카드예요. */
+  CafePage: ComponentType;
+  /** S8 카페 판. 바리스타 메뉴일 때 홈 자리에 그려요(이름·금액 없음). */
+  CafeBoard: ComponentType;
 }
