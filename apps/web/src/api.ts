@@ -21,6 +21,11 @@ export interface PublicConfig {
   homeAsk: boolean;
   /** 홈 채팅 "같은 팀 일정"(11/3, 출시 기본 끔) */
   teamSchedule?: boolean;
+  /**
+   * 앱 안 휴가 결재(11/6 A안 전 흐름, 개발·시험만). 거짓이면(운영 기본) 휴가 신청·결재는 회사 그룹웨어에서 하고
+   * 앱은 신청 전 카드만 보여요. 옛 서버가 값을 안 주면 undefined라 예전처럼 앱 안 양식을 열어요.
+   */
+  leaveInApp?: boolean;
   standalone: boolean;
   demoData: string[];
   rulesVersion: number;

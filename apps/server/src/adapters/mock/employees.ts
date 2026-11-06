@@ -17,14 +17,15 @@ const person = (n: number, displayName: string, id: string, department: string, 
 });
 
 // 시연용 가상 직원이에요. 실제 사람이 아니에요. 임시 IdP(idp/realm-one-line-desk.json)와 같은 사람들이에요.
-// 로그인 고르기 목록에는 앞의 다섯 명과 디자인팀장 지우·IT지원팀 하린·카페팀 바리스타 하준만 보이고, 나머지는 참석자 검색에서만 찾을 수 있어요.
+// 로그인 고르기 목록에는 앞의 다섯 명과 개발팀 서준·디자인팀장 지우·IT지원팀 하린·카페팀 바리스타 하준만 보이고, 나머지는 참석자 검색에서만 찾을 수 있어요.
 const EMPLOYEES: MockEmployee[] = [
   person(1, '가상 직원 하늘', 'haneul', '재무팀', '3층', [], true),
   person(2, '가상 직원 도윤', 'doyun', '개발팀', '5층', ['team-lead'], true),
   person(3, '가상 총무 서연', 'seoyeon', '총무팀', '2층', ['facilities'], true),
   person(4, '가상 인사 지후', 'jihu', '인사팀', '2층', [], true),
   person(5, '가상 운영자 민준', 'minjun', '정보보안팀', '4층', ['operator'], true),
-  person(6, '가상 직원 서준', 'seojun', '개발팀', '5층'),
+  // 팀장이 있는 팀의 팀원(11/6). 가상 그룹웨어 결재선(개발팀 팀장 도윤 → 인사팀)을 시연하려고 로그인 목록에 보여요.
+  person(6, '가상 직원 서준', 'seojun', '개발팀', '5층', [], true),
   person(7, '가상 직원 하은', 'haeun', '개발팀', '5층'),
   // 디자인팀장(11/4, ADR-28). 여러 팀 회의 참석자 고르기를 시연하려고 로그인 목록에 보여요.
   person(8, '가상 직원 지우', 'jiwoo', '디자인팀', '5층', ['team-lead'], true),

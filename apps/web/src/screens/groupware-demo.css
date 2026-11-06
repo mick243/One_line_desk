@@ -1,0 +1,331 @@
+/*
+ * 시연 전용 가상 그룹웨어(11/6 휴가 A안). 한 줄 데스크와 헷갈리지 않게 일부러 다른 색(짙은 청록 머리·네모난 모서리)을 써요.
+ * 색은 이 화면 안에서만 쓰는 변수예요. 글자 대비는 흰 바탕·검은 글자 기준 4.5:1을 넘겨요.
+ */
+.gw {
+  --gw-head: #0f4c5c;
+  --gw-head-text: #ffffff;
+  --gw-band-bg: #fff4d6;
+  --gw-band-text: #7a4b00;
+  --gw-bg: #eef2f3;
+  --gw-surface: #ffffff;
+  --gw-text: #1b2a30;
+  --gw-quiet: #51636b;
+  --gw-line: #cfd8dc;
+  --gw-accent: #0f6b80;
+  --gw-danger: #b3261e;
+  --gw-ok: #1b6e3c;
+  min-height: 100vh;
+  background: var(--gw-bg);
+  color: var(--gw-text);
+  font-size: 0.9375rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .gw {
+    --gw-head: #0b3a46;
+    --gw-band-bg: #3a2c0c;
+    --gw-band-text: #ffd27a;
+    --gw-bg: #12181b;
+    --gw-surface: #1b2428;
+    --gw-text: #e8eef0;
+    --gw-quiet: #a4b4ba;
+    --gw-line: #2f3d42;
+    --gw-accent: #5fc3d8;
+    --gw-danger: #ff8a80;
+    --gw-ok: #7fd6a0;
+  }
+}
+
+.gw-band {
+  margin: 0;
+  padding: 10px 16px;
+  background: var(--gw-band-bg);
+  color: var(--gw-band-text);
+  font-weight: 700;
+  text-align: center;
+}
+
+.gw-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 14px 16px;
+  background: var(--gw-head);
+  color: var(--gw-head-text);
+}
+
+.gw-brand {
+  font-size: 1.0625rem;
+}
+
+.gw-nav {
+  display: flex;
+  gap: 6px;
+}
+
+.gw-nav button {
+  padding: 8px 12px;
+  border: 1px solid rgb(255 255 255 / 0.5);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--gw-head-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.gw-nav button[aria-current='page'] {
+  background: var(--gw-head-text);
+  color: var(--gw-head);
+  font-weight: 700;
+}
+
+.gw-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.gw-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--gw-line);
+  border-radius: 4px;
+  background: var(--gw-surface);
+}
+
+.gw-card h1,
+.gw-card h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.gw-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.gw-label select,
+.gw-label input,
+.gw-label textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--gw-line);
+  border-radius: 4px;
+  background: var(--gw-surface);
+  color: var(--gw-text);
+  font: inherit;
+  font-weight: 400;
+}
+
+.gw-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.gw-row .gw-label {
+  flex: 1 1 160px;
+}
+
+.gw-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--gw-line);
+  border-radius: 4px;
+}
+
+.gw-choices legend {
+  font-weight: 600;
+}
+
+.gw-choices label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gw-fields {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.gw-fields div {
+  display: flex;
+  gap: 12px;
+}
+
+.gw-fields dt {
+  flex: 0 0 72px;
+  color: var(--gw-quiet);
+}
+
+.gw-fields dd {
+  margin: 0;
+}
+
+.gw-hint {
+  margin: 0;
+  color: var(--gw-quiet);
+  font-size: 0.875rem;
+}
+
+.gw-note {
+  margin: 0;
+  color: var(--gw-ok);
+  font-weight: 600;
+}
+
+.gw-error {
+  margin: 0;
+  color: var(--gw-danger);
+  font-weight: 600;
+}
+
+.gw-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gw-button {
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 1px solid var(--gw-line);
+  border-radius: 4px;
+  background: var(--gw-surface);
+  color: var(--gw-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.gw-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.gw-primary {
+  border-color: var(--gw-accent);
+  background: var(--gw-accent);
+  color: #ffffff;
+}
+
+.gw-danger {
+  border-color: var(--gw-danger);
+  background: var(--gw-danger);
+  color: #ffffff;
+}
+
+.gw-doc {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--gw-line);
+  border-left: 4px solid var(--gw-accent);
+  border-radius: 4px;
+}
+
+.gw-doc-approved {
+  border-left-color: var(--gw-ok);
+}
+
+.gw-doc-rejected {
+  border-left-color: var(--gw-danger);
+}
+
+.gw-doc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.gw-doc-id {
+  color: var(--gw-quiet);
+  font-variant-numeric: tabular-nums;
+}
+
+.gw-state {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--gw-bg);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.gw-state-approved {
+  color: var(--gw-ok);
+}
+
+.gw-state-rejected {
+  color: var(--gw-danger);
+}
+
+.gw-line {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.gw-step-current {
+  font-weight: 700;
+  color: var(--gw-accent);
+}
+
+.gw-step-approved {
+  color: var(--gw-ok);
+}
+
+.gw-step-rejected {
+  color: var(--gw-danger);
+}
+
+.gw-step-waiting {
+  color: var(--gw-quiet);
+}
+
+.gw-reject {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gw-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 16px 32px;
+  color: var(--gw-quiet);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.gw-foot p {
+  margin: 0;
+}
+
+.gw-reason {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--gw-bg);
+  white-space: pre-wrap;
+}

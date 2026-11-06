@@ -23,7 +23,15 @@ export function Home({
   autoRun,
 }: {
   me: Me;
-  switches: { modules: Record<ModuleKind, ModuleSwitch>; roomsWrite: boolean; autoActions: boolean; homeAsk?: boolean; teamSchedule?: boolean };
+  switches: {
+    modules: Record<ModuleKind, ModuleSwitch>;
+    roomsWrite: boolean;
+    autoActions: boolean;
+    homeAsk?: boolean;
+    teamSchedule?: boolean;
+    /** 앱 안 휴가 결재(11/6 A안 전 흐름). 거짓이면 [휴가 신청하기]가 신청 전 카드를 펼쳐요. */
+    leaveInApp?: boolean;
+  };
   onOpen: (page: AppDestination, text?: string, auto?: boolean) => void;
   /** 마이 페이지 안내 버튼이 넘긴 문장(11/5). autoRun이면 홈 채팅이 바로 찾아요. */
   initialText?: string;
@@ -52,7 +60,7 @@ export function Home({
       {/* 바로 하기(11/5, 처음 쓰는 직원 점검: 휴가 신청 버튼이 앞에 보였으면): 문의함이 켜져 있으면 휴가 신청 양식을 바로 열어요. */}
       {modules.navi === 'on' && (
         <div className='home-quick' aria-label='바로 하기'>
-          <LeaveStart />
+          <LeaveStart inApp={switches.leaveInApp !== false} />
         </div>
       )}
 

@@ -153,10 +153,22 @@ type LinkView =
   | { kind: 'ok'; checkedAt: string; cards: Card[] }
   | { kind: 'inquiry'; action: Inquire }
   | { kind: 'leave'; action: LeaveRequest }
-  | { kind: 'cards'; about: 'pantry' | 'equipment'; cards: Card[] }
+  | { kind: 'cards'; about: 'pantry' | 'equipment' | 'leave'; cards: Card[] }
   | { kind: 'message'; text: string; about?: LinkAbout }
   | { kind: 'not-owner' }
   | { kind: 'failed'; message: string };
+
+/** 카드로 여는 링크의 읽기 이름과 머리 줄(11/3 판·장비, 11/6 휴가 A안 신청 전 카드) */
+const CARDS_LABEL: Record<'pantry' | 'equipment' | 'leave', string> = {
+  pantry: 'Claude에서 가져온 품목',
+  equipment: 'Claude에서 가져온 장비 대여',
+  leave: 'Claude에서 가져온 휴가 날짜',
+};
+const CARDS_LINE: Record<'pantry' | 'equipment' | 'leave', string> = {
+  pantry: 'Claude에서 가져온 품목이에요. 지금 다시 확인했어요 · +1은 여기서 직접 눌러 주세요',
+  equipment: 'Claude에서 가져온 장비 대여예요. 지금 다시 확인했어요 · [빌리기]를 눌러야 빌려요',
+  leave: 'Claude에서 가져온 날짜예요. 남은 연차와 그날 내 일정을 확인하고, 신청은 그룹웨어에서 해요',
+};
 
 /** 링크가 화면을 열지 못할 때(11/3). about이 없으면 담당 팀 문의 링크예요. */
 const LINK_MESSAGES = {
@@ -231,6 +243,10 @@ export function LinkEntry({
           case 'leave':
             setView({ kind: 'leave', action: link.action });
             setSheetOpen(true);
+            return;
+          case 'leave-check':
+            // 11/6 A안: 앱 안 휴가 결재가 꺼져 있으면 신청 전 카드예요. 신청은 카드의 [그룹웨어에서 신청하기]로 회사 그룹웨어에서 해요.
+            setView({ kind: 'cards', about: 'leave', cards: [link.card] });
             return;
           case 'pantry':
             setView({ kind: 'cards', about: 'pantry', cards: link.cards });
@@ -317,14 +333,17 @@ export function LinkEntry({
   }
   if (view.kind === 'cards') {
     return (
-      <div className='ask' aria-label={view.about === 'pantry' ? 'Claude에서 가져온 품목' : 'Claude에서 가져온 장비 대여'}>
-        <p className='mask-line'>
-          {view.about === 'pantry'
-            ? 'Claude에서 가져온 품목이에요. 지금 다시 확인했어요 · +1은 여기서 직접 눌러 주세요'
-            : 'Claude에서 가져온 장비 대여예요. 지금 다시 확인했어요 · [빌리기]를 눌러야 빌려요'}
-        </p>
+      <div className='ask' aria-label={CARDS_LABEL[view.about]}>
+        <p className='mask-line'>{CARDS_LINE[view.about]}</p>
         {view.cards.map((card) => (
-          <CardView key={card.id} card={card} onAction={(action, c) => actions.run(action, c)} />
+          <CardView
+            key={card.id}
+            card={card}
+            // 신청 전 카드의 [이 날로 보기](11/6)는 이 자리의 카드를 그 날로 바꿔요.
+            onAction={(action, c) =>
+              actions.run(action, c, view.about === 'leave' ? (next) => setView({ kind: 'cards', about: 'leave', cards: next }) : undefined)
+            }
+          />
         ))}
         <div className='actions'>{backButton(view.about)}</div>
       </div>

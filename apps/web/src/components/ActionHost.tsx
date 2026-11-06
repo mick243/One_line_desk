@@ -1,4 +1,4 @@
-import type { AppDestination, Card, CardAction, PlanConfirmResponse, PlanSheet } from '@one-line-desk/shared';
+import type { AppDestination, Card, CardAction, LeaveCheckResponse, PlanConfirmResponse, PlanSheet } from '@one-line-desk/shared';
 import { type ComponentType, createContext, type ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { ApiFailure, api, apiRequest, type PublicConfig } from '../api';
 import { CardView } from './CardView';
@@ -123,6 +123,23 @@ export function ActionHost({
         switch (action.type) {
           case 'link':
             window.open(action.href, '_blank', 'noopener,noreferrer');
+            return;
+          case 'leave-day': {
+            // [이 날로 보기](11/6 휴가 A안): 걸린 일이 없는 가까운 날로 신청 전 카드를 다시 계산해요(읽기만, 쓰기 없음).
+            // 날짜·종류 코드만 보내요. 그 카드 자리가 있으면 바꾸고, 없으면 시트로 보여 줘요.
+            const res = await apiRequest<LeaveCheckResponse>('POST', '/api/navi/leave/check', { type: action.leaveType, days: action.days });
+            if (onResult) onResult([res.card]);
+            else setShown({ title: '다른 날로 봤어요', cards: [res.card] });
+            return;
+          }
+          case 'copy':
+            // 신청 내용 복사(11/6 휴가 A안): 서버가 정한 종류·날짜 글만 클립보드에 넣어요. 앱은 어디에도 남기지 않아요(R13).
+            try {
+              await navigator.clipboard.writeText(action.value);
+              setShown({ title: '복사했어요', message: `${action.value} · 그룹웨어 신청서에 붙여 넣어 주세요`, cards: [] });
+            } catch {
+              setShown({ title: '복사하지 못했어요', message: `이 브라우저는 복사를 막았어요. 직접 적어 주세요: ${action.value}`, cards: [] });
+            }
             return;
           case 'navigate':
             setShown(null);

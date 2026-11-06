@@ -53,6 +53,8 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
       autoActions: s.autoActions,
       homeAsk: s.homeAsk,
       teamSchedule: s.teamSchedule,
+      // 앱 안 휴가 결재(DESK_LEAVE_IN_APP)가 켜졌는지(11/6 A안). 끄면(운영 기본) 휴가 신청은 회사 그룹웨어에서 해요.
+      leaveInApp: ctx.config.leaveInApp,
       standalone: isPantryStandalone(s),
       demoData: demoAdapters()
         .filter((a) => a.mock || a.partial)

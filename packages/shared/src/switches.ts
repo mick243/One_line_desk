@@ -3,8 +3,14 @@ import { MODULES, type ModuleKind, ROUTER_MODULES, type RouterModule } from './k
 // 끄기 스위치(ADR-12, R4). 운영자만 바꾸고, 바꿀 때마다 감사 로그에 남겨요.
 export type ModuleSwitch = 'on' | 'link' | 'off';
 
-/** 운영 설정 링크 칸: 기능별 그룹웨어 화면 + 그룹웨어 팀 일정(11/4) */
-export const OPS_LINK_KEYS = [...MODULES, 'teamSchedule'] as const;
+/**
+ * 운영 설정 링크 칸: 기능별 그룹웨어 화면 + 그룹웨어 팀 일정(11/4) + 그룹웨어 휴가 신청·결재함(11/6 A안).
+ * leave: 휴가 신청 주소. {from}·{to}·{type}·{half} 자리 표시가 있으면 날짜·종류 코드로 채워요(글은 넣지 않아요).
+ * approvals: 결재함 주소. 결재 진행 상황은 앱이 모르니 이 주소로 보내요.
+ */
+export const OPS_LINK_KEYS = [...MODULES, 'teamSchedule', 'leave', 'approvals'] as const;
+/** 빈 글로 지울 수 있는 링크 칸(비우면 버튼 없이 글 안내만 해요) */
+export const OPS_CLEARABLE_LINKS = ['teamSchedule', 'leave', 'approvals'] as const;
 export type OpsLinkKey = (typeof OPS_LINK_KEYS)[number];
 export interface OpsSettings {
   modules: Record<ModuleKind, ModuleSwitch>;
@@ -88,6 +94,10 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     pantry: 'https://groupware.example.com/supplies',
     cafeteria: 'https://groupware.example.com/cafe',
     teamSchedule: 'https://groupware.example.com/calendar/team',
+    // 휴가 신청·결재함(11/6 A안)은 회사마다 주소가 달라서 비워 둬요. 비어 있으면 시연은 가상 그룹웨어 주소를 쓰고(navi/leave-handoff.ts),
+    // 운영은 [그룹웨어에서 신청하기] 대신 "그룹웨어에서 신청해 주세요" 글만 보여요.
+    leave: '',
+    approvals: '',
   },
   cafeAccount: '',
   values: {
@@ -119,8 +129,8 @@ export const LAUNCH_OPS_SETTINGS: OpsSettings = {
   mcp: false,
   autoActions: false,
   teamSchedule: false,
-  // 팀 일정 주소는 회사마다 달라서 비워 두고 운영자가 넣어요.
-  links: { ...DEFAULT_OPS_SETTINGS.links, teamSchedule: '' },
+  // 팀 일정·휴가 신청·결재함 주소는 회사마다 달라서 비워 두고 운영자가 넣어요.
+  links: { ...DEFAULT_OPS_SETTINGS.links, teamSchedule: '', leave: '', approvals: '' },
 };
 
 /** "같이 채워요 단독" 모드 = navi·notices·rooms 모두 끔. 묻기 탭을 숨기고 같이 채워요 탭이 첫 화면이에요. */

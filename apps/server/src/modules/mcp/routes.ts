@@ -138,6 +138,8 @@ export function registerMcpApiRoutes(app: FastifyInstance, ctx: AppContext, mcp:
         case 'navi:leave-link': {
           if (settings.modules.navi === 'off' || !ctx.services.navi?.mcp) return { kind: 'off', about: 'leave' };
           if (opened.expired) return { kind: 'expired', about: 'leave' };
+          // 11/6 A안: 앱 안 휴가 결재가 꺼져 있으면(운영 기본) 양식 대신 신청 전 카드예요. 신청은 회사 그룹웨어에서 해요.
+          if (!ctx.config.leaveInApp) return { kind: 'leave-check', card: await ctx.services.navi.mcp.leaveCheck(user, opened.params as LeaveLink) };
           const action = await ctx.services.navi.mcp.leaveTarget(user, opened.params as LeaveLink);
           return action ? { kind: 'leave', action } : { kind: 'gone', about: 'leave' };
         }

@@ -170,7 +170,7 @@ const linkTo = (env: ToolEnv, token: string) => `${env.issuer}/r/${token}`;
 async function prepareLeave(env: ToolEnv, raw: unknown): Promise<ToolOutcome> {
   const input = raw as LeaveInput;
   const prepared = naviRead(env).prepareLeave({ pseudonymId: env.principal.pseudonymId }, { days: leaveDaysOfInput(input.days), type: input.type });
-  const out = shapeLeave(input.type, prepared.ok ? { ok: true, days: prepared.days, link: linkTo(env, prepared.token) } : prepared);
+  const out = shapeLeave(input.type, prepared.ok ? { ok: true, days: prepared.days, link: linkTo(env, prepared.token) } : prepared, env.ctx.config.leaveInApp);
   return { result: out.link ? 'found' : 'none', out };
 }
 

@@ -1,4 +1,4 @@
-import type { CardAction } from '../cards';
+import type { Card, CardAction } from '../cards';
 import { RECORD_KEEP_DAYS } from '../retention';
 
 // 받는 곳을 바꿔 보낸 기록의 이유(11/2 ADR-26, 옛 "틀렸어요" 자리). 수정 제안함 기록 묶음은 이 둘만 세요.
@@ -126,6 +126,19 @@ export const LEAVE_REQUEST_MAX_DAYS = 30;
 export const LEAVE_TYPES = ['annual', 'official', 'sick'] as const;
 export type LeaveType = (typeof LEAVE_TYPES)[number];
 export const LEAVE_TYPE_LABEL: Record<LeaveType, string> = { annual: '연차', official: '공가', sick: '병가' };
+
+/**
+ * 그룹웨어로 넘기는 휴가 종류(11/6 A안): 위 셋에 경조(family-event)를 더해요. 경조는 연차에서 빠지지 않아요(공가처럼).
+ * 신청 전 카드·가상 그룹웨어·근태 기록이 써요. 앱 안 휴가 요청(DB 제약)과 MCP 휴가 준비는 LEAVE_TYPES 그대로예요.
+ */
+export const LEAVE_KINDS = [...LEAVE_TYPES, 'family-event'] as const;
+export type LeaveKind = (typeof LEAVE_KINDS)[number];
+export const LEAVE_KIND_LABEL: Record<LeaveKind, string> = { ...LEAVE_TYPE_LABEL, 'family-event': '경조' };
+/**
+ * 날을 미리 고를 수 있는 휴가인지(11/6 사용자 결정). 연차·반차만이에요. 병가·공가·경조는 날을 고를 수 없어서
+ * 신청 전 카드가 다른 날을 제안하지 않고, 그날 잡혀 있던 내 일만 알려요.
+ */
+export const leaveDayPickable = (kind: LeaveKind): boolean => kind === 'annual';
 
 /** 공가 사유는 정해진 것만 골라요. 자유 글 사유 칸은 따로 있어요. */
 export const OFFICIAL_LEAVE_REASONS = ['reserve', 'vote', 'summons', 'duty'] as const;
@@ -362,6 +375,62 @@ export interface OnboardingItem {
  */
 export interface LeaveStartResponse {
   action: Extract<CardAction, { type: 'leave-request' }> | null;
+  /**
+   * 11/6 A안(그룹웨어로 넘기기): 앱 안 휴가 결재가 꺼져 있으면(운영 기본) 양식 대신 신청 전 카드가 와요.
+   * 남은 연차와 [그룹웨어에서 신청하기]만 있고, 신청·결재는 회사 그룹웨어가 해요.
+   */
+  card?: Card;
+}
+
+// ── 휴가 A안: 그룹웨어로 넘기기(11/6 사용자 결정, ADR-24 개정) ─────────────────────
+// 휴가 신청·결재(팀장 → 인사)는 회사 그룹웨어 전자결재가 해요. 앱은 신청 전 판단(남은 연차·그날 내 일정·규정 한 줄)과
+// 승인 뒤 반영(근태 기록 읽기)만 해요. 결재 권한·근태 쓰기는 없어요.
+
+/** 신청 전 카드 꼬리(화면설계 "보안이 보이는 문구"). 카드가 신청이 아니라는 걸 늘 보여요. */
+export const LEAVE_HANDOFF_TEXT = '아직 신청 전이에요. 그룹웨어에서 신청해야 결재가 시작돼요';
+/** 휴가 신청 링크 칸이 비어 있을 때 버튼 대신 보이는 글 */
+export const LEAVE_APPLY_IN_GROUPWARE = '그룹웨어에서 신청해 주세요';
+/** 결재 중인 신청은 앱이 모르니 결재함으로 보내요(상태 묻기 답) */
+export const LEAVE_APPROVALS_TEXT = '결재 진행 상황은 그룹웨어 결재함에서 봐요';
+/** 병가·공가·경조 카드(11/6): 앱은 사유를 받지 않아요. 사유는 그룹웨어 신청서에만 적어요. */
+export const LEAVE_REASON_IN_GROUPWARE = '사유는 그룹웨어 신청서에 적어 주세요';
+/** 신청 전 카드가 걸린 일이 없는 날을 찾는 범위: 고른 날 앞뒤로 이만큼의 평일(회사 휴일은 몰라서 평일만 봐요) */
+export const LEAVE_FREE_DAY_RANGE = 7;
+/** 제안하는 날 수 */
+export const LEAVE_FREE_DAY_MAX = 2;
+
+/**
+ * 그룹웨어 휴가 신청 주소의 자리 표시 값(11/6). 날짜·종류 코드만 넣어요. 사람이 쓴 글(질문·사유)은 넣지 않아요(R13).
+ * - from·to: 첫날·끝날(YYYY-MM-DD). 날을 말하지 않았으면 빈 값이에요.
+ * - type: annual · official · sick · family-event(경조)
+ * - half: 하루면 빈 값, 하루짜리 반차면 am · pm, 오전·오후를 모르는 반차면 half
+ */
+export interface LeaveLinkValues {
+  from: string;
+  to: string;
+  type: LeaveKind;
+  half: '' | HalfPart | 'half';
+}
+
+/** POST /api/navi/leave/check(11/6 [이 날로 보기]): 그 날·종류로 신청 전 카드를 다시 계산해요. 날짜·종류 코드만 와요(글 없음). */
+export interface LeaveCheckRequest {
+  type: LeaveKind;
+  days: LeaveDay[];
+}
+
+export interface LeaveCheckResponse {
+  card: Card;
+}
+
+/**
+ * 링크의 {from}·{to}·{type}·{half} 자리를 채워요. 운영자가 경로에 넣어 %7B…%7D로 바뀐 자리 표시도 채워요.
+ * 값은 코드라서 URL 글자로 감싸 넣어요.
+ */
+export function fillLeaveLink(template: string, v: LeaveLinkValues): string {
+  const values: Record<string, string> = { from: v.from, to: v.to, type: v.type, half: v.half };
+  return template.replace(/\{(from|to|type|half)\}|%7B(from|to|type|half)%7D/gi, (_m, a?: string, b?: string) =>
+    encodeURIComponent(values[(a ?? b ?? '').toLowerCase()] ?? ''),
+  );
 }
 
 /** GET /api/navi/onboarding. 누구나 읽어요. 신규 입사자인지는 묻지도 판단하지도 않아요. */
