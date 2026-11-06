@@ -8,9 +8,11 @@ import {
   kstDate,
   LEAVE_DAY_CHOICE_LABEL,
   LEAVE_DAY_CHOICES,
+  LEAVE_IN_APP_DEV_TEXT,
   LEAVE_REQUEST_MAX_DAYS,
   LEAVE_TYPE_LABEL,
   LEAVE_TYPES,
+  publicHolidayName,
   type LeaveDay,
   leaveDayChoice,
   leaveDayOf,
@@ -52,10 +54,10 @@ const total = (days: readonly LeaveDay[]) => days.reduce((n, d) => n + (d.kind =
 
 const DEFAULT_SICK_NOTE_OVER = 3;
 
-/** 다음 평일(주말은 건너뛰어요) */
+/** 다음 평일(주말·법정 공휴일은 건너뛰어요. 회사 휴일은 서버가 막아요) */
 function nextWeekday(after: string): string {
   let d = addDays(after, 1);
-  while ([0, 6].includes(weekday(d))) d = addDays(d, 1);
+  while ([0, 6].includes(weekday(d)) || publicHolidayName(d)) d = addDays(d, 1);
   return d;
 }
 
@@ -92,6 +94,10 @@ export function LeaveRequestSheet({ action, onClose, filledNote }: { action: Lea
       .filter((d) => d.date && d.date < earliest)
       .map((d) => `${dayLabel(d.date)}은 지난 날이에요${sick ? `. 병가는 ${SICK_LEAVE_PAST_DAYS}일 전까지만 신청할 수 있어요` : ''}`),
     ...sorted.filter((d) => d.date && [0, 6].includes(weekday(d.date))).map((d) => `${dayLabel(d.date)}은 주말이에요`),
+    // 11/6 휴가 정확도: 법정 공휴일은 쉬는 날이라 받지 않아요(서버도 같아요, 회사 휴일은 서버가 막아요).
+    ...sorted
+      .filter((d) => d.date && ![0, 6].includes(weekday(d.date)) && publicHolidayName(d.date))
+      .map((d) => `${dayLabel(d.date)}은 쉬는 날이에요(${publicHolidayName(d.date)})`),
     ...sorted.filter((d, i) => d.date && sorted.findIndex((x) => x.date === d.date) !== i).map((d) => `${dayLabel(d.date)}을 두 번 골랐어요`),
   ];
   const sum = total(sorted);
@@ -178,6 +184,7 @@ export function LeaveRequestSheet({ action, onClose, filledNote }: { action: Lea
       <p className='inquiry-scope'>
         {action.team}에 보내져요 · {action.task}
       </p>
+      <p className='hint'>{LEAVE_IN_APP_DEV_TEXT}</p>
       <div className='segmented leave-type' role='group' aria-label='휴가 종류'>
         {LEAVE_TYPES.map((t) => (
           <button key={t} type='button' aria-pressed={type === t} onClick={() => setType(t)}>

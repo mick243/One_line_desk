@@ -4,6 +4,8 @@ import {
   type CardAction,
   checkInput,
   dayLabel,
+  isWeekend,
+  offDayName,
   INQUIRY_KEEP_DAYS,
   INQUIRY_QUESTION_MAX,
   INQUIRY_REASON_MAX,
@@ -37,11 +39,11 @@ import type { LeaveRecord } from '../../adapters/types';
 import type { AppContext } from '../../context';
 import { makeCard } from '../../core/cards';
 import { DeskError } from '../../core/errors';
-import { weekdayOf } from '../../core/slots';
 import type { DeskUser } from '../../core/user';
 import { GENERAL_TASK } from './cards';
 import { GENERAL_DESK } from './fixtures';
 import { HALF_DAY, leaveRequestBalance, needsSickNote, sickUsage } from './leave';
+import { leavePolicy } from './leave-numbers';
 import * as repo from './repo';
 import { feedbackDay } from './service';
 
@@ -185,7 +187,7 @@ function checked(text: string, max: number, what: string): string {
  * 휴가 날 검사: 오늘부터 1년 안의 평일, 겹치지 않게, 날짜 순으로 정리해요. 병가는 지난 3일까지 받아요(earliest).
  * 11/3: 반차는 오전·오후 중 하나가 꼭 있어야 해요. 같은 날 오전 반차와 오후 반차를 같이 고르면 하루로 합쳐요.
  */
-function checkedLeaveDays(input: readonly LeaveDay[], today: string, earliest = today): LeaveDay[] {
+function checkedLeaveDays(input: readonly LeaveDay[], today: string, earliest = today, companyHolidays: readonly string[] = []): LeaveDay[] {
   if (!input.length) throw new DeskError('bad-request', 400, '쓸 날을 하나 이상 골라 주세요');
   if (input.length > LEAVE_REQUEST_MAX_DAYS) throw new DeskError('bad-request', 400, `한 번에 ${LEAVE_REQUEST_MAX_DAYS}일까지 신청할 수 있어요`);
   for (const d of input) {
@@ -201,7 +203,10 @@ function checkedLeaveDays(input: readonly LeaveDay[], today: string, earliest = 
       throw new DeskError('bad-request', 400, `${dayLabel(d.date)}은 지난 날이에요${more}`);
     }
     if (d.date > last) throw new DeskError('bad-request', 400, '1년 안의 날만 신청할 수 있어요');
-    if ([0, 6].includes(weekdayOf(d.date))) throw new DeskError('bad-request', 400, `${dayLabel(d.date)}은 주말이에요`);
+    if (isWeekend(d.date)) throw new DeskError('bad-request', 400, `${dayLabel(d.date)}은 주말이에요`);
+    // 11/6 휴가 정확도: 법정 공휴일·회사 휴일은 쉬는 날이라 연차로 받지 않아요.
+    const off = offDayName(d.date, companyHolidays);
+    if (off) throw new DeskError('bad-request', 400, `${dayLabel(d.date)}은 쉬는 날이에요(${off})`);
     if (seen.has(d.date)) throw new DeskError('bad-request', 400, `${dayLabel(d.date)}을 두 번 골랐어요`);
     seen.add(d.date);
   }
@@ -258,7 +263,7 @@ export function createInquiryService(ctx: AppContext) {
     const record = await ctx.adapters.leave.leaveOf(await personOf(i.senderSubject)).catch(() => null);
     const today = kstDate(ctx.now());
     if (i.leaveType === 'sick') return { sickNote, sick: record ? sickUsage(record, today, ctx.ops.get().values.sickLeaveYearDays) : null };
-    return { balance: record ? leaveRequestBalance(record, today, i.leaveDays) : null };
+    return { balance: record ? leaveRequestBalance(record, today, i.leaveDays, leavePolicy(ctx)) : null };
   };
   const withReplies = async (rows: repo.InquiryRow[], view: 'inbox' | 'mine'): Promise<InquiryItem[]> => {
     const replies = await repo.repliesOf(
@@ -293,7 +298,9 @@ export function createInquiryService(ctx: AppContext) {
       const sick = leaveType?.type === 'sick';
       // 병가는 자유 글 사유를 받지 않아요. 사유 칸이 오면 거절해요(병명이 글로 들어오지 않게).
       if (sick && req.reason !== undefined) throw new DeskError('bad-request', 400, '병가 사유는 선택지로만 골라요');
-      const leaveDays = req.leave ? checkedLeaveDays(req.leave.days, today, sick ? addDays(today, -SICK_LEAVE_PAST_DAYS) : today) : null;
+      const leaveDays = req.leave
+        ? checkedLeaveDays(req.leave.days, today, sick ? addDays(today, -SICK_LEAVE_PAST_DAYS) : today, ctx.ops.get().companyHolidays)
+        : null;
       if (leaveDays && !req.rowId) throw new DeskError('bad-request', 400, '휴가 요청은 분장표의 휴가 신청 업무로만 보내요');
       if (leaveDays) {
         const mine = await ctx.adapters.leave.leaveOf({ idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) }).catch(() => null);

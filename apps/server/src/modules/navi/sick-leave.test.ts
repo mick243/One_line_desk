@@ -47,7 +47,7 @@ describe('병가 계산(서버 규칙, ADR-18)', () => {
     { date: '2025-12-15', kind: 'full', type: 'sick' },
     { date: '2026-01-19', kind: 'full', type: 'sick' },
     { date: '2026-09-07', kind: 'half', type: 'sick' },
-    { date: '2026-04-01', kind: 'full' },
+    { date: '2026-04-01', kind: 'full', type: 'annual' },
     { date: '2026-04-02', kind: 'full', type: 'official' },
   ];
 
@@ -86,7 +86,9 @@ describe('병가 카드(담당 찾기)', () => {
     const cards = await ask(haneul, '오늘 병가 쓸게요');
     const card = cards.find((c) => c.id === 'navi-sick-leave')!;
     expect(cards.find((c) => c.id === 'navi-my-leave')).toBeUndefined();
-    expect(card).toMatchObject({ label: '안내', headline: '병가는 연차에서 빠지지 않아요', evidence: { aiSummarized: false } });
+    // 11/6: 병가의 연차 차감은 회사 규정이라 단정하지 않아요(운영 값, 기본 안 뺌).
+    expect(card).toMatchObject({ label: '안내', headline: '병가는 연차와 따로 셌어요', evidence: { aiSummarized: false } });
+    expect(field(card, '연차 차감')).toBe('회사 규정에 따라 연차에서 빠질 수 있어요');
     expect(field(card, '올해 병가')).toBe('올해 병가 1.5일 썼어요');
     expect(field(card, '병가 사유')).toBe('몸이 안 좋아요 · 병원 진료 중에서 골라요');
     expect(field(card, '진단서')).toBe('3일을 넘게 쉬면 진단서는 인사팀에 따로 내 주세요');

@@ -394,8 +394,27 @@ export const LEAVE_APPLY_IN_GROUPWARE = '그룹웨어에서 신청해 주세요'
 export const LEAVE_APPROVALS_TEXT = '결재 진행 상황은 그룹웨어 결재함에서 봐요';
 /** 병가·공가·경조 카드(11/6): 앱은 사유를 받지 않아요. 사유는 그룹웨어 신청서에만 적어요. */
 export const LEAVE_REASON_IN_GROUPWARE = '사유는 그룹웨어 신청서에 적어 주세요';
-/** 신청 전 카드가 걸린 일이 없는 날을 찾는 범위: 고른 날 앞뒤로 이만큼의 평일(회사 휴일은 몰라서 평일만 봐요) */
+/** 신청 전 카드가 걸린 일이 없는 날을 찾는 범위: 고른 날 앞뒤로 이만큼의 일하는 날(주말·공휴일·회사 휴일은 빼요, 11/6) */
 export const LEAVE_FREE_DAY_RANGE = 7;
+
+// ── 휴가 정확도(11/6, ADR-18 개정): 화면설계 "보안이 보이는 문구" 표 그대로예요 ─────────────────
+/** 운영에서 근태가 "연결 안 함"일 때 남은 연차 자리(빈칸 대신) */
+export const LEAVE_NOT_CONNECTED_TEXT = '회사 근태 기록과 아직 연결되지 않아 남은 연차를 보여 드릴 수 없어요';
+/** 근태가 "연결 안 함"일 때 휴가 상태 카드 */
+export const LEAVE_STATUS_NOT_CONNECTED_TEXT = '회사 근태 기록과 아직 연결되지 않아 승인된 휴가를 보여 드릴 수 없어요';
+/** 계산 기준 줄: 근태 시스템이 준 숫자 / 앱 계산 */
+export const LEAVE_BASIS_HR_TEXT = '근태 기록 기준이에요';
+export const LEAVE_BASIS_APP_TEXT = '근태 기록에 남은 연차 숫자가 없어 앱이 셌어요(입사일 기준·개근 가정)';
+/** 결재 중인 신청은 근태 기록에 없어서 숫자에 들어가지 않아요 */
+export const LEAVE_PENDING_TEXT = '결재 중인 신청은 반영하지 않았어요';
+/** 병가·경조의 연차 차감은 회사 규정에 달려요(운영 값 sickLeaveFromAnnual·eventLeaveFromAnnual) */
+export const LEAVE_MAY_DEDUCT_TEXT = '회사 규정에 따라 연차에서 빠질 수 있어요';
+/** "연차 2시간"처럼 시간으로 말했을 때 */
+export const LEAVE_HOURS_TEXT = '회사 규정에 따라 시간 단위 연차가 없을 수 있어요 — 그룹웨어 신청서에 시간을 적어 주세요';
+/** 앱 안 휴가 결재(DESK_LEAVE_IN_APP) 화면에 붙는 개발 전용 표시(11/6). 운영 설정 검사가 운영에서 이 흐름을 막아요(ADR-24). */
+export const LEAVE_IN_APP_DEV_TEXT = '앱 안 휴가 결재는 개발·시험 전용이에요. 운영에서는 그룹웨어에서 신청해요';
+/** 공휴일·회사 휴일이라 뺀 날 */
+export const LEAVE_HOLIDAY_SKIPPED_TEXT = '공휴일·회사 휴일이라 연차로 세지 않았어요';
 /** 제안하는 날 수 */
 export const LEAVE_FREE_DAY_MAX = 2;
 

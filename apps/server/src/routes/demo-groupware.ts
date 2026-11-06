@@ -11,10 +11,12 @@ import {
   type GroupwareDraftRequest,
   type GroupwareFormResponse,
   type GroupwareInboxResponse,
+  isWeekend,
   kstDate,
   LEAVE_REQUEST_MAX_DAYS,
   LEAVE_KIND_LABEL,
   LEAVE_KINDS,
+  offDayName,
   type LeaveDay,
   leaveDayHalves,
   leaveDayWord,
@@ -28,7 +30,6 @@ import { MockLeave } from '../adapters/mock/leave';
 import type { LeaveUse } from '../adapters/types';
 import type { AppContext } from '../context';
 import { DeskError } from '../core/errors';
-import { weekdayOf } from '../core/slots';
 import type { DeskUser } from '../core/user';
 
 // 시연 전용 가상 그룹웨어 전자결재(11/6 사용자 결정, 휴가 A안). 한 줄 데스크가 아니라 "회사 그룹웨어" 자리에 서는 흉내예요.
@@ -157,8 +158,15 @@ function view(d: Doc, withReason = false): GroupwareDoc {
   };
 }
 
-/** 신청서의 날: 시작일~끝날의 평일. 반차는 하루짜리만이에요. 연차·공가는 오늘부터, 병가는 지난 3일부터, 1년 안이에요. */
-export function draftDays(req: Pick<GroupwareDraftRequest, 'type' | 'from' | 'to' | 'half'>, today: string): LeaveDay[] {
+/**
+ * 신청서의 날: 시작일~끝날의 일하는 날. 반차는 하루짜리만이에요. 연차·공가는 오늘부터, 병가는 지난 3일부터, 1년 안이에요.
+ * 11/6 휴가 정확도: 주말과 함께 법정 공휴일·회사 휴일(운영 설정)도 빼요(쉬는 날은 휴가로 세지 않아요).
+ */
+export function draftDays(
+  req: Pick<GroupwareDraftRequest, 'type' | 'from' | 'to' | 'half'>,
+  today: string,
+  companyHolidays: readonly string[] = [],
+): LeaveDay[] {
   const real = (d: string) => DATE.test(d) && addDays(d, 0) === d;
   if (!real(req.from) || !real(req.to)) throw new DeskError('bad-request', 400, '날짜는 YYYY-MM-DD로 적어 주세요');
   if (req.to < req.from) throw new DeskError('bad-request', 400, '끝날이 시작일보다 앞이에요');
@@ -168,11 +176,16 @@ export function draftDays(req: Pick<GroupwareDraftRequest, 'type' | 'from' | 'to
     throw new DeskError('bad-request', 400, req.type === 'sick' ? `병가는 ${SICK_LEAVE_PAST_DAYS}일 전까지만 신청할 수 있어요` : '지난 날은 신청할 수 없어요');
   if (req.to > addDays(today, 365)) throw new DeskError('bad-request', 400, '1년 안의 날만 신청할 수 있어요');
   const out: LeaveDay[] = [];
+  let holidays = 0;
   for (let d = req.from; d <= req.to; d = addDays(d, 1)) {
-    if (weekdayOf(d) === 0 || weekdayOf(d) === 6) continue;
+    if (isWeekend(d)) continue;
+    if (offDayName(d, companyHolidays)) {
+      holidays += 1;
+      continue;
+    }
     out.push(req.half === 'full' ? { date: d, kind: 'full' } : { date: d, kind: 'half', half: req.half });
   }
-  if (!out.length) throw new DeskError('bad-request', 400, '고른 날이 모두 주말이에요');
+  if (!out.length) throw new DeskError('bad-request', 400, holidays ? '고른 날이 모두 주말·쉬는 날(공휴일·회사 휴일)이에요' : '고른 날이 모두 주말이에요');
   if (out.length > LEAVE_REQUEST_MAX_DAYS) throw new DeskError('bad-request', 400, `한 번에 ${LEAVE_REQUEST_MAX_DAYS}일까지 신청할 수 있어요`);
   return out;
 }
@@ -276,7 +289,7 @@ export function registerDemoGroupwareRoutes(app: FastifyInstance, ctx: AppContex
       const requestKey = `${user.idpSubject}|${req.body.requestId}`;
       const again = store.byRequest(requestKey);
       if (again) return { doc: view(again, true) };
-      const list = draftDays(req.body, kstDate(ctx.now()));
+      const list = draftDays(req.body, kstDate(ctx.now()), ctx.ops.get().companyHolidays);
       const reason = checkedReason(req.body.reason ?? '', reasonRequired(req.body.type) ? `${LEAVE_KIND_LABEL[req.body.type]} 사유를 적어 주세요` : null);
       const drafter = { subject: user.idpSubject, ...(user.email ? { email: user.email } : {}), name: user.displayName, department: user.department };
       const record = await ctx.adapters.leave.leaveOf(person(drafter)).catch(() => null);
@@ -374,7 +387,8 @@ export function registerDemoGroupwareRoutes(app: FastifyInstance, ctx: AppContex
         if (taken.length) throw new DeskError('conflict', 409, `그사이 근태 기록에 휴가가 들어간 날이 있어요: ${daysText(taken)}`);
         const result = await ctx.adapters.leave.recordUses(
           person(doc.drafter),
-          doc.days.map((d) => ({ date: d.date, kind: d.kind, ...(d.half ? { half: d.half } : {}), ...(doc.type === 'annual' ? {} : { type: doc.type }) })),
+          // 종류는 늘 넣어요(11/6: 종류 없는 근태 기록은 연차로 세지 않아요).
+          doc.days.map((d) => ({ date: d.date, kind: d.kind, ...(d.half ? { half: d.half } : {}), type: doc.type })),
         );
         step.decided = { by: approver.name, at, decision: 'approved' };
         doc.state = 'approved';

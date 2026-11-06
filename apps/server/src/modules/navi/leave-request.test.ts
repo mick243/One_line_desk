@@ -259,13 +259,14 @@ describe('공가 요청(11/1)', () => {
 describe('연차 기간별 계산(10/30 버그: 다음 기간 날인데 "7.5일 → 7.5일"로만 보였어요)', () => {
   it('다음 연차 기간 날은 이번 기간 연차에서 빼지 않고, 다음 기간 연차에서 따로 계산해요. 승인하면 다음 기간에서 빠져요', async () => {
     // 도윤: 2025-12-01 입사라 이번 연차 기간은 2026-11-30까지예요. 2027년 2월은 다음 기간(근속 1년, 15일)이에요.
+    // 11/6: 2027-02-08은 설 연휴라 쉬는 날이에요(받지 않아요). 그래서 2월 10일로 골라요.
     const { doyun, jihu } = await setup();
     const action = (await leaveCard(doyun, '내 연차 몇 개 남았어?')).actions.secondary.find((a) => a.type === 'leave-request');
     expect(action).toMatchObject({ periodEnd: '2026-11-30', next: { periodStart: '2026-12-01', remaining: 15 } });
 
     await sendLeave(doyun, [
       { date: '2027-02-04', kind: 'full' },
-      { date: '2027-02-08', kind: 'full' },
+      { date: '2027-02-10', kind: 'full' },
     ]);
     const [first] = await inbox(jihu);
     const now = first!.leave!.balance!;
@@ -283,7 +284,8 @@ describe('연차 기간별 계산(10/30 버그: 다음 기간 날인데 "7.5일 
       { date: '2027-03-02', kind: 'half', half: 'am' },
     ]);
     const second = (await inbox(jihu)).find((i) => i.state === 'new')!.leave!.balance!;
-    expect(second).toMatchObject({ remaining: now.remaining, after: now.remaining - 1, days: 1, next: { remaining: 13, after: 12.5, days: 0.5 } });
+    // 11/6 휴가 정확도: 입사 1년 미만은 고른 날(11/27)까지 생기는 연차로 세요. 11월 1일에 1일이 더 생겨서 하루를 써도 지금과 같아요.
+    expect(second).toMatchObject({ remaining: now.remaining, after: now.remaining + 1 - 1, days: 1, next: { remaining: 13, after: 12.5, days: 0.5 } });
   });
 });
 

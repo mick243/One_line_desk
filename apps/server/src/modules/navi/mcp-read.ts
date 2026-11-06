@@ -3,12 +3,14 @@ import {
   checkInput,
   dayLabel,
   INQUIRY_STATE_LABEL,
+  isWeekend,
   kstDate,
   LEAVE_REQUEST_MAX_DAYS,
   type LeaveKind,
   LEAVE_TYPES,
   type LeaveDay,
   mergeLeaveHalves,
+  offDayName,
   NAVI_ROW_ID_PATTERN,
   recordCutoff,
   SICK_LEAVE_PAST_DAYS,
@@ -18,7 +20,6 @@ import type { AppContext } from '../../context';
 import { DeskError } from '../../core/errors';
 import type { PlanHandler } from '../../core/module';
 import type { LeaveLink, NaviMcpRead, NaviTeamRow } from '../../core/services';
-import { weekdayOf } from '../../core/slots';
 import { GENERAL_TASK } from './cards';
 import { GENERAL_DESK } from './fixtures';
 import type { ItHelpService } from './it-help';
@@ -86,13 +87,15 @@ export const leaveLinkHandler: PlanHandler<LeaveLink> = {
 const isRealDate = (d: string) => DATE.test(d) && addDays(d, 0) === d;
 
 /**
- * 휴가 준비 링크의 날 검사(앱 신청 검사와 같은 규칙): 오늘부터 1년 안의 평일, 겹치지 않게. 병가는 지난 3일까지 받아요.
+ * 휴가 준비 링크의 날 검사(앱 신청 검사와 같은 규칙): 오늘부터 1년 안의 일하는 날, 겹치지 않게. 병가는 지난 3일까지 받아요.
+ * 11/6 휴가 정확도: 주말과 함께 법정 공휴일·회사 휴일(운영 설정 companyHolidays)도 받지 않아요(쉬는 날은 연차로 세지 않아요).
  * 연차 자료(등급 2)는 읽지 않아요. 남은 연차가 모자라는지는 앱 양식이 본인 화면에서 보여 줘요.
  * 11/6: 신청 전 카드 [이 날로 보기](경조 포함 LeaveKind)도 같은 검사를 써요.
  */
 export function checkLeaveLink(
   link: { days: readonly LeaveDay[]; type: LeaveKind },
   today: string,
+  companyHolidays: readonly string[] = [],
 ): { ok: true; days: LeaveDay[] } | { ok: false; code: string; message: string } {
   if (!link.days.length) return { ok: false, code: 'no-days', message: '쓸 날을 하나 이상 골라 주세요' };
   if (link.days.length > LEAVE_REQUEST_MAX_DAYS) return { ok: false, code: 'too-many', message: `한 번에 ${LEAVE_REQUEST_MAX_DAYS}일까지 신청할 수 있어요` };
@@ -111,7 +114,9 @@ export function checkLeaveLink(
       return { ok: false, code: 'past', message: `${dayLabel(d.date)}은 지난 날이에요${more}` };
     }
     if (d.date > last) return { ok: false, code: 'too-far', message: '1년 안의 날만 신청할 수 있어요' };
-    if ([0, 6].includes(weekdayOf(d.date))) return { ok: false, code: 'weekend', message: `${dayLabel(d.date)}은 주말이에요` };
+    if (isWeekend(d.date)) return { ok: false, code: 'weekend', message: `${dayLabel(d.date)}은 주말이에요` };
+    const off = offDayName(d.date, companyHolidays);
+    if (off) return { ok: false, code: 'holiday', message: `${dayLabel(d.date)}은 쉬는 날이에요(${off})` };
     if (seen.has(d.date)) return { ok: false, code: 'duplicate', message: `${dayLabel(d.date)}을 두 번 골랐어요` };
     seen.add(d.date);
   }
@@ -222,7 +227,7 @@ export function createNaviMcpRead(
     },
 
     prepareLeave(user, link) {
-      const checked = checkLeaveLink(link, kstDate(ctx.now()));
+      const checked = checkLeaveLink(link, kstDate(ctx.now()), ctx.ops.get().companyHolidays);
       if (!checked.ok) return checked;
       return { ok: true, days: checked.days, token: ctx.plans.propose(user, 'navi', 'leave-link', { days: checked.days, type: link.type }) };
     },

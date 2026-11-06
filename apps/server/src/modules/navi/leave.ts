@@ -6,7 +6,12 @@ import {
   fillLeaveLink,
   GRADE,
   type HalfPart,
+  holidayUnknownText,
+  isWorkday,
   kstDate,
+  LEAVE_HOURS_TEXT,
+  LEAVE_MAY_DEDUCT_TEXT,
+  LEAVE_NOT_CONNECTED_TEXT,
   type LeaveDay,
   type LeaveRequestBalance,
   type LeaveKind,
@@ -18,7 +23,9 @@ import {
   SICK_LEAVE_REASONS,
   SICK_NOTE_TEXT,
   type SickLeaveUsage,
+  type SkippedHoliday,
   sickUsageText,
+  splitWorkdays,
 } from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { LeaveRecord } from '../../adapters/types';
@@ -27,74 +34,34 @@ import { makeCard } from '../../core/cards';
 import { mondayOf, upcomingMonthDay, WEEK_OFFSET, type Weekday, WEEKDAYS, weekdayOf } from '../../core/slots';
 import type { DeskUser } from '../../core/user';
 import { groupwareLinks, leaveCheckCard, type LeaveCheckNumbers, leaveLinkValues } from './leave-handoff';
+import {
+  basisText,
+  daysOf,
+  DEFAULT_LEAVE_POLICY,
+  expiryText,
+  fmtDays,
+  HALF_DAY,
+  holidaysText,
+  hoursText,
+  hoursToDays,
+  type LeaveNumbers,
+  leaveNumbers,
+  type LeavePolicy,
+  leavePolicy,
+  nextPeriodNumbers,
+  planInPeriod,
+  QUARTER_DAY_HOURS,
+  unknownHolidayYears,
+} from './leave-numbers';
+
+export { computeLeave, HALF_DAY } from './leave-numbers';
 
 // 담당 찾기 "내 남은 연차"(ADR-18). 휴가 질문이면 담당 카드 뒤에 본인 연차 카드를 하나 더 붙여요.
-// - 숫자는 서버가 근로기준법 규칙으로 계산해요. 연차 자료(입사일·쓴 날)는 AI·로그·DB에 넣지 않아요(등급 2).
+// - 숫자는 근태 시스템이 준 숫자가 먼저고, 없을 때만 서버가 근로기준법 규칙으로 계산해요(11/6 휴가 정확도, leave-numbers.ts).
+//   연차 자료(입사일·쓴 날·숫자)는 AI·로그·DB에 넣지 않아요(등급 2).
 // - AI는 질문 글만 보고 "연차 질문인지"와 "더 쓰려는 일수·반차 횟수"를 뽑아요(등급 1, 무보관 계약 전에는 규칙으로 뽑아요).
+// - 날 세기는 주말·법정 공휴일(packages/shared holidays.ts)·회사 휴일(운영 설정)을 빼요(11/6). "N시간"은 날이 아니라 시간으로 읽어요.
 // - 본인 것만 읽어요. 남의 연차를 묻는 길은 없어요.
-
-/** 반차 하나는 0.5일이에요. */
-export const HALF_DAY = 0.5;
-/** 근로기준법: 1년 미만은 개근한 달마다 1일(최대 11일), 1년 이상은 15일 + 3년 차부터 2년마다 1일(최대 25일). */
-const FIRST_YEAR_MAX = 11;
-const BASE_DAYS = 15;
-const MAX_DAYS = 25;
-
-interface LeaveBalance {
-  /** 이번 연차 기간(입사일 기준). end는 마지막 날이에요. */
-  periodStart: string;
-  periodEnd: string;
-  /** 입사 1년 미만인지(개근한 달마다 1일) */
-  firstYear: boolean;
-  /** 다 채운 근속 연수 */
-  years: number;
-  granted: number;
-  usedFull: number;
-  usedHalf: number;
-  used: number;
-  remaining: number;
-}
-
-const pad = (n: number) => String(n).padStart(2, '0');
-
-/** 날짜에 달을 더해요. 그 달에 없는 날(2월 30일 등)은 그 달 마지막 날이에요. */
-function addMonths(date: string, months: number): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  const total = y * 12 + (m - 1) + months;
-  const ny = Math.floor(total / 12);
-  const nm = (total % 12) + 1;
-  const last = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
-  return `${ny}-${pad(nm)}-${pad(Math.min(d, last))}`;
-}
-
-/** 시작일에서 step만큼씩 더해 today를 넘지 않는 횟수(다 채운 달·해 수) */
-function completed(from: string, today: string, step: number): number {
-  let n = 0;
-  while (n < 1200 && addMonths(from, step * (n + 1)) <= today) n += 1;
-  return n;
-}
-
-/** 이번 연차 기간의 생긴 연차·쓴 연차·남은 연차. 쓴 날은 이번 기간 안의 것만 세고, 앞으로 쓸 예정인 날도 넣어요. */
-export function computeLeave(record: LeaveRecord, today: string): LeaveBalance {
-  const years = completed(record.hireDate, today, 12);
-  const firstYear = years === 0;
-  const periodStart = firstYear ? record.hireDate : addMonths(record.hireDate, 12 * years);
-  const nextStart = addMonths(record.hireDate, 12 * (years + 1));
-  const granted = firstYear ? Math.min(FIRST_YEAR_MAX, completed(record.hireDate, today, 1)) : Math.min(MAX_DAYS, BASE_DAYS + Math.floor((years - 1) / 2));
-  // 공가·병가는 연차가 아니라서 세지 않아요.
-  const inPeriod = record.uses.filter((u) => (u.type ?? 'annual') === 'annual' && u.date >= periodStart && u.date < nextStart);
-  const usedFull = inPeriod.filter((u) => u.kind === 'full').length;
-  const usedHalf = inPeriod.filter((u) => u.kind === 'half').length;
-  const used = usedFull + usedHalf * HALF_DAY;
-  return { periodStart, periodEnd: addDays(nextStart, -1), firstYear, years, granted, usedFull, usedHalf, used, remaining: granted - used };
-}
-
-/** 다음 연차 기간(입사일 기준) 계산. 그 기간에 생기는 연차에서 그 기간에 이미 잡힌 날을 빼요. */
-function nextPeriodLeave(record: LeaveRecord, current: LeaveBalance): LeaveBalance {
-  return computeLeave(record, addDays(current.periodEnd, 1));
-}
-
-const daysOf = (days: readonly LeaveDay[]) => days.reduce((n, d) => n + (d.kind === 'full' ? 1 : HALF_DAY), 0);
 
 /**
  * 올해(달력 연도) 병가 쓴 날(11/3). 근태 기록의 병가(type 'sick')만 세고 예정도 넣어요. 반차는 0.5일이에요.
@@ -102,7 +69,9 @@ const daysOf = (days: readonly LeaveDay[]) => days.reduce((n, d) => n + (d.kind 
  */
 export function sickUsage(record: LeaveRecord, today: string, limitDays: number): SickLeaveUsage {
   const year = Number(today.slice(0, 4));
-  const used = daysOf(record.uses.filter((u) => u.type === 'sick' && Number(u.date.slice(0, 4)) === year));
+  const used = record.uses
+    .filter((u) => u.type === 'sick' && Number(u.date.slice(0, 4)) === year)
+    .reduce((n, u) => n + (u.amountDays ?? (u.kind === 'full' ? 1 : HALF_DAY)), 0);
   return { year, used, limit: limitDays > 0 ? limitDays : null };
 }
 
@@ -112,16 +81,31 @@ export function needsSickNote(days: readonly LeaveDay[], overDays: number): bool
 }
 
 /**
- * 휴가 요청을 연차 기간별로 나눠 계산해요(ADR-24). 이번 기간 날은 이번 기간 남은 연차에서, 다음 기간 날은 다음 기간 연차에서 빠져요.
- * 다음 기간보다 더 뒤의 날은 요청에서 막아요(1년 안).
+ * 휴가 요청을 연차 기간별로 나눠 계산해요(ADR-24, 앱 안 휴가 결재 — 개발·시험 전용). 이번 기간 날은 이번 기간 남은 연차에서,
+ * 다음 기간 날은 다음 기간 연차에서 빠져요. 다음 기간보다 더 뒤의 날은 요청에서 막아요(1년 안).
+ * 11/6: 근태 숫자가 있으면 그 숫자에서 빼고(다음 기간은 몰라서 넣지 않아요), 1년 미만은 고른 날까지 생기는 연차로 세요.
  */
-export function leaveRequestBalance(record: LeaveRecord, today: string, days: readonly LeaveDay[]): LeaveRequestBalance {
-  const cur = computeLeave(record, today);
-  const thisDays = daysOf(days.filter((d) => d.date <= cur.periodEnd));
+export function leaveRequestBalance(
+  record: LeaveRecord,
+  today: string,
+  days: readonly LeaveDay[],
+  policy: LeavePolicy = DEFAULT_LEAVE_POLICY,
+): LeaveRequestBalance {
+  const cur = leaveNumbers(record, today, policy);
+  const thisList = days.filter((d) => d.date <= cur.periodEnd);
+  const thisDays = daysOf(thisList);
+  const plan = planInPeriod(
+    record,
+    today,
+    policy,
+    cur,
+    thisList.map((d) => d.date),
+    thisDays,
+  );
   const later = days.filter((d) => d.date > cur.periodEnd);
-  const out: LeaveRequestBalance = { remaining: cur.remaining, after: cur.remaining - thisDays, periodEnd: cur.periodEnd, days: thisDays };
-  if (!later.length) return out;
-  const next = nextPeriodLeave(record, cur);
+  const out: LeaveRequestBalance = { remaining: cur.remaining, after: plan.after, periodEnd: cur.periodEnd, days: thisDays };
+  const next = later.length ? nextPeriodNumbers(record, cur, policy) : null;
+  if (!next) return out;
   const nextDays = daysOf(later);
   return { ...out, next: { periodStart: next.periodStart, remaining: next.remaining, after: next.remaining - nextDays, days: nextDays } };
 }
@@ -134,12 +118,19 @@ interface LeaveQuestion {
   /** 앞으로 더 쓰려는 하루 연차 일수(반 포함, "이틀 반" = 2.5)와 반차 횟수("반차 3번 쓰면?"). 없으면 0이에요. */
   planFull: number;
   planHalf: number;
-  /** 날짜·요일로 말한 쓰려는 날(YYYY-MM-DD, 지난 날·주말은 뺌). 날짜로 물었을 때만 있어요. */
+  /**
+   * 시간으로 말한 양(11/6 휴가 정확도): "연차 2시간" = 2, "반반차" = 2(반반차 하나는 2시간). 날로 읽지 않아요.
+   * 일로 바꿀 때는 운영 값 workdayHours(하루 근로시간, 기본 8)로 나눠요.
+   */
+  planHours: number;
+  /** 날짜·요일로 말한 쓰려는 날(YYYY-MM-DD, 지난 날·주말·공휴일·회사 휴일은 뺌). 날짜로 물었을 때만 있어요. */
   planDates: string[];
   /** 날짜로 말한 반차의 오전·오후("오전 반차", "점심 먹고", 11/3). 못 읽었거나 둘 다 말했으면 없어요. 양식을 미리 채울 때만 써요. */
   planPart?: HalfPart | null;
   /** 주말이라 뺀 날 수 */
   weekendSkipped: number;
+  /** 평일인데 공휴일·회사 휴일이라 뺀 날(11/6) */
+  holidaysSkipped: SkippedHoliday[];
   /** "12월에", "다음 달에"처럼 달만 말했을 때 그 달 1일. 다음 연차 기간인지 볼 때 써요. */
   planMonthStart: string | null;
   /** 남의 연차를 물었는지("팀장님 연차 몇 개 남았어요?"). 남의 연차는 찾지 않아요. */
@@ -187,9 +178,13 @@ const KOREAN_COUNT: Record<string, number> = {
 const COUNT = '(\\d+(?:\\.5)?|하루|이틀|사흘|나흘|닷새|엿새|이레|하나|한|둘|두|셋|세|넷|네|다섯|여섯|일곱|여덟|아홉|열)';
 const PARTICLE = '(?:은|는|을|를|로|으로|만|도)?';
 const HALF_PLAN = new RegExp(`반차${PARTICLE}\\s*${COUNT}\\s*(?:번|회|개)?`);
-// "연차 이틀 반", "휴가 3일", "연차로 하루", "3일 휴가", "연차 두 개 반"
+// 11/6 휴가 정확도: 시간으로 말한 양. "반반차"(= 2시간, "반반차 두 번" = 4시간)와 "연차 2시간"·"3시간만"·"두 시간"이에요.
+// 날 세기(FULL_PLAN)보다 먼저 읽고 글에서 지워서 "연차 2시간"을 2일로 읽지 않게 해요.
+const QUARTER_PLAN = new RegExp(`반반차${PARTICLE}(?:\\s*${COUNT}\\s*(?:번|회|개))?`);
+const HOUR_PLAN = new RegExp(`(?:(?:연차|휴가|월차|연가)${PARTICLE}\\s*)?${COUNT}\\s*시간`);
+// "연차 이틀 반", "휴가 3일", "연차로 하루", "3일 휴가", "연차 두 개 반". 수 뒤에 "시간"이 오면 날이 아니에요(11/6).
 const FULL_PLAN = new RegExp(
-  `(?:연차|휴가|월차|연가)${PARTICLE}\\s*${COUNT}\\s*(?:일|번|회|개)?\\s*(반)?|${COUNT}\\s*(?:일|개)\\s*(반)?\\s*(?:연차|휴가|연가)`,
+  `(?:연차|휴가|월차|연가)${PARTICLE}\\s*${COUNT}(?!\\d|\\s*시간)\\s*(?:일|번|회|개)?\\s*(반)?|${COUNT}\\s*(?:일|개)\\s*(반)?\\s*(?:연차|휴가|연가)`,
 );
 // 부정 뒤 남은 말이 숫자만일 때("3일 말고 2일만")
 const BARE_FULL = new RegExp(`${COUNT}\\s*(?:일|개)\\s*(반)?`);
@@ -218,9 +213,14 @@ const RUN_DAYS = '월화수목금';
 
 /**
  * 말로 한 쓰려는 날을 날짜 목록으로 바꿔요. 읽은 말은 글에서 지워서, "11월 3일"의 3일을 일수로 세지 않게 해요.
- * 달·일 범위("11월 3일부터 5일까지"), 달·일, "다음 주 내내", 주+요일·요일 묶음("이번 주 목금", "월화수"), 요일들("월요일이랑 금요일"), 달만("12월에", "다음 달에").
+ * 달·일 범위("11월 3일부터 5일까지", "12월 24~26일"), 달·일, "다음 주 내내", 주+요일·요일 묶음("이번 주 목금", "월화수"), 요일들("월요일이랑 금요일"), 달만("12월에", "다음 달에").
+ * 11/6 휴가 정확도: 주말과 함께 법정 공휴일·회사 휴일(운영 설정)도 빼고, 뺀 쉬는 날을 알려 줘요.
  */
-function readPlanDates(text: string, today: string): { dates: string[]; weekendSkipped: number; monthStart: string | null; rest: string } {
+export function readPlanDates(
+  text: string,
+  today: string,
+  companyHolidays: readonly string[] = [],
+): { dates: string[]; weekendSkipped: number; holidaysSkipped: SkippedHoliday[]; monthStart: string | null; rest: string } {
   let rest = text;
   const raw: string[] = [];
   const take = (re: RegExp, fn: (m: RegExpMatchArray) => void) => {
@@ -233,7 +233,7 @@ function readPlanDates(text: string, today: string): { dates: string[]; weekendS
   };
   const weekOffset = (word: string | undefined) => (WEEK_OFFSET[word ?? '이번'] ?? 0) * 7;
 
-  take(/(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*(?:부터|에서|~|-)\s*(?:(\d{1,2})\s*월\s*)?(\d{1,2})\s*일\s*(?:까지)?/, (m) => {
+  take(/(\d{1,2})\s*월\s*(\d{1,2})\s*일?\s*(?:부터|에서|~|-)\s*(?:(\d{1,2})\s*월\s*)?(\d{1,2})\s*일\s*(?:까지)?/, (m) => {
     const start = upcomingMonthDay(today, Number(m[1]), Number(m[2]));
     const end = upcomingMonthDay(start ?? today, Number(m[3] ?? m[1]), Number(m[4]));
     for (let d = start; d && end && d <= end && raw.length < 31; d = addDays(d, 1)) raw.push(d);
@@ -273,13 +273,24 @@ function readPlanDates(text: string, today: string): { dates: string[]; weekendS
   });
 
   const unique = [...new Set(raw)].filter((d) => d >= today).sort();
-  const weekdays = unique.filter((d) => weekdayOf(d) !== 0 && weekdayOf(d) !== 6);
-  return { dates: weekdays, weekendSkipped: unique.length - weekdays.length, monthStart, rest };
+  const split = splitWorkdays(unique, companyHolidays);
+  return { dates: split.workdays, weekendSkipped: split.weekend, holidaysSkipped: split.holidays, monthStart, rest };
 }
 
 /** 규칙으로 해석해요. 무보관 계약 전·모델 실패·가짜 공급자일 때, 그리고 규칙이 계획을 읽었을 때 이 결과를 써요. */
-export function ruleLeaveQuestion(text: string, today: string): Omit<LeaveQuestion, 'viaAi'> {
-  const none = { about: false, planFull: 0, planHalf: 0, planDates: [], weekendSkipped: 0, planMonthStart: null, aboutOther: false, otherPeriod: false };
+export function ruleLeaveQuestion(text: string, today: string, companyHolidays: readonly string[] = []): Omit<LeaveQuestion, 'viaAi'> {
+  const none = {
+    about: false,
+    planFull: 0,
+    planHalf: 0,
+    planHours: 0,
+    planDates: [],
+    weekendSkipped: 0,
+    holidaysSkipped: [],
+    planMonthStart: null,
+    aboutOther: false,
+    otherPeriod: false,
+  };
   if (!LEAVE_WORDS.test(text) || NOT_ANNUAL.test(text)) return none;
   const base = { ...none, about: true, aboutOther: OTHER_PERSON.test(text) && !SELF.test(text), otherPeriod: OTHER_PERIOD.test(text) };
   if (base.aboutOther || base.otherPeriod || !USE_VERB.test(text)) return base;
@@ -287,8 +298,24 @@ export function ruleLeaveQuestion(text: string, today: string): Omit<LeaveQuesti
   const negations = [...text.matchAll(NEGATION)];
   const last = negations.at(-1);
   const negated = last ? text.slice(0, last.index) : '';
-  const { dates, weekendSkipped, monthStart, rest } = readPlanDates(last ? text.slice(last.index! + last[0].length) : text, today);
+  const { dates, weekendSkipped, holidaysSkipped, monthStart, rest } = readPlanDates(
+    last ? text.slice(last.index! + last[0].length) : text,
+    today,
+    companyHolidays,
+  );
   let t = rest;
+
+  // 시간으로 말한 양(11/6): 반반차·"N시간"을 먼저 읽고 지워요. 날·반차로 세지 않아요.
+  let planHours = 0;
+  for (let m = t.match(QUARTER_PLAN); m; m = t.match(QUARTER_PLAN)) {
+    planHours += QUARTER_DAY_HOURS * (m[1] ? countOf(m[1]) : 1);
+    t = t.replace(m[0], ' ');
+  }
+  const hour = t.match(HOUR_PLAN);
+  if (hour) {
+    planHours += countOf(hour[1]);
+    t = t.replace(hour[0], ' ');
+  }
 
   let planHalf = 0;
   const half = t.match(HALF_PLAN);
@@ -309,9 +336,10 @@ export function ruleLeaveQuestion(text: string, today: string): Omit<LeaveQuesti
 
   // 날짜로 말했으면 그 날 수가 계획이에요. 반차만 말했으면 그 날들은 반차예요("금요일 반차" = 반차 1번).
   // 11/3: 오전·오후를 말했으면("11월 5일 오후에 쉬고 싶어", "금요일 점심 먹고") 그 날들도 반차예요.
+  // 시간으로 말했으면("11월 6일 2시간") 그 날들은 시간 단위예요. 날 수로 바꾸지 않아요(11/6).
   const told = text.slice(last ? last.index! : 0);
-  const part = dates.length ? readHalfPart(told) : null;
-  if (dates.length && !full && !bare) {
+  const part = dates.length && !planHours ? readHalfPart(told) : null;
+  if (dates.length && !full && !bare && !planHours) {
     if ((/반차|반나절/.test(told) && !/연차|휴가|연가|쉬/.test(rest.replace(/반차|반나절/g, ''))) || part) {
       if (!half) planHalf = dates.length;
       planFull = 0;
@@ -321,9 +349,11 @@ export function ruleLeaveQuestion(text: string, today: string): Omit<LeaveQuesti
     ...base,
     planFull: Math.min(planFull, 30),
     planHalf: Math.min(planHalf, 60),
+    planHours: Math.min(planHours, 240),
     planDates: dates,
     ...(part && planHalf > 0 && planFull === 0 ? { planPart: part } : {}),
     weekendSkipped,
+    holidaysSkipped,
     planMonthStart: monthStart,
   };
 }
@@ -344,9 +374,11 @@ const QUESTION_SYSTEM = `직원이 사내 안내 데스크에 쓴 질문 한 줄
  * 계획을 묻지 않았거나, 남·다른 기간을 물었으면 모델을 부르지 않아요. 규칙이 쓰려는 양을 못 읽었을 때만 불러요.
  * 모델에는 질문 글(공통 검사·가림을 지난 글, 등급 1)만 보내요. 연차 자료는 보내지 않아요.
  */
-async function readLeaveQuestion(gateway: AppContext['gateway'], text: string, today: string): Promise<LeaveQuestion> {
-  const rule = ruleLeaveQuestion(text, today);
-  const ruleRead = rule.planFull > 0 || rule.planHalf > 0 || rule.planMonthStart !== null;
+async function readLeaveQuestion(gateway: AppContext['gateway'], text: string, today: string, companyHolidays: readonly string[]): Promise<LeaveQuestion> {
+  const rule = ruleLeaveQuestion(text, today, companyHolidays);
+  // 날짜를 말했는데 모두 주말·쉬는 날이라 뺐으면(11/6) 모델이 그 날을 일수로 다시 세지 않게 규칙 결과 그대로예요.
+  const ruleRead =
+    rule.planFull > 0 || rule.planHalf > 0 || rule.planHours > 0 || rule.planMonthStart !== null || rule.holidaysSkipped.length > 0 || rule.weekendSkipped > 0;
   if (!rule.about || rule.aboutOther || rule.otherPeriod || ruleRead || !USE_VERB.test(text)) return { ...rule, viaAi: false };
   try {
     const out = await gateway.structured({
@@ -372,10 +404,10 @@ async function readLeaveQuestion(gateway: AppContext['gateway'], text: string, t
 const LEAVE_TAIL = '나에게만 보여요. 연차 기록은 저장하지 않고 AI로 보내지 않아요';
 const LEAVE_DESK = '그룹웨어 근태 메뉴';
 
-const days = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}일`;
+const days = fmtDays;
 
-function planLabel(full: number, half: number): string {
-  const parts = [full ? `연차 ${days(full)}` : '', half ? `반차 ${half}번` : ''].filter(Boolean);
+function planLabel(full: number, half: number, hours: number, workdayHours: number): string {
+  const parts = [full ? `연차 ${days(full)}` : '', half ? `반차 ${half}번` : '', hours ? `연차 ${hoursText(hours, workdayHours)}` : ''].filter(Boolean);
   return `${parts.join(' · ')}을 더 쓰면`;
 }
 
@@ -416,8 +448,8 @@ type SickInfo = NonNullable<Extract<CardAction, { type: 'leave-request' }>['sick
 function leaveRequestAction(
   target: LeaveRequestTarget,
   q: Pick<LeaveQuestion, 'planDates' | 'planFull' | 'planHalf' | 'planPart'>,
-  balance: LeaveBalance,
-  next: LeaveBalance | null,
+  balance: Pick<LeaveNumbers, 'remaining' | 'periodEnd'>,
+  next: Pick<LeaveNumbers, 'periodStart' | 'remaining'> | null,
   sick: SickInfo | null = null,
 ): Extract<CardAction, { type: 'leave-request' }> {
   const half = q.planHalf > 0 && q.planFull === 0;
@@ -463,11 +495,12 @@ function officialLeaveCard(
   today: string,
   text: string,
   request: LeaveRequestTarget | null,
-  balance: LeaveBalance | null,
-  next: LeaveBalance | null,
+  balance: LeaveNumbers | null,
+  next: Pick<LeaveNumbers, 'periodStart' | 'remaining'> | null,
   sick: SickInfo | null = null,
+  companyHolidays: readonly string[] = [],
 ): Card {
-  const { dates } = readPlanDates(text, today);
+  const { dates } = readPlanDates(text, today, companyHolidays);
   const canRequest = request && balance;
   return makeCard({
     id: 'navi-official-leave',
@@ -498,7 +531,8 @@ function officialLeaveCard(
 }
 
 // ── 경조(11/6, 휴가 A안) ─────────────────────────────────────────────────
-// 결혼·장례 같은 경조사로 쉬는 날이에요. 연차에서 빠지지 않아요(공가처럼). 질문은 규칙으로만 알아봐요(AI 안 불러요).
+// 결혼·장례 같은 경조사로 쉬는 날이에요. 연차에서 빼는지는 회사 규정이라 운영 값(eventLeaveFromAnnual, 기본 안 뺌)을 따라요(11/6).
+// 질문은 규칙으로만 알아봐요(AI 안 불러요).
 // 질문 글은 이 요청 메모리에서만 대조하고 저장하지 않아요. 사유는 앱이 받지 않고 그룹웨어 신청서에만 적어요.
 // "친구 결혼식이라 연차 쓰고 싶어"처럼 연차·반차를 직접 말하면 연차예요.
 
@@ -512,17 +546,18 @@ export function isEventLeaveQuestion(text: string): boolean {
   return EVENT_REASON.test(text) && EVENT_ASK.test(text) && !ANNUAL_SAID.test(text);
 }
 
-/** 경조 날: 오늘·내일·모레와 그 밖의 날 말(연차와 같은 규칙). 지난 날은 받지 않고 주말은 빼요. */
-export function readEventDates(text: string, today: string): string[] {
+/** 경조 날: 오늘·내일·모레와 그 밖의 날 말(연차와 같은 규칙). 지난 날은 받지 않고 주말·공휴일·회사 휴일은 빼요. */
+export function readEventDates(text: string, today: string, companyHolidays: readonly string[] = []): string[] {
   const near: string[] = [];
   if (/오늘/.test(text)) near.push(today);
   if (/내일/.test(text)) near.push(addDays(today, 1));
   if (/모레/.test(text)) near.push(addDays(today, 2));
-  return [...new Set([...near, ...readPlanDates(text, today).dates])].filter((d) => d >= today && weekdayOf(d) !== 0 && weekdayOf(d) !== 6).sort();
+  return [...new Set([...near, ...readPlanDates(text, today, companyHolidays).dates])].filter((d) => d >= today && isWorkday(d, companyHolidays)).sort();
 }
 
 // ── 병가(11/3) ────────────────────────────────────────────────────────────
-// 아파서 쉬는 날이에요. 연차에서 빠지지 않아요. 질문은 공가처럼 규칙으로만 알아봐요(AI 안 불러요).
+// 아파서 쉬는 날이에요. 연차에서 빼는지는 회사 규정이라 운영 값(sickLeaveFromAnnual, 기본 안 뺌)을 따라요(11/6).
+// 질문은 공가처럼 규칙으로만 알아봐요(AI 안 불러요).
 // 사유는 정해진 선택지만 받아요(건강 정보를 받지 않아요). 올해 병가 쓴 날은 서버가 근태 기록으로 계산하고 저장하지 않아요(ADR-18).
 // 유급·무급은 회사마다 달라서 앱이 계산하지 않아요(인사팀이 처리해요).
 
@@ -538,24 +573,25 @@ export function isSickLeaveQuestion(text: string): boolean {
 
 const SICK_TAIL = '나에게만 보여요. 병가 기록은 저장하지 않고 AI로 보내지 않아요';
 
-/** 병가는 지난 날도 받아서(지난 3일까지) "오늘·어제·그제"를 읽어요. 그 밖의 날은 연차와 같은 규칙(오늘부터)이에요. 주말은 빼요. */
-export function readSickDates(text: string, today: string): string[] {
+/** 병가는 지난 날도 받아서(지난 3일까지) "오늘·어제·그제"를 읽어요. 그 밖의 날은 연차와 같은 규칙(오늘부터)이에요. 주말·공휴일·회사 휴일은 빼요. */
+export function readSickDates(text: string, today: string, companyHolidays: readonly string[] = []): string[] {
   const past: string[] = [];
   if (/그제|그저께/.test(text)) past.push(addDays(today, -2));
   if (/어제/.test(text)) past.push(addDays(today, -1));
   if (/오늘/.test(text)) past.push(today);
   const earliest = addDays(today, -SICK_LEAVE_PAST_DAYS);
-  return [...new Set([...past, ...readPlanDates(text, today).dates])].filter((d) => d >= earliest && weekdayOf(d) !== 0 && weekdayOf(d) !== 6).sort();
+  return [...new Set([...past, ...readPlanDates(text, today, companyHolidays).dates])].filter((d) => d >= earliest && isWorkday(d, companyHolidays)).sort();
 }
 
-/** 병가 카드. [병가 신청하기]는 휴가 신청 양식을 병가로 열어요. 근태 기록이 없으면 신청은 그룹웨어 근태 메뉴로 안내해요. */
+/** 병가 카드(앱 안 휴가 결재, 개발·시험 전용). [병가 신청하기]는 휴가 신청 양식을 병가로 열어요. 근태 기록이 없으면 신청은 그룹웨어 근태 메뉴로 안내해요. */
 function sickLeaveCard(
   today: string,
   text: string,
   request: LeaveRequestTarget | null,
-  balance: LeaveBalance | null,
-  next: LeaveBalance | null,
+  balance: LeaveNumbers | null,
+  next: Pick<LeaveNumbers, 'periodStart' | 'remaining'> | null,
   sick: SickInfo | null,
+  companyHolidays: readonly string[] = [],
 ): Card {
   if (OTHER_SICK.test(text)) {
     return makeCard({
@@ -568,15 +604,16 @@ function sickLeaveCard(
       tail: SICK_TAIL,
     });
   }
-  const dates = readSickDates(text, today);
+  const dates = readSickDates(text, today, companyHolidays);
   const canRequest = request && balance && sick;
   return makeCard({
     id: 'navi-sick-leave',
     kind: 'navi',
     label: '안내',
-    headline: '병가는 연차에서 빠지지 않아요',
+    headline: '병가는 연차와 따로 셌어요',
     fields: [
       ...(sick ? [{ name: '올해 병가', value: sickUsageText(sick) }] : []),
+      { name: '연차 차감', value: LEAVE_MAY_DEDUCT_TEXT },
       { name: '병가 사유', value: `${SICK_LEAVE_REASONS.map((r) => SICK_LEAVE_REASON_LABEL[r]).join(' · ')} 중에서 골라요` },
       ...(dates.length ? [{ name: '읽은 날', value: dates.map(dayLabel).join(' · ') }] : []),
       { name: '지난 날', value: `오늘부터 ${SICK_LEAVE_PAST_DAYS}일 전까지 신청할 수 있어요` },
@@ -601,45 +638,68 @@ function sickLeaveCard(
   });
 }
 
-/** 본인 연차 카드. 숫자는 모두 서버 계산이고, "AI 정리"는 모델이 질문(더 쓰려는 양)을 해석했을 때만 붙여요. */
+/** 근태 기록을 읽지 못한 까닭: 운영의 "연결 안 함" 또는 기록 없음·읽기 실패 */
+type LeaveMissing = 'not-connected' | 'not-found';
+const missingOf = (ctx: Pick<AppContext, 'adapters'>): LeaveMissing => (ctx.adapters.leave.connected ? 'not-found' : 'not-connected');
+
+/**
+ * 본인 연차 카드. 숫자는 근태 숫자가 먼저고 없으면 서버 계산이에요(11/6). "AI 정리"는 모델이 질문(더 쓰려는 양)을 해석했을 때만 붙여요.
+ * 카드는 어느 쪽 숫자인지(계산 기준)·소멸일·결재 중인 신청은 반영하지 않았다는 것을 늘 적어요.
+ */
 export function leaveCard(
-  balance: LeaveBalance | null,
+  record: LeaveRecord | null,
   q: LeaveQuestion,
   today: string,
-  request?: LeaveRequestTarget | null,
-  next: LeaveBalance | null = null,
-  sick: SickInfo | null = null,
-  /** 11/6 A안: 앱 안 휴가 결재가 꺼져 있으면 [휴가 신청하기] 대신 [그룹웨어에서 신청하기](링크)예요. */
-  apply: CardAction | null = null,
+  opts: {
+    policy?: LeavePolicy;
+    request?: LeaveRequestTarget | null;
+    sick?: SickInfo | null;
+    /** 11/6 A안: 앱 안 휴가 결재가 꺼져 있으면 [휴가 신청하기] 대신 [그룹웨어에서 신청하기](링크)예요. */
+    apply?: CardAction | null;
+    missing?: LeaveMissing;
+  } = {},
 ): Card {
   if (q.aboutOther) return otherPersonCard();
-  if (!balance) {
+  const policy = opts.policy ?? DEFAULT_LEAVE_POLICY;
+  if (!record) {
+    const notConnected = opts.missing === 'not-connected';
     return makeCard({
       id: 'navi-my-leave',
       kind: 'navi',
       label: '안내',
-      headline: '남은 연차를 불러오지 못했어요',
-      fields: [{ name: '확인하는 곳', value: LEAVE_DESK }],
-      evidence: { text: '인사 근태 기록', aiSummarized: false },
+      headline: notConnected ? '남은 연차를 보여 드릴 수 없어요' : '남은 연차를 불러오지 못했어요',
+      fields: [...(notConnected ? [{ name: '남은 연차', value: LEAVE_NOT_CONNECTED_TEXT }] : []), { name: '확인하는 곳', value: LEAVE_DESK }],
+      evidence: { text: notConnected ? '인사 근태 기록(연결 안 함)' : '인사 근태 기록', aiSummarized: false },
       tail: LEAVE_TAIL,
     });
   }
+  const balance = leaveNumbers(record, today, policy);
+  const nextApp = nextPeriodNumbers(record, balance, policy);
   // 이번 연차 기간 밖의 날·달은 이번 기간에서 빼지 않아요("12월에 3일" → 다음 기간이에요).
   const nextStart = addDays(balance.periodEnd, 1);
+  const inPeriod = q.planDates.filter((d) => d <= balance.periodEnd);
   const later = q.planDates.filter((d) => d > balance.periodEnd);
   const monthLater = q.planMonthStart !== null && q.planMonthStart > balance.periodEnd;
+  const allLater = q.planDates.length > 0 && !inPeriod.length;
   const fullInPeriod = q.planDates.length && q.planFull === q.planDates.length ? q.planFull - later.length : q.planFull;
   const halfInPeriod = q.planDates.length && q.planHalf === q.planDates.length && !q.planFull ? q.planHalf - later.length : q.planHalf;
   const full = monthLater ? 0 : fullInPeriod;
   const half = monthLater ? 0 : halfInPeriod;
-  const plan = full + half * HALF_DAY;
-  const after = balance.remaining - plan;
+  const hours = monthLater || allLater ? 0 : q.planHours;
+  const plan = full + half * HALF_DAY + hoursToDays(hours, policy.workdayHours);
+  // 1년 미만이면 쓰려는 날까지 생기는 연차로 세요(11/6).
+  const counted = planInPeriod(record, today, policy, balance, inPeriod, plan);
+  const after = counted.after;
+  const grows = counted.asOf && counted.extra > 0 ? ` (${dayLabel(counted.asOf)}까지 ${days(counted.extra)}이 더 생겨요)` : '';
   const readPlan = q.planDates.length
-    ? `${q.planDates.map(dayLabel).join(' · ')}${q.weekendSkipped ? ' (주말은 뺐어요)' : ''}`
+    ? `${q.planDates.map(dayLabel).join(' · ')}${q.planHours ? ` ${q.planHours}시간` : ''}${q.weekendSkipped ? ' (주말은 뺐어요)' : ''}`
     : q.weekendSkipped
       ? '주말이라 연차에서 빼지 않았어요'
       : '';
   const nextNote = monthLater || later.length ? `${nextStart}부터는 다음 연차 기간이라 이번 기간에서 빼지 않았어요` : '';
+  const unknown = unknownHolidayYears(q.planDates);
+  const app = balance.app;
+  const fiscal = balance.basis === 'fiscal-year' ? ' (회계연도 기준)' : '';
   return makeCard({
     id: 'navi-my-leave',
     kind: 'navi',
@@ -648,18 +708,50 @@ export function leaveCard(
     fields: [
       { name: '반차로 쓰면', value: `${Math.max(0, Math.floor(balance.remaining / HALF_DAY))}번` },
       ...(readPlan ? [{ name: '읽은 계획', value: readPlan }] : []),
-      ...(plan > 0 ? [{ name: planLabel(full, half), value: after >= 0 ? `${days(after)} 남아요` : `${days(-after)} 모자라요` }] : []),
+      ...(q.holidaysSkipped.length ? [{ name: '쉬는 날', value: holidaysText(q.holidaysSkipped) }] : []),
+      ...(unknown.length ? [{ name: '공휴일 정보', value: holidayUnknownText(unknown) }] : []),
+      ...(q.planHours ? [{ name: '시간 단위', value: LEAVE_HOURS_TEXT }] : []),
+      ...(plan > 0
+        ? [
+            {
+              name: planLabel(full, half, hours, policy.workdayHours),
+              value: `${after >= 0 ? `${days(after)} 남아요` : `${days(-after)} 모자라요`}${grows}`,
+            },
+          ]
+        : []),
       ...(nextNote ? [{ name: '다음 연차 기간', value: nextNote }] : []),
-      { name: '이번 연차 기간', value: `${balance.periodStart} ~ ${balance.periodEnd}` },
-      {
-        name: '생긴 연차',
-        value: balance.firstYear ? `${days(balance.granted)} (입사 1년 미만, 개근한 달마다 1일)` : `${days(balance.granted)} (근속 ${balance.years}년)`,
-      },
-      { name: '쓴 연차(예정 포함)', value: `${days(balance.used)} · 하루 ${balance.usedFull}번, 반차 ${balance.usedHalf}번` },
+      { name: '이번 연차 기간', value: `${balance.periodStart} ~ ${balance.periodEnd}${fiscal}` },
+      { name: '소멸일', value: expiryText(balance.periodEnd, today) },
+      ...(app
+        ? [
+            {
+              name: '생긴 연차',
+              value: app.firstYear ? `${days(app.granted)} (입사 1년 미만, 개근한 달마다 1일)` : `${days(app.granted)} (근속 ${app.years}년)`,
+            },
+            {
+              name: '쓴 연차(예정 포함)',
+              value: `${days(app.used)} · 하루 ${app.usedFull}번, 반차 ${app.usedHalf}번${app.usedOther ? `, 시간 단위 ${app.usedOther}번` : ''}`,
+            },
+          ]
+        : [
+            ...(balance.granted !== null ? [{ name: '생긴 연차', value: `${days(balance.granted)} (근태 기록)` }] : []),
+            ...(balance.used !== null ? [{ name: '쓴 연차(예정 포함)', value: `${days(balance.used)} (근태 기록)` }] : []),
+          ]),
+      { name: '계산 기준', value: basisText(balance.source) },
       ...(q.otherPeriod ? [{ name: '작년·내년', value: '이번 연차 기간만 보여요. 지난 기간은 그룹웨어 근태 메뉴에서 봐요' }] : []),
     ],
-    evidence: { text: `인사 근태 기록으로 서버가 계산 · 근로기준법(개근 가정) · ${today} 기준`, aiSummarized: q.viaAi && plan > 0 },
-    ...(request ? { secondary: [leaveRequestAction(request, q, balance, next, sick)] } : apply ? { secondary: [apply] } : {}),
+    evidence: {
+      text:
+        balance.source === 'hr'
+          ? `인사 근태 기록 기준(근태 시스템이 준 숫자) · ${today} 기준`
+          : `인사 근태 기록으로 서버가 계산 · 근로기준법(입사일 기준·개근 가정) · ${today} 기준`,
+      aiSummarized: q.viaAi && plan > 0,
+    },
+    ...(opts.request
+      ? { secondary: [leaveRequestAction(opts.request, q, balance, nextApp, opts.sick ?? null)] }
+      : opts.apply
+        ? { secondary: [opts.apply] }
+        : {}),
     tail: LEAVE_TAIL,
   });
 }
@@ -679,29 +771,40 @@ function namesOtherPerson(text: string, roster: readonly string[], mine: readonl
 
 // ── 휴가 A안: 그룹웨어로 넘기기(11/6 사용자 결정) ─────────────────────────────
 // 앱 안 휴가 결재(DESK_LEAVE_IN_APP)가 꺼져 있으면(운영 기본) [휴가 신청하기] 양식 대신 신청 전 카드(leave-handoff.ts)를 줘요.
-// 숫자는 여기서 서버 규칙으로 계산해 넘기고, 카드는 그룹웨어 주소·그날 내 일정·규정 한 줄을 더해요. AI에는 질문 글만 가요.
+// 숫자는 여기서 정해 넘기고(근태 숫자가 먼저, 없으면 서버 규칙), 카드는 그룹웨어 주소·그날 내 일정·규정 한 줄을 더해요. AI에는 질문 글만 가요.
 
 /** 쓰려는 말이 있는지(날·양을 읽었거나 "쓰고 싶어" 같은 말). 없으면("연차 몇 개 남았어?") 남은 연차 카드예요. */
-const wantsToUse = (q: LeaveQuestion, text: string) => q.planDates.length > 0 || q.planFull > 0 || q.planHalf > 0 || USE_VERB.test(text);
+const wantsToUse = (q: LeaveQuestion, text: string) => q.planDates.length > 0 || q.planFull > 0 || q.planHalf > 0 || q.planHours > 0 || USE_VERB.test(text);
 
-/** 연차 질문에서 읽은 날(반차는 읽은 오전·오후로, 모르면 구분 없이) */
-function plannedDays(q: Pick<LeaveQuestion, 'planDates' | 'planFull' | 'planHalf' | 'planPart'>): LeaveDay[] {
+/** 연차 질문에서 읽은 날(반차는 읽은 오전·오후로, 모르면 구분 없이). 시간 단위로 말했으면 날이 아니에요(11/6). */
+function plannedDays(q: Pick<LeaveQuestion, 'planDates' | 'planFull' | 'planHalf' | 'planHours' | 'planPart'>): LeaveDay[] {
+  if (q.planHours > 0) return [];
   const half = q.planHalf > 0 && q.planFull === 0;
   return q.planDates.map((date) => (half ? { date, kind: 'half' as const, ...(q.planPart ? { half: q.planPart } : {}) } : { date, kind: 'full' as const }));
 }
 
-/** 신청 전 카드 숫자(서버 규칙, ADR-18). 공가·병가는 연차에서 빠지지 않고, 병가는 올해 병가 쓴 날이 늘어요. */
+/** 신청 전 카드에 넘길 양(날 없이 말했거나 시간 단위일 때) */
+type PlanAmount = { full: number; half: number; hours: number };
+
+/**
+ * 신청 전 카드 숫자(ADR-18, 11/6 휴가 정확도). 근태 숫자가 있으면 그 숫자에서, 없으면 서버 규칙(입사일 기준·개근 가정)으로 빼요.
+ * 공가는 늘, 병가·경조는 운영 값이 "안 뺌"이면 연차에서 빼지 않아요. 병가는 올해 병가 쓴 날이 늘어요.
+ * 1년 미만이면 쓰려는 날까지 생기는 연차로 세요. 결재 중인 신청은 근태 기록에 없어서 들어가지 않아요(카드가 적어요).
+ */
 function checkNumbers(
   ctx: AppContext,
+  policy: LeavePolicy,
   record: LeaveRecord | null,
   today: string,
   type: LeaveKind,
   days: readonly LeaveDay[],
-  amount: { full: number; half: number } | undefined,
+  amount: PlanAmount | undefined,
   planMonthStart: string | null,
+  /** 시간 단위로 말한 날(일정·링크용). 이번 기간인지 볼 때 써요. */
+  hourDates: readonly string[] = [],
 ): LeaveCheckNumbers {
-  if (!record) return { annual: null };
-  const balance = computeLeave(record, today);
+  if (!record) return { annual: null, missing: missingOf(ctx) };
+  const base = leaveNumbers(record, today, policy);
   const v = ctx.ops.get().values;
   const sick =
     type === 'sick'
@@ -711,24 +814,58 @@ function checkNumbers(
           return { used: u.used, after: u.used + daysOf(thisYear), limit: u.limit, note: needsSickNote(days, v.sickNoteOverDays) };
         })()
       : null;
-  if (type !== 'annual') return { annual: { remaining: balance.remaining, after: balance.remaining }, sick };
+  const basis = { source: base.source, periodEnd: base.periodEnd };
+  const deducted = policy.deducts.has(type);
+  if (!deducted) return { annual: { remaining: base.remaining, after: base.remaining, deducted: false }, basis, sick };
+  const nextOf = (amountDays: number): NonNullable<LeaveCheckNumbers['next']> => {
+    const next = nextPeriodNumbers(record, base, policy);
+    return next
+      ? { periodStart: next.periodStart, remaining: next.remaining, after: next.remaining - amountDays }
+      : { periodStart: addDays(base.periodEnd, 1), remaining: null, after: null };
+  };
   if (days.length) {
-    const b = leaveRequestBalance(record, today, days);
+    const inPeriod = days.filter((d) => d.date <= base.periodEnd);
+    const later = days.filter((d) => d.date > base.periodEnd);
+    const counted = planInPeriod(
+      record,
+      today,
+      policy,
+      base,
+      inPeriod.map((d) => d.date),
+      daysOf(inPeriod),
+    );
     return {
-      annual: { remaining: b.remaining, after: b.after },
-      next: b.next ? { periodStart: b.next.periodStart, remaining: b.next.remaining, after: b.next.after } : null,
+      annual: {
+        remaining: base.remaining,
+        after: counted.after,
+        deducted: true,
+        ...(counted.asOf ? { grows: { by: counted.extra, asOf: counted.asOf } } : {}),
+      },
+      basis,
+      next: later.length ? nextOf(daysOf(later)) : null,
+      sick,
     };
   }
-  const plan = amount ? amount.full + amount.half * HALF_DAY : 0;
-  // "12월에 3일"처럼 다음 연차 기간의 달이면 이번 기간에서 빼지 않고 다음 기간에서 빼요(남은 연차 카드와 같아요).
-  if (planMonthStart !== null && planMonthStart > balance.periodEnd) {
-    const next = nextPeriodLeave(record, balance);
-    return {
-      annual: { remaining: balance.remaining, after: balance.remaining },
-      next: plan ? { periodStart: next.periodStart, remaining: next.remaining, after: next.remaining - plan } : null,
-    };
-  }
-  return { annual: { remaining: balance.remaining, after: balance.remaining - plan } };
+  const plan = amount ? amount.full + amount.half * HALF_DAY + hoursToDays(amount.hours, policy.workdayHours) : 0;
+  // "12월에 3일"처럼 다음 연차 기간의 달·날이면 이번 기간에서 빼지 않고 다음 기간에서 빼요(남은 연차 카드와 같아요).
+  const laterOnly = (planMonthStart !== null && planMonthStart > base.periodEnd) || (hourDates.length > 0 && hourDates.every((d) => d > base.periodEnd));
+  if (laterOnly) return { annual: { remaining: base.remaining, after: base.remaining, deducted: true }, basis, next: plan ? nextOf(plan) : null, sick };
+  const counted = planInPeriod(record, today, policy, base, hourDates, plan);
+  return {
+    annual: { remaining: base.remaining, after: counted.after, deducted: true, ...(counted.asOf ? { grows: { by: counted.extra, asOf: counted.asOf } } : {}) },
+    basis,
+    sick,
+  };
+}
+
+interface HandoffExtra {
+  amount?: PlanAmount;
+  /** 시간 단위로 말한 날(11/6) */
+  hourDates?: string[];
+  weekendSkipped?: number;
+  holidaysSkipped?: SkippedHoliday[];
+  planMonthStart?: string | null;
+  viaAi?: boolean;
 }
 
 async function handoffCard(
@@ -737,15 +874,18 @@ async function handoffCard(
   record: LeaveRecord | null,
   type: LeaveKind,
   days: LeaveDay[],
-  extra: { amount?: { full: number; half: number }; weekendSkipped?: number; planMonthStart?: string | null; viaAi?: boolean } = {},
+  extra: HandoffExtra = {},
 ): Promise<Card> {
   const today = kstDate(ctx.now());
+  const policy = leavePolicy(ctx);
   return leaveCheckCard(ctx, user, {
     type,
     days,
     ...(extra.amount ? { amount: extra.amount } : {}),
+    ...(extra.hourDates?.length ? { hourDates: extra.hourDates } : {}),
     ...(extra.weekendSkipped ? { weekendSkipped: extra.weekendSkipped } : {}),
-    numbers: checkNumbers(ctx, record, today, type, days, extra.amount, extra.planMonthStart ?? null),
+    ...(extra.holidaysSkipped?.length ? { holidaysSkipped: extra.holidaysSkipped } : {}),
+    numbers: checkNumbers(ctx, policy, record, today, type, days, extra.amount, extra.planMonthStart ?? null, extra.hourDates ?? []),
     taken: record?.uses ?? [],
     viaAi: extra.viaAi ?? false,
   });
@@ -759,6 +899,8 @@ function groupwareApply(ctx: AppContext): CardAction | null {
 
 export async function myLeaveCard(ctx: AppContext, user: DeskUser, text: string, request?: LeaveRequestTarget | null): Promise<Card | null> {
   const today = kstDate(ctx.now());
+  const policy = leavePolicy(ctx);
+  const off = policy.companyHolidays;
   const person = { idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) };
   // 11/6 A안: 앱 안 휴가 결재가 꺼져 있으면(운영 기본) 신청 전 카드예요. 남의 연차·병가 카드는 그대로예요(근태 기록을 읽지 않아요).
   const handoff = !ctx.config.leaveInApp;
@@ -767,32 +909,40 @@ export async function myLeaveCard(ctx: AppContext, user: DeskUser, text: string,
     const v = ctx.ops.get().values;
     return { ...sickUsage(record, today, v.sickLeaveYearDays), noteOverDays: v.sickNoteOverDays };
   };
+  /** 앱 안 양식용(개발·시험 전용): 이번 기간 숫자와 다음 기간 앱 계산 */
+  const formNumbers = (record: LeaveRecord | null) => {
+    const balance = record ? leaveNumbers(record, today, policy) : null;
+    return { balance, next: record && balance ? nextPeriodNumbers(record, balance, policy) : null };
+  };
   if (isOfficialLeaveQuestion(text)) {
     if (handoff) {
-      const { dates, weekendSkipped } = readPlanDates(text, today);
+      const { dates, weekendSkipped, holidaysSkipped } = readPlanDates(text, today, off);
       const record = await ctx.adapters.leave.leaveOf(person).catch(() => null);
-      return handoffCard(ctx, user, record, 'official', explicitDays(dates, text), { weekendSkipped });
+      return handoffCard(ctx, user, record, 'official', explicitDays(dates, text), { weekendSkipped, holidaysSkipped });
     }
     // 공가 카드는 숫자를 보여 주지 않아요. 남은 연차는 양식에서 연차로 바꿀 때만 쓰려고 본인 것만 읽어요.
     const record = request ? await ctx.adapters.leave.leaveOf(person).catch(() => null) : null;
-    const balance = record ? computeLeave(record, today) : null;
-    return officialLeaveCard(today, text, request ?? null, balance, record && balance ? nextPeriodLeave(record, balance) : null, sickOf(record));
+    const { balance, next } = formNumbers(record);
+    return officialLeaveCard(today, text, request ?? null, balance, next, sickOf(record), off);
   }
   if (isSickLeaveQuestion(text)) {
     // 병가 카드: 올해 병가 쓴 날(본인 것만, 서버 계산). 남의 병가를 물으면 근태 기록을 읽지 않아요.
-    if (OTHER_SICK.test(text)) return sickLeaveCard(today, text, null, null, null, null);
+    if (OTHER_SICK.test(text)) return sickLeaveCard(today, text, null, null, null, null, off);
     const record = await ctx.adapters.leave.leaveOf(person).catch(() => null);
-    if (handoff) return handoffCard(ctx, user, record, 'sick', explicitDays(readSickDates(text, today), text));
-    const balance = record ? computeLeave(record, today) : null;
-    return sickLeaveCard(today, text, request ?? null, balance, record && balance ? nextPeriodLeave(record, balance) : null, sickOf(record));
+    if (handoff) {
+      const { holidaysSkipped } = readPlanDates(text, today, off);
+      return handoffCard(ctx, user, record, 'sick', explicitDays(readSickDates(text, today, off), text), { holidaysSkipped });
+    }
+    const { balance, next } = formNumbers(record);
+    return sickLeaveCard(today, text, request ?? null, balance, next, sickOf(record), off);
   }
   // 경조(11/6): 그룹웨어로 넘길 때만 따로 카드를 줘요. 앱 안 흐름(DESK_LEAVE_IN_APP)에는 경조 종류가 없어서 예전처럼 담당 카드예요.
   if (handoff && isEventLeaveQuestion(text)) {
     const record = await ctx.adapters.leave.leaveOf(person).catch(() => null);
-    const { weekendSkipped } = readPlanDates(text, today);
-    return handoffCard(ctx, user, record, 'family-event', explicitDays(readEventDates(text, today), text), { weekendSkipped });
+    const { weekendSkipped, holidaysSkipped } = readPlanDates(text, today, off);
+    return handoffCard(ctx, user, record, 'family-event', explicitDays(readEventDates(text, today, off), text), { weekendSkipped, holidaysSkipped });
   }
-  const q = await readLeaveQuestion(ctx.gateway, text, today);
+  const q = await readLeaveQuestion(ctx.gateway, text, today, off);
   if (!q.about) return null;
   if (q.aboutOther) return otherPersonCard();
   // "도윤 연차 몇 개 남았어?"처럼 호칭 없이 이름만 쓰면 규칙(OTHER_PERSON)이 못 알아봐요. 직원 명단 이름과 대조해요(QA D-A02).
@@ -801,18 +951,20 @@ export async function myLeaveCard(ctx: AppContext, user: DeskUser, text: string,
   const record = await ctx.adapters.leave.leaveOf(person).catch(() => null);
   if (handoff && !q.otherPeriod && wantsToUse(q, text)) {
     const days = plannedDays(q);
-    const amount = !days.length && (q.planFull > 0 || q.planHalf > 0) ? { full: q.planFull, half: q.planHalf } : undefined;
+    const amount =
+      !days.length && (q.planFull > 0 || q.planHalf > 0 || q.planHours > 0) ? { full: q.planFull, half: q.planHalf, hours: q.planHours } : undefined;
     return handoffCard(ctx, user, record, 'annual', days, {
       ...(amount ? { amount } : {}),
+      ...(q.planHours > 0 && q.planDates.length ? { hourDates: q.planDates } : {}),
       weekendSkipped: q.weekendSkipped,
+      holidaysSkipped: q.holidaysSkipped,
       planMonthStart: q.planMonthStart,
       viaAi: q.viaAi,
     });
   }
-  const balance = record ? computeLeave(record, today) : null;
-  const next = record && balance ? nextPeriodLeave(record, balance) : null;
-  if (handoff) return leaveCard(balance, q, today, null, next, null, groupwareApply(ctx));
-  return leaveCard(balance, q, today, request, next, sickOf(record));
+  const missing = record ? undefined : missingOf(ctx);
+  if (handoff) return leaveCard(record, q, today, { policy, apply: groupwareApply(ctx), ...(missing ? { missing } : {}) });
+  return leaveCard(record, q, today, { policy, request: request ?? null, sick: sickOf(record), ...(missing ? { missing } : {}) });
 }
 
 /**
@@ -831,7 +983,7 @@ export async function leaveCheckForLink(ctx: AppContext, user: DeskUser, days: r
 }
 
 /**
- * MCP 휴가 준비 링크를 열 때(11/3 확인 링크 넓히기): 링크의 날짜·종류로 채운 휴가 신청 양식 행동.
+ * MCP 휴가 준비 링크를 열 때(11/3 확인 링크 넓히기, 앱 안 휴가 결재 — 개발·시험 전용): 링크의 날짜·종류로 채운 휴가 신청 양식 행동.
  * 앱에서 본인이 로그인해 열 때만 불러요. 남은 연차·병가 쓴 날은 이 사람 화면에만 가고 MCP 출력에는 없어요(ADR-18).
  * 근태 기록이 없으면(앱에서 신청할 수 없으면) null이에요. 사유는 링크에 없어서 양식에서 사람이 골라요.
  */
@@ -843,12 +995,13 @@ export async function leaveLinkAction(
   type: 'annual' | 'official' | 'sick',
 ): Promise<Extract<CardAction, { type: 'leave-request' }> | null> {
   const today = kstDate(ctx.now());
+  const policy = leavePolicy(ctx);
   const record = await ctx.adapters.leave.leaveOf({ idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) }).catch(() => null);
   if (!record) return null;
-  const balance = computeLeave(record, today);
+  const balance = leaveNumbers(record, today, policy);
   const v = ctx.ops.get().values;
   const sick: SickInfo = { ...sickUsage(record, today, v.sickLeaveYearDays), noteOverDays: v.sickNoteOverDays };
-  const base = leaveRequestAction(target, { planDates: [], planFull: 0, planHalf: 0 }, balance, nextPeriodLeave(record, balance), sick);
+  const base = leaveRequestAction(target, { planDates: [], planFull: 0, planHalf: 0 }, balance, nextPeriodNumbers(record, balance, policy), sick);
   return {
     ...base,
     text: type === 'official' ? '공가 신청하기' : type === 'sick' ? '병가 신청하기' : '휴가 신청하기',

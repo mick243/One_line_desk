@@ -107,12 +107,17 @@ describe('신청 전 카드(11/6 A안): 숫자는 서버 규칙이에요', () =>
     const official = await checkCard(haneul, '11월 3일 예비군 훈련이라 공가 쓰려고');
     expect(official.headline).toBe('공가는 연차에서 빠지지 않아요');
     expect(field(official, '남은 연차')).toBe(`${remaining}일 그대로예요(공가는 연차에서 빠지지 않아요)`);
-    expect(actionsOf(official).find((a) => a.type === 'copy')).toMatchObject({ value: '공가 · 11/3(화) 하루' });
+    expect(actionsOf(official).find((a) => a.type === 'copy')).toMatchObject({
+      value: '휴가 종류: 공가\n기간: 11/3(화) ~ 11/3(화)\n날짜: 11/3(화) 하루\n일수: 1일\n사유: 그룹웨어 신청서에 직접 적어 주세요(꼭 적어야 해요)',
+    });
 
     t.ctx.ops.patchValues({ sickLeaveYearDays: 10, sickNoteOverDays: 3 });
     const sick = await checkCard(haneul, '오늘 몸살이라 병가 쓸래');
-    expect(sick.headline).toBe('병가는 연차에서 빠지지 않아요');
-    expect(field(sick, '남은 연차')).toBe(`${remaining}일 그대로예요(병가는 연차에서 빠지지 않아요)`);
+    // 11/6: 병가의 연차 차감은 회사 규정(운영 값, 기본 안 뺌)이라 단정하지 않아요. 공가는 법 근거라 그대로예요.
+    expect(sick.headline).toBe('병가는 연차와 따로 셌어요');
+    expect(field(sick, '남은 연차')).toBe(`${remaining}일 그대로예요(병가는 연차와 따로 셌어요)`);
+    expect(field(sick, '연차 차감')).toBe('회사 규정에 따라 연차에서 빠질 수 있어요');
+    expect(field(official, '연차 차감')).toBeUndefined();
     // 하늘의 올해 병가: 1월 19일 하루 + 9월 7일 반차 = 1.5일. 오늘 하루를 더하면 2.5일이에요.
     expect(field(sick, '올해 병가')).toBe('1.5일 → 2.5일 (한도 10일)');
     expect(field(sick, '진단서')).toBeUndefined();
@@ -246,9 +251,14 @@ describe('경조(11/6): 해석과 연차 계산', () => {
     const t = await setup();
     const doyun = await t.loginAs(MOCK.dev);
     const card = await checkCard(doyun, '11월 3일 조문 가야 해서 쉬어야 해');
-    expect(card.headline).toBe('경조는 연차에서 빠지지 않아요');
-    expect(field(card, '남은 연차')).toBe('7.5일 그대로예요(경조는 연차에서 빠지지 않아요)');
-    expect(card.actions.secondary).toContainEqual({ type: 'copy', text: '신청 내용 복사', value: '경조 · 11/3(화) 하루' });
+    expect(card.headline).toBe('경조는 연차와 따로 셌어요');
+    expect(field(card, '남은 연차')).toBe('7.5일 그대로예요(경조는 연차와 따로 셌어요)');
+    expect(field(card, '연차 차감')).toBe('회사 규정에 따라 연차에서 빠질 수 있어요');
+    expect(card.actions.secondary).toContainEqual({
+      type: 'copy',
+      text: '신청 내용 복사',
+      value: '휴가 종류: 경조\n기간: 11/3(화) ~ 11/3(화)\n날짜: 11/3(화) 하루\n일수: 1일\n사유: 그룹웨어 신청서에 직접 적어 주세요(꼭 적어야 해요)',
+    });
     expect(card.actions.primary).toMatchObject({ href: 'http://localhost:5190/demo/groupware/leave?type=family-event&from=2026-11-03&to=2026-11-03&half=' });
 
     await t.ctx.adapters.leave.recordUses({ idpSubject: MOCK.dev, email: 'doyun@corp.example' }, [{ date: '2026-11-03', kind: 'full', type: 'family-event' }]);
@@ -274,7 +284,11 @@ describe('그룹웨어 링크(운영 설정 leave·approvals)', () => {
       text: '그룹웨어에서 신청하기',
       href: 'http://localhost:5190/demo/groupware/leave?type=annual&from=2026-10-27&to=2026-10-27&half=pm',
     });
-    expect(demo.actions.secondary).toContainEqual({ type: 'copy', text: '신청 내용 복사', value: '연차 · 10/27(화) 오후 반차' });
+    expect(demo.actions.secondary).toContainEqual({
+      type: 'copy',
+      text: '신청 내용 복사',
+      value: '휴가 종류: 연차\n기간: 10/27(화) ~ 10/27(화)\n날짜: 10/27(화) 오후 반차\n일수: 0.5일\n사유: 그룹웨어 신청서에 직접 적어 주세요',
+    });
 
     // 운영자가 넣은 주소: 경로의 자리 표시(%7B…%7D로 바뀜)도 채워요. 질문 글은 주소에 없어요.
     const op = await t.loginAs(MOCK.operator);
@@ -342,7 +356,7 @@ describe('상태 묻기(11/6 A안): 승인된 휴가는 근태 기록, 결재 �
     expect(empty.actions.primary).toEqual({ type: 'link', text: '결재함 열기', href: 'http://localhost:5190/demo/groupware/inbox' });
 
     // 그룹웨어가 최종 승인해 근태 기록에 들어가면(여기서는 근태 어댑터에 바로 넣어요) 앱이 읽어요.
-    await t.ctx.adapters.leave.recordUses({ idpSubject: MOCK.dev, email: 'doyun@corp.example' }, [{ date: '2026-11-06', kind: 'full' }]);
+    await t.ctx.adapters.leave.recordUses({ idpSubject: MOCK.dev, email: 'doyun@corp.example' }, [{ date: '2026-11-06', kind: 'full', type: 'annual' }]);
     const after = await home(doyun, '내 휴가 신청 어떻게 됐어?');
     const card = after.cards.find((c) => c.id === 'navi-leave-status')!;
     expect(after.headline).toBe('11월 6일(금) 연차 하루가 승인됐어요');

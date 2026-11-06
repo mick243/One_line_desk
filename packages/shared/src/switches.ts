@@ -44,6 +44,11 @@ export interface OpsSettings {
    * 비어 있으면 "계좌는 총무에게 물어봐 주세요"를 보여요. 앱은 돈을 받거나 보내지 않아서 계좌 글은 안내일 뿐이에요.
    */
   cafeAccount: string;
+  /**
+   * 회사 휴일·임시공휴일 날짜(YYYY-MM-DD, 11/6 휴가 정확도). 창립기념일처럼 법정 공휴일 표(holidays.ts)에 없는 쉬는 날을 운영자가 넣어요.
+   * 휴가 날 세기·걸린 일이 없는 날 제안·MCP 휴가 준비·가상 그룹웨어 신청서에서 공휴일처럼 빼요. 날짜만이고 이름·사유는 받지 않아요.
+   */
+  companyHolidays: string[];
   values: {
     /** 아래 값은 아직 정하지 않은 임시값이에요. 운영 설정에서 바꿔요. */
     defaultMeetingMinutes: number;
@@ -73,6 +78,15 @@ export interface OpsSettings {
      * 서버는 요청마다 지금 값으로 봐서, 줄이면 이미 열린 판 세션도 더 일찍 끊겨요.
      */
     cafeBoardSessionHours: number;
+    /** 하루 근로시간(11/6 휴가 정확도, 기본 8). "연차 2시간"을 0.25일로 바꿀 때 써요. 회사 규정의 소정근로시간에 맞춰요. */
+    workdayHours: number;
+    /**
+     * 병가를 연차에서 빼는 회사인지(11/6, 0 안 뺌 · 1 뺌, 기본 0). 병가의 연차 차감은 회사 규정(취업규칙)에 달려요.
+     * 1이면 남은 연차 계산과 신청 전 카드가 병가를 연차처럼 빼요. 공가는 법 근거라 늘 빼지 않아요.
+     */
+    sickLeaveFromAnnual: number;
+    /** 경조를 연차에서 빼는 회사인지(11/6, 0 안 뺌 · 1 뺌, 기본 0). 병가와 같아요. */
+    eventLeaveFromAnnual: number;
   };
 }
 
@@ -100,6 +114,7 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     approvals: '',
   },
   cafeAccount: '',
+  companyHolidays: [],
   values: {
     defaultMeetingMinutes: 60,
     proposalTtlSeconds: 600,
@@ -116,6 +131,9 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     cafeMonthlyLimitWon: 500_000,
     cafeDueDays: 7,
     cafeBoardSessionHours: 13,
+    workdayHours: 8,
+    sickLeaveFromAnnual: 0,
+    eventLeaveFromAnnual: 0,
   },
 };
 

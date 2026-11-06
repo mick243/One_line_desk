@@ -81,23 +81,52 @@ export interface CalendarAdapter {
 
 /** 휴가를 한 번 쓴 기록. 날짜·하루/반나절·종류만 있어요. 사유는 받지 않아요. */
 export interface LeaveUse {
-  /** YYYY-MM-DD(한국 날짜). 앞으로 쓸 예정인 날도 들어 있어요. */
+  /** YYYY-MM-DD(한국 날짜). 앞으로 쓸 예정인(승인된) 날도 들어 있어요. 결재 중인 신청은 없어요. */
   date: string;
+  /** 하루보다 짧은 쓰기(반반차·시간 단위 연차)는 'half'로 두고 amountDays에 쓴 양을 넣어요(같은 팀 일정은 반나절로 보여요). */
   kind: 'full' | 'half';
   /** 반차의 오전·오후(근태 기록이 알려 줄 때만, 11/3 팀 부재). 없으면 "반나절"로 보여요. */
   half?: 'am' | 'pm';
   /**
-   * 없으면 연차예요. 공가(official, 11/1)·병가(sick, 11/3)·경조(family-event, 11/6)는 남은 연차 계산에서 빼지 않아요.
+   * 종류. 연차(annual)만 남은 연차 계산에서 빼요. 공가(official, 11/1)는 늘 빼지 않고, 병가(sick, 11/3)·경조(family-event, 11/6)는
+   * 운영 값(sickLeaveFromAnnual·eventLeaveFromAnnual, 기본 안 뺌)을 따라요. **종류 없는 기록은 연차로 보지 않아요**(11/6 휴가 정확도:
+   * 근태가 종류를 안 주면 무엇인지 몰라서 세지 않아요). 어댑터는 연차 기록에 annual을 꼭 넣어요.
    * 사유는 받지 않아요(그룹웨어 신청서에만 있어요). 같은 팀 일정·회의실 인원 짐작은 종류를 내보내지 않아요.
    */
   type?: 'annual' | 'official' | 'sick' | 'family-event';
+  /**
+   * 쓴 양(일, 11/6 휴가 정확도). 반반차(0.25)·시간 단위 연차(2시간 = 0.25일, 하루 8시간 기준)처럼 하루·반차가 아닌 양을
+   * 근태 기록이 알려 줄 때만 있어요. 없으면 하루 1일·반차 0.5일이에요(예전 기록과 그대로 맞아요).
+   */
+  amountDays?: number;
+}
+
+/**
+ * 근태 시스템이 계산해 준 이번 연차 기간 숫자(11/6 휴가 정확도, 선택). 앱은 "계산기"가 아니라 근태 숫자를 읽어 보여 주는 곳이라,
+ * 이 칸이 있으면 앱 계산(입사일 기준·개근 가정)보다 **먼저** 보여요("근태 기록 기준"). 회계연도 기준·이월·출근율 80%·결근·회사 추가 부여 같은
+ * 계산 정책은 근태 시스템 몫이에요. 승인돼 근태에 들어간 휴가(앞으로 쓸 날 포함)는 뺀 값이고, 결재 중인 신청은 빼지 않은 값이에요.
+ */
+export interface LeaveSystemBalance {
+  /** 기간 기준: 입사일(hire-date) 또는 회계연도(fiscal-year). 모르면 없어요. */
+  basis?: 'hire-date' | 'fiscal-year';
+  /** 이번 연차 기간 첫날·마지막 날(YYYY-MM-DD). 마지막 날이 지나면 남은 연차가 사라져요(소멸일). */
+  periodStart: string;
+  periodEnd: string;
+  /** 이번 기간에 생긴 연차(이월·회사 추가 부여 포함). 모르면 없어요. */
+  granted?: number;
+  /** 이번 기간에 쓴 연차(승인된 예정 포함). 모르면 없어요. */
+  used?: number;
+  /** 이번 기간 남은 연차 */
+  remaining: number;
 }
 
 /** 인사 근태 시스템의 본인 연차 자료(등급 2). 그 사람 화면에만 보이고, AI·로그·DB에는 넣지 않아요(ADR-18). */
 export interface LeaveRecord {
-  /** 입사일 YYYY-MM-DD. 연차 기간과 생긴 일수를 이걸로 계산해요. */
+  /** 입사일 YYYY-MM-DD. 근태 숫자(balance)가 없을 때 연차 기간과 생긴 일수를 이걸로 계산해요(근로기준법, 개근 가정). */
   hireDate: string;
   uses: LeaveUse[];
+  /** 근태 시스템이 준 이번 기간 숫자(11/6). 있으면 이 숫자를 먼저 보여요. */
+  balance?: LeaveSystemBalance;
 }
 
 /**
@@ -106,6 +135,11 @@ export interface LeaveRecord {
  */
 export interface LeaveAdapter {
   capabilities: AdapterCapabilities;
+  /**
+   * 회사 근태 시스템과 연결돼 있는지(11/6 휴가 정확도). 거짓이면(운영의 "연결 안 함") 카드가 빈칸 대신
+   * "회사 근태 기록과 아직 연결되지 않아 남은 연차를 보여 드릴 수 없어요"를 보여요.
+   */
+  readonly connected: boolean;
   /** 연결이 안 됐거나 기록이 없으면 null이에요. 회사 메일(사번 대신)로 찾아요. */
   leaveOf(person: { idpSubject: string; email?: string }): Promise<LeaveRecord | null>;
   /**
