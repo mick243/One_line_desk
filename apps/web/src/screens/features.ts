@@ -1,11 +1,12 @@
-import type { AppDestination, Kind, ModuleKind, ModuleSwitch } from '@one-line-desk/shared';
+import type { AppDestination, Kind, ModuleKind, ModuleSwitch, RouterModule } from '@one-line-desk/shared';
 
 // 기능 목록 하나를 홈 목록과 기능 페이지가 같이 써요(10/26 화면 구조 변경).
 // 페이지 제목은 그 화면에서 묻는 질문 하나예요. 버튼은 누르면 무엇을 하는지 적어요(10/26 디자인 정리).
 // 예시 문장은 누르면 그 페이지 입력 칸에 채우기만 해요. 보내지는 않아요.
 
 export interface Feature {
-  module: ModuleKind;
+  /** 묻기 페이지가 있는 기능만이에요. 카페(cafeteria)는 따로 그리는 페이지예요(modules/cafe, ADR-29). */
+  module: RouterModule;
   page: AppDestination;
   title: string;
   /** 기능 페이지 큰 제목: 이 화면이 묻는 질문 하나 */
@@ -71,7 +72,13 @@ const LINK_COPY: Record<ModuleKind, Pick<Feature, 'short' | 'summary'>> = {
   rooms: { short: '회의실 예약은 그룹웨어에서 해요', summary: '지금은 회의실 예약을 그룹웨어에서 해요. 한 줄로 쓰면 그룹웨어로 가는 길을 알려 줘요.' },
   notices: { short: '공지는 그룹웨어 게시판에서 봐요', summary: '지금은 공지를 그룹웨어 게시판에서 봐요. 한 줄로 쓰면 게시판으로 가는 길을 알려 줘요.' },
   pantry: { short: '비품 요청은 그룹웨어에서 해요', summary: '지금은 비품 요청을 그룹웨어에서 해요. 한 줄로 쓰면 그룹웨어로 가는 길을 알려 줘요.' },
+  cafeteria: { short: '카페 주문은 안내 링크에서 해요', summary: '지금은 카페 주문을 앱에서 받지 않아요. 아래 링크에서 카페 안내를 봐요.' },
 };
+
+/** "링크만"일 때 그 기능 페이지 머리 글(카페 페이지도 써요). */
+export function linkSummary(module: ModuleKind): string {
+  return LINK_COPY[module].summary;
+}
 const ROOMS_READ_ONLY: Pick<Feature, 'short' | 'summary'> = {
   short: '빈 회의실을 찾아 줘요. 예약은 그룹웨어에서 해요',
   summary: '한 줄로 쓰면 빈 회의실과 장비 현황을 찾아요. 예약·대여는 그룹웨어에서 해요.',

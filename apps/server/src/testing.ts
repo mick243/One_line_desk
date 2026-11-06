@@ -12,6 +12,7 @@ export const MOCK = {
   facilities: 'mock|emp-003', // 가상 총무 서연, 총무팀, 2층
   hr: 'mock|emp-004', // 가상 인사 지후, 인사팀, 2층
   operator: 'mock|emp-005', // 가상 운영자 민준, 정보보안팀, 4층
+  barista: 'mock|emp-017', // 가상 바리스타 하준, 카페팀, 1층(역할 cafe, 11/6 ADR-29)
 } as const;
 
 export async function createTestApp(opts: Partial<Omit<BuildOptions, 'config'>> & { start?: number } = {}) {

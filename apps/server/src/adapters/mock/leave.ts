@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import type { AdapterCapabilities, LeaveAdapter, LeaveRecord, LeaveUse } from '../types';
 
-// 시연용 가상 인사 근태 기록이에요. 실제 사람이 아니에요. 가상 직원 16명(모의 직원·임시 IdP 같은 사람)의 입사일과 휴가 쓴 날만 있어요.
+// 시연용 가상 인사 근태 기록이에요. 실제 사람이 아니에요. 가상 직원 17명(모의 직원·임시 IdP 같은 사람)의 입사일과 휴가 쓴 날만 있어요.
 // 회사 메일로 찾아서 모의 로그인·임시 IdP 어느 쪽으로 들어와도 같은 기록을 봐요.
 
 const full = (...dates: string[]): LeaveUse[] => dates.map((date) => ({ date, kind: 'full' as const }));
@@ -54,6 +54,8 @@ const RECORDS: Record<string, LeaveRecord> = {
   'dain@corp.example': { hireDate: '2012-04-02', uses: full('2026-05-01', '2026-10-19', '2026-10-20') },
   'juwon@corp.example': { hireDate: '2005-06-07', uses: [...full('2026-06-08', '2026-08-24', '2026-08-25'), ...half('2026-09-30')] },
   'harin@corp.example': { hireDate: '2023-03-02', uses: [...full('2026-05-04')] },
+  // 사내 카페 바리스타(11/6, ADR-29)
+  'hajun@corp.example': { hireDate: '2024-09-02', uses: [...full('2026-06-12')] },
 };
 
 const LeaveFileSchema = z.record(
@@ -90,7 +92,7 @@ export class MockLeave implements LeaveAdapter {
   /** 시연 중 인사팀이 승인한 날(ADR-24). 이 서버 메모리에만 있고, 다시 뜨면 처음 자료로 돌아가요. */
   private readonly approved = new Map<string, LeaveUse[]>();
 
-  /** records가 없으면 앱에 든 가상 직원 16명 기록이에요. 회사별 시험은 파일에서 읽은 기록을 넘겨요. */
+  /** records가 없으면 앱에 든 가상 직원 17명 기록이에요. 회사별 시험은 파일에서 읽은 기록을 넘겨요. */
   constructor(private readonly records: Record<string, LeaveRecord> = RECORDS) {}
 
   async leaveOf(person: { idpSubject: string; email?: string }): Promise<LeaveRecord | null> {

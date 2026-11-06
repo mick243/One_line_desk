@@ -1,6 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import cookie from '@fastify/cookie';
-import { DEFAULT_OPS_SETTINGS, hasControlChar, LAUNCH_OPS_SETTINGS, LOCK_MESSAGE, type ModuleKind, recordCutoff } from '@one-line-desk/shared';
+import {
+  DEFAULT_OPS_SETTINGS,
+  hasControlChar,
+  LAUNCH_OPS_SETTINGS,
+  LOCK_MESSAGE,
+  type ModuleKind,
+  type OpsSettings,
+  recordCutoff,
+} from '@one-line-desk/shared';
 import { NON_HTML_CSP } from '@one-line-desk/shared/web-headers';
 import Fastify, { type FastifyReply, type FastifyServerOptions } from 'fastify';
 import { ZodError } from 'zod';
@@ -70,7 +78,13 @@ export async function buildApp(opts: BuildOptions) {
   const audit = new AuditLog(db);
   // 운영(production)은 출시 기본값(회의실 쓰기·MCP 끔)에서 시작해요. 개발·시연은 모두 켠 기본값이에요. 바꾼 값은 표에서 읽어요.
   // 운영은 출시 기본값이에요. 시연 배포는 DESK_DEMO_SWITCHES로 고른 스위치만 켜서 시작해요(배포마다 PGlite가 비워져서, 11/4).
-  const launch = { ...LAUNCH_OPS_SETTINGS, ...Object.fromEntries(config.demoSwitches.map((s) => [s, true])) };
+  // cafeteria는 깃발이 아니라 모듈 스위치라서 사내 카페 모듈을 '켬'으로 바꿔요(11/6, ADR-29).
+  const flags = config.demoSwitches.filter((s) => s !== 'cafeteria');
+  const launch: OpsSettings = {
+    ...LAUNCH_OPS_SETTINGS,
+    ...Object.fromEntries(flags.map((s) => [s, true])),
+    modules: { ...LAUNCH_OPS_SETTINGS.modules, ...(config.demoSwitches.includes('cafeteria') ? { cafeteria: 'on' as const } : {}) },
+  };
   const ops = new OpsSettingsStore(audit, db, config.production ? launch : DEFAULT_OPS_SETTINGS);
   await ops.load();
   const settings = () => ops.get();

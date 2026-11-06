@@ -6,4 +6,5 @@ export const KIND_TITLE: Record<Card['kind'], string> = {
   notices: '공지',
   rooms: '회의실',
   pantry: '탕비실',
+  cafeteria: '카페',
 };

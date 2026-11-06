@@ -1,4 +1,4 @@
-import { type AiEvalResponse, HOME_MOVE_LABEL, type HomeMoveTo, LOAN_KINDS, MODULES, personNameWords } from '@one-line-desk/shared';
+import { type AiEvalResponse, HOME_MOVE_LABEL, type HomeMoveTo, LOAN_KINDS, personNameWords, ROUTER_MODULES } from '@one-line-desk/shared';
 import type { AiGateway } from '../core/ai/gateway';
 import { interpretByRules as homeByRules, interpretHomeText } from '../core/home';
 import { classifyText } from '../core/router';
@@ -34,7 +34,7 @@ function byRules(c: GoldenCase): string {
     case 'room-chat':
       return chatKey(chatByRules(c.text, EVAL_NOW));
     case 'router':
-      return matchRules(c.text, MODULES)[0] ?? 'unknown';
+      return matchRules(c.text, ROUTER_MODULES)[0] ?? 'unknown';
   }
 }
 
@@ -49,7 +49,7 @@ async function byModel(gateway: AiGateway, c: GoldenCase): Promise<string> {
       return r.byModel ? chatKey(r) : 'error';
     }
     case 'router': {
-      const r = await classifyText(gateway, c.text, matchRules(c.text, MODULES), EVAL_NOW);
+      const r = await classifyText(gateway, c.text, matchRules(c.text, ROUTER_MODULES), EVAL_NOW);
       return r.byModel ? r.kind : 'error';
     }
   }

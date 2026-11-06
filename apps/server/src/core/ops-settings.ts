@@ -37,6 +37,8 @@ export const OPS_VALUE_RANGE: Record<keyof OpsValues, readonly [number, number]>
   sickNoteOverDays: [1, 30],
   // 0이면 회의 시작 때까지 골라요. 하루(1440분)까지 받아요.
   jointPickLeadMinutes: [0, 1440],
+  // 사내 카페 10분 픽업 칸마다 잔 수 상한(11/6, ADR-29)
+  cafeSlotCapacity: [1, 60],
 };
 
 export const NAVI_OFF_ONLY_STANDALONE = '문의함은 공지·회의실이 모두 꺼진 같이 채워요 단독 모드에서만 끌 수 있어요';

@@ -15,7 +15,7 @@ import { ActionHost } from './components/ActionHost';
 import { DemoBand } from './components/DemoBand';
 import { VersionBand } from './components/VersionBand';
 import { NotificationBell } from './components/NotificationBell';
-import { TabBar, type Tab, visibleTabs } from './components/TabBar';
+import { isBaristaMenu, TabBar, type Tab, visibleTabs } from './components/TabBar';
 import { webModules } from './modules/registry';
 import { FEATURES, featureFor, pageOfKind } from './screens/features';
 import { FeaturePage } from './screens/FeaturePage';
@@ -148,8 +148,11 @@ export function App() {
   }
   if (me === undefined || !config) return <div className='loading'>불러오는 중…</div>;
 
-  // 꺼진 모듈의 페이지에 있으면 홈으로 돌려요(ADR-12).
-  const tabs = visibleTabs(config.modules);
+  // 꺼진 모듈의 페이지에 있으면 홈으로 돌려요(ADR-12). 바리스타 메뉴(11/6, ADR-29)면 회의실·공지·카페 페이지도 홈으로 돌려요.
+  const roles = me?.roles ?? [];
+  const tabs = visibleTabs(config.modules, roles);
+  // 바리스타 메뉴: 등록된 바리스타이고 카페가 켜져 있으면 홈이 카페 판이에요.
+  const barista = isBaristaMenu(config.modules, roles);
   const current: View = tabs.includes(tabOf(view)) ? view : 'home';
   const initial = handoff?.to === current ? handoff.text : '';
   const autoRun = handoff?.to === current && handoff.auto;
@@ -172,6 +175,8 @@ export function App() {
     MyInquiries,
     InvitedMeetings,
     JointRequests,
+    CafePage,
+    CafeBoard,
   } = webModules;
   const isChartOwner = me?.roles.includes('chart-owner') ?? false;
   // 문의함(11/5 사용자 결정): 홈 채팅이 켜져 있으면 이 페이지는 받은 문의·내 문의를 먼저 보여요.
@@ -199,7 +204,8 @@ export function App() {
             {entry?.kind === 'link' && (
               <LinkEntry me={me} token={entry.token} InquirySheet={webModules.InquirySheet} LeaveRequestSheet={webModules.LeaveRequestSheet} />
             )}
-            {!entry && current === 'home' && <Home key={pageKey} me={me} switches={config} onOpen={go} initialText={initial} autoRun={autoRun} />}
+            {!entry && current === 'home' && barista && <CafeBoard />}
+            {!entry && current === 'home' && !barista && <Home key={pageKey} me={me} switches={config} onOpen={go} initialText={initial} autoRun={autoRun} />}
             {!entry && feature && current !== 'board' && (
               <FeaturePage
                 key={pageKey}
@@ -276,6 +282,7 @@ export function App() {
                 onMoveToNavi={(text) => go('navi', text, true)}
               />
             )}
+            {!entry && current === 'cafe' && <CafePage key={pageKey} />}
             {!entry && current === 'ops' && <OpsScreen me={me} />}
             {!entry && current === 'chart' && <ChartScreen me={me} />}
             {!entry && current === 'it-help' && <ItHelpScreen onBack={() => go('navi')} />}
@@ -286,7 +293,7 @@ export function App() {
               current === 'ai-eval' &&
               (me.roles.includes('operator') ? <AiEvalScreen onBack={() => go('mine')} /> : <p className='empty'>운영자만 볼 수 있어요.</p>)}
           </main>
-          <TabBar current={tabOf(current)} onChange={(t) => go(t)} modules={config.modules} />
+          <TabBar current={tabOf(current)} onChange={(t) => go(t)} modules={config.modules} roles={me.roles} />
         </ActionHost>
       )}
     </div>

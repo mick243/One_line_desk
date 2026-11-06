@@ -1,4 +1,15 @@
-import { type AskResponse, type Card, GRADE, KINDS, type Kind, kstDate, type ModuleKind, routableModules, type Slots } from '@one-line-desk/shared';
+import {
+  type AskResponse,
+  type Card,
+  GRADE,
+  KINDS,
+  type Kind,
+  kstDate,
+  type ModuleKind,
+  routableModules,
+  type RouterModule,
+  type Slots,
+} from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { AiGateway } from './ai/gateway';
 import type { AuditLog } from './audit';
@@ -58,10 +69,10 @@ export class Router {
     if (kind !== 'unknown' && !routable.includes(kind)) kind = 'unknown';
 
     const confident =
-      forcedKind !== undefined || ((rules.length === 0 || rules.includes(classified.kind as ModuleKind)) && !classified.ambiguous && kind !== 'unknown');
+      forcedKind !== undefined || ((rules.length === 0 || rules.includes(classified.kind as RouterModule)) && !classified.ambiguous && kind !== 'unknown');
 
     if (!confident) {
-      const chips = [...new Set<Kind>([classified.kind, ...rules])].filter((k): k is ModuleKind => k !== 'unknown' && routable.includes(k)).slice(0, 3);
+      const chips = [...new Set<Kind>([classified.kind, ...rules])].filter((k): k is RouterModule => k !== 'unknown' && routable.includes(k)).slice(0, 3);
       if (chips.length > 0) {
         await this.audit.record({ pseudonymId: user.pseudonymId, channel: 'ask', module: classified.kind, result: 'reask' });
         return { kind: classified.kind, confidence: 'low', chips, cards: [] };
@@ -69,7 +80,7 @@ export class Router {
     }
 
     // 모름·꺼진 종류는 담당 안내(읽기 전용)로 가요. 단독 모드에서 navi도 꺼져 있으면 안내 카드만 줘요.
-    const target: ModuleKind | null = kind === 'unknown' ? (routable.includes('navi') ? 'navi' : null) : kind;
+    const target: RouterModule | null = kind === 'unknown' ? (routable.includes('navi') ? 'navi' : null) : kind;
     if (!target) {
       await this.audit.record({ pseudonymId: user.pseudonymId, channel: 'ask', module: 'unknown', result: 'not-found' });
       return { kind: 'unknown', confidence: 'high', chips: [], cards: [standaloneCard()] };
@@ -93,7 +104,7 @@ export class Router {
     return { kind: target, confidence: 'high', chips: [], cards };
   }
 
-  private async classify(text: string, rules: ModuleKind[]): Promise<Classification & { byModel: boolean }> {
+  private async classify(text: string, rules: RouterModule[]): Promise<Classification & { byModel: boolean }> {
     return classifyText(this.gateway, text, rules, this.now());
   }
 }
@@ -102,7 +113,7 @@ export class Router {
  * 앞문 분류(게이트웨이 한 번). 정답률 표(scripts/eval-ai.ts)도 같은 함수를 불러요.
  * rules는 matchRules가 고른 종류예요. 모델이 없거나 거절하면 rules[0](없으면 unknown)과 규칙 슬롯이에요.
  */
-export async function classifyText(gateway: AiGateway, text: string, rules: ModuleKind[], now: number): Promise<Classification & { byModel: boolean }> {
+export async function classifyText(gateway: AiGateway, text: string, rules: RouterModule[], now: number): Promise<Classification & { byModel: boolean }> {
   const fallback = (): Classification => {
     const slots = parseSlots(text, now);
     return {
@@ -164,7 +175,7 @@ export function linkCard(module: ModuleKind, href: string): Card {
   };
 }
 
-const MOVE: Record<ModuleKind, { headline: string; button: string }> = {
+const MOVE: Record<RouterModule, { headline: string; button: string }> = {
   rooms: { headline: '회의실 일 같아요', button: '회의실에서 찾기' },
   pantry: { headline: '탕비실 요청 같아요', button: '같이 채워요에 올리기' },
   notices: { headline: '공지를 찾는 말 같아요', button: '공지에서 찾기' },
@@ -172,8 +183,8 @@ const MOVE: Record<ModuleKind, { headline: string; button: string }> = {
 };
 
 /** 다른 기능 페이지로 같은 문장을 옮기는 카드. 문장은 앱 메모리로만 넘겨요(R13). 규칙이 고른 거라 "AI 정리"가 아니에요. */
-export function moveCard(kinds: ModuleKind[]): Card {
-  const [first, ...rest] = kinds as [ModuleKind, ...ModuleKind[]];
+export function moveCard(kinds: RouterModule[]): Card {
+  const [first, ...rest] = kinds as [RouterModule, ...RouterModule[]];
   return {
     id: `move-${kinds.join('-')}`,
     kind: first,

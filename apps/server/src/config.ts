@@ -9,8 +9,11 @@ if (process.env.NODE_ENV !== 'production' && existsSync(rootEnv)) process.loadEn
 /** 운영에서 서버가 내보낼 웹 화면 파일(npm run build 결과) 기본 위치 */
 export const DEFAULT_WEB_DIST = fileURLToPath(new URL('../../web/dist', import.meta.url));
 
-/** 시연 배포에서 처음부터 켜 둘 수 있는 운영 스위치(DESK_DEMO_SWITCHES, 11/4). 회의실 쓰기·채팅 자동 실행·같은 팀 일정만이에요. */
-export const DEMO_SWITCHES = ['roomsWrite', 'autoActions', 'teamSchedule'] as const;
+/**
+ * 시연 배포에서 처음부터 켜 둘 수 있는 운영 스위치(DESK_DEMO_SWITCHES, 11/4). 회의실 쓰기·채팅 자동 실행·같은 팀 일정만이에요.
+ * cafeteria(11/6, ADR-29)는 깃발이 아니라 모듈 스위치예요. 넣으면 사내 카페 모듈이 '켬'으로 시작해요(출시 기본은 끔).
+ */
+export const DEMO_SWITCHES = ['roomsWrite', 'autoActions', 'teamSchedule', 'cafeteria'] as const;
 export type DemoSwitch = (typeof DEMO_SWITCHES)[number];
 
 export interface ServerConfig {

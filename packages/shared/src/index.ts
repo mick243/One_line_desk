@@ -18,5 +18,6 @@ export * from './api/pantry-order';
 export * from './api/home';
 export * from './api/read-note';
 export * from './api/ai-eval';
+export * from './api/cafe';
 export * from './rooms-chat';
 export * from './retention';
