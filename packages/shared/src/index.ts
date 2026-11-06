@@ -20,5 +20,6 @@ export * from './api/read-note';
 export * from './api/ai-eval';
 export * from './api/cafe';
 export * from './api/demo-groupware';
+export * from './api/demo-groupware-board';
 export * from './rooms-chat';
 export * from './retention';

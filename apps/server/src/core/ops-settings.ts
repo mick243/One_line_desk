@@ -19,7 +19,7 @@ import { DeskError } from './errors';
 
 export type OpsValues = OpsSettings['values'];
 /** 운영 설정의 켜고 끄는 값 */
-export type OpsFlag = 'roomsWrite' | 'mcp' | 'autoActions' | 'homeAsk' | 'teamSchedule';
+export type OpsFlag = 'roomsWrite' | 'mcp' | 'autoActions' | 'homeAsk' | 'teamSchedule' | 'noticeAutoSend';
 
 interface Overrides {
   modules?: Partial<Record<ModuleKind, ModuleSwitch>>;
@@ -29,6 +29,8 @@ interface Overrides {
   autoActions?: boolean;
   homeAsk?: boolean;
   teamSchedule?: boolean;
+  /** 새 공지 알림 자동 보내기(11/6, 기본 끔) */
+  noticeAutoSend?: boolean;
   links?: Partial<Record<OpsLinkKey, string>>;
   cafeAccount?: string;
   values?: Partial<OpsValues>;
@@ -69,6 +71,7 @@ function merge(base: OpsSettings, o: Overrides): OpsSettings {
     autoActions: o.autoActions ?? base.autoActions,
     homeAsk: o.homeAsk ?? base.homeAsk,
     teamSchedule: o.teamSchedule ?? base.teamSchedule,
+    noticeAutoSend: o.noticeAutoSend ?? base.noticeAutoSend,
     links: { ...base.links, ...o.links },
     cafeAccount: o.cafeAccount ?? base.cafeAccount,
     values: { ...base.values, ...o.values },

@@ -39,6 +39,7 @@ import { registerAskRoutes } from './routes/ask';
 import { registerAuthRoutes } from './routes/auth';
 import { registerHomeRoutes } from './routes/home';
 import { registerDemoGroupwareRoutes } from './routes/demo-groupware';
+import { registerDemoBoardRoutes } from './routes/demo-groupware-board';
 import { purgeDemoInbox, registerDemoInboxRoutes } from './routes/demo-inbox';
 import { registerPeopleRoutes } from './routes/people';
 import { registerAiEvalRoutes } from './routes/ai-eval';
@@ -206,9 +207,11 @@ export async function buildApp(opts: BuildOptions) {
   registerDemoInboxRoutes(app, ctx);
   // 시연 전용 가상 그룹웨어 전자결재(11/6 휴가 A안). 시연 설정·가상 근태일 때만 경로가 붙고, 운영은 null(경로 없음)이에요.
   const demoGroupware = registerDemoGroupwareRoutes(app, ctx);
+  // 시연 전용 가상 그룹웨어 게시판(11/6 새 공지 알림 대상). 시연 설정일 때만 경로가 붙고, 운영은 null(경로 없음)이에요.
+  const demoBoard = registerDemoBoardRoutes(app, ctx);
   for (const module of modules) module.register?.(app);
   // 가상 그룹웨어 화면 주소(/demo/groupware/*)는 시연일 때만 index.html로 답해요(운영은 404).
-  if (opts.webDir) registerWebFiles(app, opts.webDir, { demo: demoGroupware !== null });
+  if (opts.webDir) registerWebFiles(app, opts.webDir, { demo: demoGroupware !== null || demoBoard !== null });
 
   if (opts.seed ?? config.seedDemo) {
     for (const module of modules) await module.seed?.();
@@ -229,6 +232,8 @@ export async function buildApp(opts: BuildOptions) {
       ['demo-inbox', () => purgeDemoInbox(ctx)],
       // 가상 그룹웨어 문서(서버 메모리, 시연만): 만든 지 7일 지난 것
       ['demo-groupware', async () => demoGroupware?.purge()],
+      // 가상 그룹웨어 게시 글(서버 메모리, 시연만): 만든 지 7일 지난 것
+      ['demo-board', async () => demoBoard?.purge()],
       ['access-log', () => ctx.access.purge()],
       // 메모리 정리: 8시간 최대 수명이 지난 세션과 지난 횟수 창이에요.
       [

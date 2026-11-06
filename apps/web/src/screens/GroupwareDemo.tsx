@@ -15,6 +15,7 @@ import {
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiFailure, apiRequest } from '../api';
 import { newRequestId } from '../net';
+import { GroupwareBoard } from './GroupwareBoard';
 import './groupware-demo.css';
 
 // 시연 전용 가상 그룹웨어 전자결재(11/6 사용자 결정, 휴가 A안). 한 줄 데스크가 아니라 "회사 그룹웨어" 자리에 서는 흉내예요.
@@ -25,7 +26,8 @@ import './groupware-demo.css';
 // - 사유는 병가·공가·경조면 꼭, 연차는 골라서 적어요. 사유는 가상 그룹웨어 메모리에만 있고 결재자·기안자만 봐요(한 줄 데스크로 가지 않아요).
 // - 브라우저 저장소에 아무것도 넣지 않아요(R13). 문서는 서버 메모리에만 있어요.
 
-export type GroupwarePage = 'leave' | 'inbox';
+/** 휴가 신청서 · 결재함 · 게시판(11/6 새 공지 알림 대상 시연, GroupwareBoard.tsx) */
+export type GroupwarePage = 'leave' | 'inbox' | 'board';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const HALF_LABEL: Record<LeaveDayChoice, string> = { full: '하루', am: '오전 반차', pm: '오후 반차' };
@@ -83,11 +85,18 @@ export function GroupwareDemo({ page: first, onExit }: { page: GroupwarePage; on
           <button type='button' aria-current={page === 'inbox' ? 'page' : undefined} onClick={() => go('inbox')}>
             결재함
           </button>
+          <button type='button' aria-current={page === 'board' ? 'page' : undefined} onClick={() => go('board')}>
+            게시판
+          </button>
         </nav>
       </header>
-      <main className='gw-main'>{page === 'leave' ? <LeaveForm onDone={() => go('inbox')} /> : <Inbox />}</main>
+      <main className='gw-main'>{page === 'leave' ? <LeaveForm onDone={() => go('inbox')} /> : page === 'board' ? <GroupwareBoard /> : <Inbox />}</main>
       <footer className='gw-foot'>
-        <p>한 줄 데스크는 이 문서를 읽지 않아요. 최종 승인돼 근태 기록에 들어간 휴가만 한 줄 데스크에 보여요.</p>
+        <p>
+          {page === 'board'
+            ? '한 줄 데스크는 이 게시판 공지를 공지 사본으로 가져가요. 제목·게시일·원문 링크와 찾기 색인만 저장하고, 본문은 저장하지 않아요.'
+            : '한 줄 데스크는 이 문서를 읽지 않아요. 최종 승인돼 근태 기록에 들어간 휴가만 한 줄 데스크에 보여요.'}
+        </p>
         <button type='button' className='gw-button' onClick={onExit}>
           한 줄 데스크로 돌아가기
         </button>

@@ -41,9 +41,12 @@ describe('vercel.json(웹 화면만 Vercel에 올린 시연)', () => {
   it('index.html로 대신 답하는 주소는 서버의 화면 주소뿐이에요(모든 주소 받기 없음). Vercel은 시연이라 가상 그룹웨어 화면도 넘겨요(11/6)', () => {
     const screens = vercel.rewrites.filter((r) => r.destination === '/index.html').map((r) => r.source);
     expect(['/', ...screens].sort()).toEqual([...SCREEN_PATHS, ...DEMO_SCREEN_PATHS].sort());
+    // 11/6 새 공지 알림 대상: 가상 그룹웨어 게시판 화면도 시연 화면 주소예요.
+    expect(DEMO_SCREEN_PATHS).toContain('/demo/groupware/board');
     // 가상 그룹웨어 화면 주소에도 화면 보안 머리가 붙어요(API가 아니에요). API(/api/demo/groupware/*)는 /api 규칙으로 시연 서버로 가요.
     for (const path of DEMO_SCREEN_PATHS) expect(htmlPattern.test(path), path).toBe(true);
     expect(apiPattern.test('/api/demo/groupware/inbox')).toBe(true);
+    expect(apiPattern.test('/api/demo/groupware/board/posts')).toBe(true);
   });
 
   it('API는 /api만 시연 서버로 넘기고, 운영 설정(/api/ops)은 넘기지 않아요', () => {

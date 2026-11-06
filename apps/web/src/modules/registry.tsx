@@ -1,6 +1,7 @@
 import { lazyPart } from '../components/LazyPart';
 import { ConnectedApps } from './mcp';
 import { InquiryInbox, InquirySheet, MyAway, MyInquiries } from './navi';
+import { NewNotices } from './notices';
 import { BoardScreen, MyRequests, pantryCardRenderers } from './pantry';
 import {
   DemoInbox,
@@ -30,6 +31,8 @@ const LinkEntry = lazyPart(() => import('./mcp/entry').then((m) => m.LinkEntry))
 const CafePage = lazyPart(() => import('./cafe/CafePage').then((m) => m.CafePage));
 const CafeBoard = lazyPart(() => import('./cafe/CafeBoard').then((m) => m.CafeBoard));
 const CafeSettle = lazyPart(() => import('./cafe/CafeSettle').then((m) => m.CafeSettle));
+// 새 공지 알림 대상 확인(11/6, 총무만): 처음 열 때 불러요.
+const NoticeAudienceReview = lazyPart(() => import('./notices/AudienceReview').then((m) => m.NoticeAudienceReview));
 
 // 모듈 화면 부품 목록. 공통 화면은 여기서만 꺼내 써요.
 export const webModules: WebModules = {
@@ -60,6 +63,8 @@ export const webModules: WebModules = {
   CafePage,
   CafeBoard,
   CafeSettle,
+  NewNotices,
+  NoticeAudienceReview,
 };
 
 export const cardRenderers = webModules.cardRenderers;

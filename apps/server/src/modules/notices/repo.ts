@@ -16,15 +16,13 @@ export async function countNotices(q: Queryable): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
-export async function insertNoticeIfAbsent(q: Queryable, n: IndexedNotice): Promise<void> {
-  await q.query('insert into notices (id, board, title, posted_on, url, terms) values ($1, $2, $3, $4::date, $5, $6::text[]) on conflict (id) do nothing', [
-    n.id,
-    n.board,
-    n.title,
-    n.postedOn,
-    n.url,
-    n.terms,
-  ]);
+/** 없을 때만 넣어요. 새로 넣었으면 참이에요(사본 갱신이 새 공지를 알아채는 곳, 11/6). */
+export async function insertNoticeIfAbsent(q: Queryable, n: IndexedNotice): Promise<boolean> {
+  const { rows } = await q.query<{ id: string }>(
+    'insert into notices (id, board, title, posted_on, url, terms) values ($1, $2, $3, $4::date, $5, $6::text[]) on conflict (id) do nothing returning id',
+    [n.id, n.board, n.title, n.postedOn, n.url, n.terms],
+  );
+  return rows.length > 0;
 }
 
 /** 허용 게시판 안에서 조각이 하나라도 겹치는 공지만 가져와요. */

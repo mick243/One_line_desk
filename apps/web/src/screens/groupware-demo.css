@@ -329,3 +329,48 @@
   background: var(--gw-bg);
   white-space: pre-wrap;
 }
+
+/* 가상 게시판(11/6 새 공지 알림 대상 시연): 공지 목록. 누르면 본문을 펼쳐요. */
+.gw-board-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gw-post {
+  border-top: 1px solid var(--gw-line);
+}
+
+.gw-post-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  width: 100%;
+  padding: 10px 2px;
+  border: 0;
+  background: none;
+  color: var(--gw-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gw-post-head small {
+  flex-basis: 100%;
+  color: var(--gw-quiet);
+}
+
+.gw-post.open .gw-post-head strong {
+  color: var(--gw-accent);
+}
+
+.gw-post-body {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--gw-accent);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

@@ -2545,3 +2545,61 @@ select {
   font-size: 1rem;
   font-weight: 700;
 }
+
+/* 공지 탭(11/6 새 공지 알림 대상): 새 공지 목록과 총무 알림 대상 확인 */
+.new-notice-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.new-notice-list li:first-child {
+  border-top: 0;
+}
+.new-notice-list a {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.new-notice-list small {
+  color: var(--text-quiet);
+}
+.notice-for-me {
+  align-self: flex-start;
+  border-radius: 6px;
+  padding: 1px 6px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.audience-review {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.audience-chips {
+  flex-wrap: wrap;
+}
+.audience-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.audience-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.audience-group .chips {
+  flex-wrap: wrap;
+}
+.audience-done li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+}
+.audience-done small {
+  color: var(--text-quiet);
+}

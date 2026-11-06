@@ -30,6 +30,11 @@ export interface OpsSettings {
    * 끄면 마이 페이지의 "자리비움 알리기"도 닫혀요(보는 곳이 팀 일정뿐이라서요).
    */
   teamSchedule: boolean;
+  /**
+   * 새 공지 알림 자동 보내기(11/6, ADR-09 개정). 켜면 총무 확인 없이 AI가 제안한 대상자에게 바로 알림이 가요.
+   * 대상 제안의 정확도를 아직 재지 않아서 개발·시연·출시 모두 기본 끔이에요. 끄면 총무가 [알리기]를 눌러야 가요.
+   */
+  noticeAutoSend: boolean;
   /** 이번 2주는 고정이에요(M6). */
   noticeSummary: false;
   s5Mode: 'list-only';
@@ -85,6 +90,7 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
   autoActions: true,
   homeAsk: true,
   teamSchedule: true,
+  noticeAutoSend: false,
   noticeSummary: false,
   s5Mode: 'list-only',
   links: {

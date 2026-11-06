@@ -35,12 +35,13 @@ const GroupwareDemo = lazyPart(() => import('./screens/GroupwareDemo').then((m) 
 
 /**
  * 바깥에서 들어오는 길(M3·M4): 연결 동의 시트, 앱 확인 링크. 로그인 뒤에 열려요.
- * 11/6: 시연 전용 가상 그룹웨어(/demo/groupware/leave·inbox)도 여기서 열어요. 서버가 시연일 때만 그 주소와 API를 줘요.
+ * 11/6: 시연 전용 가상 그룹웨어(/demo/groupware/leave·inbox·board)도 여기서 열어요. 서버가 시연일 때만 그 주소와 API를 줘요.
  */
 function entryFromPath(): { kind: 'consent' } | { kind: 'link'; token: string } | { kind: 'groupware'; page: GroupwarePage } | null {
   const path = window.location.pathname;
   if (path.startsWith('/oauth/consent')) return { kind: 'consent' };
-  if (path === '/demo/groupware/leave' || path === '/demo/groupware/inbox') return { kind: 'groupware', page: path.endsWith('leave') ? 'leave' : 'inbox' };
+  const gw = path.match(/^\/demo\/groupware\/(leave|inbox|board)$/);
+  if (gw) return { kind: 'groupware', page: gw[1] as GroupwarePage };
   const link = path.match(/^\/r\/([A-Za-z0-9_.-]+)$/);
   return link ? { kind: 'link', token: link[1]! } : null;
 }
@@ -188,6 +189,8 @@ export function App() {
     CafePage,
     CafeBoard,
     CafeSettle,
+    NewNotices,
+    NoticeAudienceReview,
   } = webModules;
   const isChartOwner = me?.roles.includes('chart-owner') ?? false;
   // 문의함(11/5 사용자 결정): 홈 채팅이 켜져 있으면 이 페이지는 받은 문의·내 문의를 먼저 보여요.
@@ -232,12 +235,18 @@ export function App() {
                 autoRun={autoRun}
                 onMove={move}
                 // 문의함(11/5): 홈 채팅이 켜져 있으면 받은 문의 → 내 문의 → 휴가 신청을 먼저 두고, 받을 팀 찾기는 아래로 내려요.
+                // 공지(11/6 새 공지 알림 대상): 총무는 알림 대상 확인을, 누구나 새 공지(나에게 알림이 간 공지 먼저)를 찾기 칸 위에서 봐요.
                 before={
                   inbox ? (
                     <>
                       <InquiryInbox />
                       <MyInquiries />
                       <LeaveStart variant='card' inApp={config.leaveInApp !== false} />
+                    </>
+                  ) : current === 'notices' && config.modules.notices === 'on' ? (
+                    <>
+                      {me.roles.includes('facilities') && <NoticeAudienceReview />}
+                      <NewNotices />
                     </>
                   ) : undefined
                 }
