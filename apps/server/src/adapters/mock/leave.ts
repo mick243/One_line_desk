@@ -95,6 +95,13 @@ const LeaveFileSchema = z.record(
         remaining: z.number().min(-100).max(100),
       })
       .optional(),
+    // 사람별 근무 요일(11/6 주말 근무자): 0 일요일 … 6 토요일, 겹치지 않게 1~7개
+    workWeekdays: z
+      .array(z.number().int().min(0).max(6))
+      .min(1)
+      .max(7)
+      .refine((days) => new Set(days).size === days.length, '근무 요일이 겹쳐요')
+      .optional(),
   }),
 );
 
@@ -102,8 +109,8 @@ const LeaveFileSchema = z.record(
  * 회사마다 따로 둔 가상 근태 기록 파일(11/5, 회사별 분리 시험). 시연·개발에서 DESK_MOCK_LEAVE_FILE로만 읽어요.
  * 다른 회사(임시 IdP의 다른 영역)를 띄워 볼 때 그 회사 가상 직원의 입사일·휴가 쓴 날을 저장소 밖 파일에 둬요.
  * 모양: { "메일": { "hireDate": "YYYY-MM-DD", "uses": [{ "date": "YYYY-MM-DD", "kind": "full" | "half", "type": "annual" }],
- *         "balance"?: { "periodStart", "periodEnd", "remaining", "granted"?, "used"?, "basis"? } } }
- * 종류(type)가 없는 쓰기는 연차로 세지 않아요(11/6).
+ *         "balance"?: { "periodStart", "periodEnd", "remaining", "granted"?, "used"?, "basis"? }, "workWeekdays"?: [2, 3, 4, 5, 6] } }
+ * 종류(type)가 없는 쓰기는 연차로 세지 않아요(11/6). workWeekdays는 주말 근무자의 근무 요일(0 일요일 … 6 토요일, 11/6)이에요.
  */
 export function loadLeaveRecords(path: string): Record<string, LeaveRecord> {
   return leaveRecordsFromJson(readFileSync(path, 'utf8'));
@@ -142,6 +149,7 @@ export class MockLeave implements LeaveAdapter {
       hireDate: record.hireDate,
       uses: [...record.uses, ...approved].map((u) => ({ ...u })),
       ...(record.balance ? { balance: withApproved(record.balance, approved) } : {}),
+      ...(record.workWeekdays ? { workWeekdays: [...record.workWeekdays] } : {}),
     };
   }
 

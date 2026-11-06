@@ -33,7 +33,7 @@ import type { AppContext } from '../../context';
 import { DeskError } from '../../core/errors';
 import type { InquiryService } from './inquiries';
 import type { ItHelpService } from './it-help';
-import { findLeaveRequestRow, leaveCheckForLink, leaveLinkAction } from './leave';
+import { findLeaveRequestRow, leaveCheckForLink, leaveLinkAction, myLeaveCalendar } from './leave';
 import { checkLeaveLink } from './mcp-read';
 import * as repo from './repo';
 import type { NaviService } from './service';
@@ -115,9 +115,11 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
     async (req): Promise<LeaveCheckResponse> => {
       assertNotOff();
       if (ctx.config.leaveInApp) throw new DeskError('not-found', 404, '앱 안 휴가 결재가 켜져 있으면 휴가 신청 양식에서 날을 골라요');
-      const checked = checkLeaveLink(req.body, kstDate(ctx.now()), ctx.ops.get().companyHolidays);
+      // 11/6 근무 달력: 본인 근태가 준 근무 요일(주말 근무자)로 검사해요. 기록은 이 요청 메모리에만 있어요.
+      const mine = await myLeaveCalendar(ctx, req.deskUser!);
+      const checked = checkLeaveLink(req.body, kstDate(ctx.now()), mine.calendar);
       if (!checked.ok) throw new DeskError('bad-request', 400, checked.message);
-      return { card: await leaveCheckForLink(ctx, req.deskUser!, checked.days, req.body.type) };
+      return { card: await leaveCheckForLink(ctx, req.deskUser!, checked.days, req.body.type, { record: mine.record }) };
     },
   );
 

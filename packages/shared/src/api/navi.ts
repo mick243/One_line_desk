@@ -1,5 +1,6 @@
 import type { Card, CardAction } from '../cards';
 import { RECORD_KEEP_DAYS } from '../retention';
+import { dayLabelWithYear } from '../time';
 
 // 받는 곳을 바꿔 보낸 기록의 이유(11/2 ADR-26, 옛 "틀렸어요" 자리). 수정 제안함 기록 묶음은 이 둘만 세요.
 // DB check 제약(110_navi.sql)에는 옛 값 둘(content-changed·wrong-kind)이 남아 있지만 이제 쓰지 않아요(11/3).
@@ -283,19 +284,18 @@ export interface LeaveRequestBalance {
   /** 이 요청 중 이번 기간에 드는 일수 */
   days: number;
   /**
-   * 요청한 날이 다음 연차 기간(입사일 기준)에 들면 그 기간 계산이에요. 이번 기간에서는 빠지지 않아요.
+   * 요청한 날이 다음 연차 기간에 들면 그 기간 첫날과 그 기간 날 수예요. 이번 기간에서는 빠지지 않아요.
    * (10/30: "남은 7.5일 → 7.5일"처럼 이유 없이 그대로 보이던 문제)
+   * 11/6 사용자 결정: 숫자는 일수가 정해진 이번 기간 것만 보여서, 다음 기간의 남은 연차·승인 뒤 숫자는 없어요(leaveNextPeriodText 한 문장).
    */
   next?: LeaveNextPeriod;
 }
 
-/** 다음 연차 기간에서 빠지는 몫 */
+/** 다음 연차 기간에 드는 몫(숫자 없이 첫날과 날 수만) */
 interface LeaveNextPeriod {
   /** 다음 연차 기간 첫날 */
   periodStart: string;
-  /** 다음 기간에 생기는 연차에서 이미 잡힌 날을 뺀 값 */
-  remaining: number;
-  after: number;
+  /** 이 요청 중 다음 기간에 드는 일수 */
   days: number;
 }
 
@@ -335,6 +335,8 @@ export interface InquiryItem {
     days: LeaveDay[];
     total: number;
     balance?: LeaveRequestBalance | null;
+    /** balance가 null인 까닭이 5인 미만 사업장(운영 값 smallWorkplace)이라 앱이 연차를 세지 않아서인지(11/6) */
+    smallWorkplace?: true;
     sick?: SickLeaveUsage | null;
     sickNote?: true;
   };
@@ -415,6 +417,19 @@ export const LEAVE_HOURS_TEXT = '회사 규정에 따라 시간 단위 연차가
 export const LEAVE_IN_APP_DEV_TEXT = '앱 안 휴가 결재는 개발·시험 전용이에요. 운영에서는 그룹웨어에서 신청해요';
 /** 공휴일·회사 휴일이라 뺀 날 */
 export const LEAVE_HOLIDAY_SKIPPED_TEXT = '공휴일·회사 휴일이라 연차로 세지 않았어요';
+/**
+ * 5인 미만 사업장(운영 값 smallWorkplace, 11/6 사용자 결정)이고 근태 숫자가 없을 때 남은 연차 자리. 앱은 법정 연차를 세지 않아요.
+ * 근태 시스템이 숫자를 주면 그 숫자를 평소처럼 보여요.
+ */
+export const LEAVE_SMALL_WORKPLACE_TEXT =
+  '5인 미만 사업장은 법정 연차(근로기준법 제60조)가 적용되지 않아 앱이 세지 않아요. 회사가 정한 연차는 근태 시스템 숫자가 있을 때만 보여 드려요';
+
+/**
+ * 다음 연차 기간 줄(11/6 사용자 결정): 숫자는 일수가 정해진 이번 연차 기간 것만 보여요. 다음 기간 날은 근태 숫자든 앱 계산이든
+ * 숫자 없이 이 한 문장이에요. "2027년 3월 2일(화)부터는 새 연차 기간이에요. 그 날은 이번 기간 연차에서 빼지 않았어요"
+ */
+export const leaveNextPeriodText = (periodStart: string, today: string): string =>
+  `${dayLabelWithYear(periodStart, today)}부터는 새 연차 기간이에요. 그 날은 이번 기간 연차에서 빼지 않았어요`;
 /** 제안하는 날 수 */
 export const LEAVE_FREE_DAY_MAX = 2;
 

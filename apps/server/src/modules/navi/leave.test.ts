@@ -229,7 +229,7 @@ describe('담당 찾기 답에 붙는 내 남은 연차(ADR-18)', () => {
     expect(field(nov3, '연차 1일을 더 쓰면')).toBe('7.5일 남아요 (11월 3일(화)까지 1일이 더 생겨요)');
 
     const dec = myLeave(await askAs(t, MOCK.dev, '12월에 3일 휴가 내면 남는 거 있어?'));
-    expect(field(dec, '다음 연차 기간')).toBe('2026-12-01부터는 다음 연차 기간이라 이번 기간에서 빼지 않았어요');
+    expect(field(dec, '다음 연차 기간')).toBe('12월 1일(화)부터는 새 연차 기간이에요. 그 날은 이번 기간 연차에서 빼지 않았어요');
     expect(dec!.fields.some((f) => f.name.endsWith('더 쓰면'))).toBe(false);
 
     const span = myLeave(await askAs(t, MOCK.dev, '11월 30일부터 12월 2일까지 휴가 쓰면'));

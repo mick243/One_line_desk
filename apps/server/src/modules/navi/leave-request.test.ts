@@ -257,12 +257,14 @@ describe('공가 요청(11/1)', () => {
 });
 
 describe('연차 기간별 계산(10/30 버그: 다음 기간 날인데 "7.5일 → 7.5일"로만 보였어요)', () => {
-  it('다음 연차 기간 날은 이번 기간 연차에서 빼지 않고, 다음 기간 연차에서 따로 계산해요. 승인하면 다음 기간에서 빠져요', async () => {
-    // 도윤: 2025-12-01 입사라 이번 연차 기간은 2026-11-30까지예요. 2027년 2월은 다음 기간(근속 1년, 15일)이에요.
+  it('다음 연차 기간 날은 이번 기간 연차에서 빼지 않고, 숫자 없이 다음 기간 첫날·날 수만 줘요(11/6 사용자 결정)', async () => {
+    // 도윤: 2025-12-01 입사라 이번 연차 기간은 2026-11-30까지예요. 2027년 2월은 다음 기간이에요.
     // 11/6: 2027-02-08은 설 연휴라 쉬는 날이에요(받지 않아요). 그래서 2월 10일로 골라요.
+    // 11/6 사용자 결정: 숫자는 일수가 정해진 이번 기간 것만 보여요. 다음 기간 남은 연차·승인 뒤 숫자는 응답에 없어요.
     const { doyun, jihu } = await setup();
     const action = (await leaveCard(doyun, '내 연차 몇 개 남았어?')).actions.secondary.find((a) => a.type === 'leave-request');
-    expect(action).toMatchObject({ periodEnd: '2026-11-30', next: { periodStart: '2026-12-01', remaining: 15 } });
+    expect(action).toMatchObject({ periodEnd: '2026-11-30', next: { periodStart: '2026-12-01' } });
+    expect((action as { next: Record<string, unknown> }).next).toEqual({ periodStart: '2026-12-01' });
 
     await sendLeave(doyun, [
       { date: '2027-02-04', kind: 'full' },
@@ -270,22 +272,19 @@ describe('연차 기간별 계산(10/30 버그: 다음 기간 날인데 "7.5일 
     ]);
     const [first] = await inbox(jihu);
     const now = first!.leave!.balance!;
-    expect(now).toMatchObject({
-      periodEnd: '2026-11-30',
-      days: 0,
-      after: now.remaining,
-      next: { periodStart: '2026-12-01', remaining: 15, after: 13, days: 2 },
-    });
+    expect(now).toMatchObject({ periodEnd: '2026-11-30', days: 0, after: now.remaining });
+    expect(now.next).toEqual({ periodStart: '2026-12-01', days: 2 });
 
     expect((await jihu.call('POST', `/api/navi/inquiries/${first!.id}/decision`, { decision: 'approved' })).status).toBe(200);
-    // 이번 기간과 다음 기간에 걸친 새 요청: 이번 기간 하루, 다음 기간 하루. 다음 기간은 승인된 2일이 이미 빠져 있어요.
+    // 이번 기간과 다음 기간에 걸친 새 요청: 이번 기간 하루, 다음 기간 반나절.
     await sendLeave(doyun, [
       { date: '2026-11-27', kind: 'full' },
       { date: '2027-03-02', kind: 'half', half: 'am' },
     ]);
     const second = (await inbox(jihu)).find((i) => i.state === 'new')!.leave!.balance!;
     // 11/6 휴가 정확도: 입사 1년 미만은 고른 날(11/27)까지 생기는 연차로 세요. 11월 1일에 1일이 더 생겨서 하루를 써도 지금과 같아요.
-    expect(second).toMatchObject({ remaining: now.remaining, after: now.remaining + 1 - 1, days: 1, next: { remaining: 13, after: 12.5, days: 0.5 } });
+    expect(second).toMatchObject({ remaining: now.remaining, after: now.remaining + 1 - 1, days: 1 });
+    expect(second.next).toEqual({ periodStart: '2026-12-01', days: 0.5 });
   });
 });
 

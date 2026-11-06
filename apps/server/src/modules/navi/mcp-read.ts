@@ -3,7 +3,7 @@ import {
   checkInput,
   dayLabel,
   INQUIRY_STATE_LABEL,
-  isWeekend,
+  isWorkWeekday,
   kstDate,
   LEAVE_REQUEST_MAX_DAYS,
   type LeaveKind,
@@ -13,7 +13,10 @@ import {
   offDayName,
   NAVI_ROW_ID_PATTERN,
   recordCutoff,
+  restDayWord,
   SICK_LEAVE_PAST_DAYS,
+  type WorkCalendar,
+  workCalendar,
 } from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { AppContext } from '../../context';
@@ -24,6 +27,7 @@ import { GENERAL_TASK } from './cards';
 import { GENERAL_DESK } from './fixtures';
 import type { ItHelpService } from './it-help';
 import { findLeaveRequestRow, leaveCheckForLink, leaveLinkAction } from './leave';
+import { leavePolicy } from './leave-numbers';
 import * as repo from './repo';
 import { type NaviService, rankRows, topTied } from './service';
 
@@ -91,12 +95,15 @@ const isRealDate = (d: string) => DATE.test(d) && addDays(d, 0) === d;
  * 11/6 휴가 정확도: 주말과 함께 법정 공휴일·회사 휴일(운영 설정 companyHolidays)도 받지 않아요(쉬는 날은 연차로 세지 않아요).
  * 연차 자료(등급 2)는 읽지 않아요. 남은 연차가 모자라는지는 앱 양식이 본인 화면에서 보여 줘요.
  * 11/6: 신청 전 카드 [이 날로 보기](경조 포함 LeaveKind)도 같은 검사를 써요.
+ * 11/6 근무 달력: 쉬는 요일·공휴일은 cal을 따라요. MCP 휴가 준비는 근태를 읽지 않아서 회사 기본 달력이고,
+ * [이 날로 보기]는 본인 근태가 준 근무 요일(주말 근무자)까지 넣은 달력이에요.
  */
 export function checkLeaveLink(
   link: { days: readonly LeaveDay[]; type: LeaveKind },
   today: string,
-  companyHolidays: readonly string[] = [],
+  cal: Partial<WorkCalendar> = {},
 ): { ok: true; days: LeaveDay[] } | { ok: false; code: string; message: string } {
+  const c = workCalendar(cal);
   if (!link.days.length) return { ok: false, code: 'no-days', message: '쓸 날을 하나 이상 골라 주세요' };
   if (link.days.length > LEAVE_REQUEST_MAX_DAYS) return { ok: false, code: 'too-many', message: `한 번에 ${LEAVE_REQUEST_MAX_DAYS}일까지 신청할 수 있어요` };
   // 11/3: 반차는 오전·오후 중 하나가 꼭 있어야 해요. AI가 짐작하지 않게 사람에게 물어보라고 돌려줘요.
@@ -114,8 +121,8 @@ export function checkLeaveLink(
       return { ok: false, code: 'past', message: `${dayLabel(d.date)}은 지난 날이에요${more}` };
     }
     if (d.date > last) return { ok: false, code: 'too-far', message: '1년 안의 날만 신청할 수 있어요' };
-    if (isWeekend(d.date)) return { ok: false, code: 'weekend', message: `${dayLabel(d.date)}은 주말이에요` };
-    const off = offDayName(d.date, companyHolidays);
+    if (!isWorkWeekday(d.date, c.weekdays)) return { ok: false, code: 'weekend', message: `${dayLabel(d.date)}은 ${restDayWord(c.weekdays)}이에요` };
+    const off = offDayName(d.date, c);
     if (off) return { ok: false, code: 'holiday', message: `${dayLabel(d.date)}은 쉬는 날이에요(${off})` };
     if (seen.has(d.date)) return { ok: false, code: 'duplicate', message: `${dayLabel(d.date)}을 두 번 골랐어요` };
     seen.add(d.date);
@@ -227,7 +234,8 @@ export function createNaviMcpRead(
     },
 
     prepareLeave(user, link) {
-      const checked = checkLeaveLink(link, kstDate(ctx.now()), ctx.ops.get().companyHolidays);
+      // MCP는 근태(등급 2)를 읽지 않아서 회사 기본 근무 달력으로만 검사해요. 사람별 근무 요일은 링크를 앱에서 열 때 다시 봐요(11/6).
+      const checked = checkLeaveLink(link, kstDate(ctx.now()), leavePolicy(ctx).calendar);
       if (!checked.ok) return checked;
       return { ok: true, days: checked.days, token: ctx.plans.propose(user, 'navi', 'leave-link', { days: checked.days, type: link.type }) };
     },

@@ -5,6 +5,7 @@ import {
   dayLabel,
   INQUIRY_KEEP_DAYS,
   INQUIRY_REASON_MAX,
+  isWorkWeekday,
   kstDate,
   LEAVE_DAY_CHOICE_LABEL,
   LEAVE_DAY_CHOICES,
@@ -12,23 +13,27 @@ import {
   LEAVE_REQUEST_MAX_DAYS,
   LEAVE_TYPE_LABEL,
   LEAVE_TYPES,
-  publicHolidayName,
   type LeaveDay,
   leaveDayChoice,
   leaveDayOf,
   leaveDayWord,
+  leaveNextPeriodText,
   type LeaveType,
   maskLine,
   mergeLeaveHalves,
+  offDayName,
   OFFICIAL_LEAVE_REASON_LABEL,
   OFFICIAL_LEAVE_REASONS,
   type OfficialLeaveReason,
+  restDayWord,
   SICK_LEAVE_PAST_DAYS,
   SICK_LEAVE_REASON_LABEL,
   SICK_LEAVE_REASONS,
   SICK_NOTE_TEXT,
   type SickLeaveReason,
   sickUsageText,
+  type WorkCalendar,
+  workCalendar,
 } from '@one-line-desk/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { isDemoLogin } from '../../api';
@@ -45,26 +50,31 @@ import { newRequestId } from '../../net';
 // 11/1 공가: 맨 위에서 연차·공가를 골라요. 공가는 정해진 사유를 하나 고르고, 연차에서 빠지지 않아 남은 연차 계산을 보여 주지 않아요.
 // 11/3 병가: 사유는 정해진 선택지만 고르고 자유 글 사유 칸은 없어요(건강 정보를 받지 않아요). 지난 3일까지 고를 수 있어요.
 //   올해 병가 쓴 날(한도가 있으면 한도도)을 보여 주고, 운영 값 일수를 넘으면 진단서 안내를 보여 줘요. 유급·무급은 인사팀이 처리해요.
+// 11/6 사용자 결정: 다음 연차 기간 날은 숫자 없이 한 문장이에요(이번 기간 숫자만). 쉬는 요일·공휴일은 서버가 준 내 근무 달력
+//   (action.calendar, 주말 근무자·공휴일을 쉬지 않는 회사일 때만 와요)으로 검사해요. 회사 휴일은 서버가 막아요.
 
 type LeaveRequest = Extract<CardAction, { type: 'leave-request' }>;
 
-const weekday = (date: string) => new Date(`${date}T00:00:00Z`).getUTCDay();
 const fmt = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}일`;
 const total = (days: readonly LeaveDay[]) => days.reduce((n, d) => n + (d.kind === 'full' ? 1 : 0.5), 0);
 
 const DEFAULT_SICK_NOTE_OVER = 3;
 
-/** 다음 평일(주말·법정 공휴일은 건너뛰어요. 회사 휴일은 서버가 막아요) */
-function nextWeekday(after: string): string {
+/** 다음 일하는 날(쉬는 요일·법정 공휴일은 건너뛰어요. 회사 휴일은 서버가 막아요) */
+function nextWorkday(after: string, cal: WorkCalendar): string {
   let d = addDays(after, 1);
-  while ([0, 6].includes(weekday(d)) || publicHolidayName(d)) d = addDays(d, 1);
+  for (let i = 0; i < 14 && (!isWorkWeekday(d, cal.weekdays) || offDayName(d, cal)); i += 1) d = addDays(d, 1);
   return d;
 }
 
 export function LeaveRequestSheet({ action, onClose, filledNote }: { action: LeaveRequest; onClose: () => void; filledNote?: string }) {
   const actions = useActions();
   const today = useMemo(() => kstDate(Date.now()), []);
-  const [days, setDays] = useState<LeaveDay[]>(() => (action.days.length ? action.days.map((d) => ({ ...d })) : [{ date: nextWeekday(today), kind: 'full' }]));
+  const cal = useMemo(() => workCalendar(action.calendar ?? {}), [action.calendar]);
+  const rest = restDayWord(cal.weekdays);
+  const [days, setDays] = useState<LeaveDay[]>(() =>
+    action.days.length ? action.days.map((d) => ({ ...d })) : [{ date: nextWorkday(today, cal), kind: 'full' }],
+  );
   const [reason, setReason] = useState('');
   const [type, setType] = useState<LeaveType>(action.leaveType ?? 'annual');
   const [officialReason, setOfficialReason] = useState<OfficialLeaveReason | null>(null);
@@ -93,19 +103,18 @@ export function LeaveRequestSheet({ action, onClose, filledNote }: { action: Lea
     ...sorted
       .filter((d) => d.date && d.date < earliest)
       .map((d) => `${dayLabel(d.date)}은 지난 날이에요${sick ? `. 병가는 ${SICK_LEAVE_PAST_DAYS}일 전까지만 신청할 수 있어요` : ''}`),
-    ...sorted.filter((d) => d.date && [0, 6].includes(weekday(d.date))).map((d) => `${dayLabel(d.date)}은 주말이에요`),
-    // 11/6 휴가 정확도: 법정 공휴일은 쉬는 날이라 받지 않아요(서버도 같아요, 회사 휴일은 서버가 막아요).
+    ...sorted.filter((d) => d.date && !isWorkWeekday(d.date, cal.weekdays)).map((d) => `${dayLabel(d.date)}은 ${rest}이에요`),
+    // 11/6 휴가 정확도: 법정 공휴일은 쉬는 날이라 받지 않아요(서버도 같아요, 공휴일을 쉬지 않는 회사는 받아요. 회사 휴일은 서버가 막아요).
     ...sorted
-      .filter((d) => d.date && ![0, 6].includes(weekday(d.date)) && publicHolidayName(d.date))
-      .map((d) => `${dayLabel(d.date)}은 쉬는 날이에요(${publicHolidayName(d.date)})`),
+      .filter((d) => d.date && isWorkWeekday(d.date, cal.weekdays) && offDayName(d.date, { publicHolidaysOff: cal.publicHolidaysOff }))
+      .map((d) => `${dayLabel(d.date)}은 쉬는 날이에요(${offDayName(d.date, { publicHolidaysOff: cal.publicHolidaysOff })})`),
     ...sorted.filter((d, i) => d.date && sorted.findIndex((x) => x.date === d.date) !== i).map((d) => `${dayLabel(d.date)}을 두 번 골랐어요`),
   ];
   const sum = total(sorted);
-  // 연차 기간(입사일 기준)별로 나눠요. 다음 기간 날은 이번 기간 연차가 아니라 다음 기간 연차에서 빠져요(10/30).
+  // 연차 기간별로 나눠요. 다음 기간 날은 이번 기간 연차에서 빼지 않고, 숫자 없이 한 문장으로 알려요(10/30, 11/6 사용자 결정).
   const thisSum = total(sorted.filter((d) => d.date && d.date <= action.periodEnd));
   const nextSum = total(sorted.filter((d) => d.date > action.periodEnd));
   const after = action.remaining - thisSum;
-  const nextAfter = action.next.remaining - nextSum;
   const left = (n: number) => (n >= 0 ? `${fmt(n)} 남아요` : `${fmt(-n)} 모자라요`);
   const r = checkInput(reason.trim());
   const line = maskLine(r);
@@ -268,11 +277,12 @@ export function LeaveRequestSheet({ action, onClose, filledNote }: { action: Lea
             setDays((list) => [
               ...list,
               {
-                date: nextWeekday(
+                date: nextWorkday(
                   list
                     .map((d) => d.date)
                     .sort()
                     .at(-1) || today,
+                  cal,
                 ),
                 kind: 'full',
               },
@@ -302,14 +312,7 @@ export function LeaveRequestSheet({ action, onClose, filledNote }: { action: Lea
             {nextSum > 0 ? `이번 연차 기간(${dayLabel(action.periodEnd)}까지) ` : ''}연차 {fmt(thisSum)}을 쓰면 {left(after)}
           </p>
         )}
-        {!official && !sick && nextSum > 0 && (
-          <p className={`leave-after${nextAfter < 0 ? ' short' : ''}`}>
-            다음 연차 기간({dayLabel(action.next.periodStart)}부터) 연차 {fmt(nextSum)}을 쓰면 {left(nextAfter)}
-          </p>
-        )}
-        {!official && !sick && nextSum > 0 && thisSum === 0 && (
-          <p className='hint'>고른 날이 다음 연차 기간이라 지금 남은 연차({fmt(action.remaining)})에서는 빠지지 않아요.</p>
-        )}
+        {!official && !sick && nextSum > 0 && <p className='leave-after'>{leaveNextPeriodText(action.next.periodStart, today)}</p>}
       </div>
 
       {!sick && (

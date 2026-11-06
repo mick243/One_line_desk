@@ -1,27 +1,31 @@
 import {
   type AskResponse,
   type Card,
+  type CardAction,
   type HomeAskResponse,
   holidayYearKnown,
+  type InquiryListResponse,
   isWeekend,
   isWorkday,
   LEAVE_HOURS_TEXT,
   LEAVE_NOT_CONNECTED_TEXT,
+  LEAVE_SMALL_WORKPLACE_TEXT,
   LEAVE_STATUS_NOT_CONNECTED_TEXT,
   publicHolidayName,
   splitWorkdays,
 } from '@one-line-desk/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createMockAdapters } from '../../adapters';
-import { MOCK_LEAVE_RECORDS } from '../../adapters/mock/leave';
+import { leaveRecordsFromJson, MOCK_LEAVE_RECORDS, MockLeave } from '../../adapters/mock/leave';
 import { OffLeave } from '../../adapters/off';
 import type { LeaveRecord } from '../../adapters/types';
 import { AiGateway, type LlmProvider, type ProviderResult, type StructuredRequest } from '../../core/ai/gateway';
-import { draftDays } from '../../routes/demo-groupware';
+import type { DeskUser } from '../../core/user';
+import { draftDays, offDaysText } from '../../routes/demo-groupware';
 import { createTestApp, MOCK } from '../../testing';
-import { ruleLeaveQuestion } from './leave';
-import { freeDaysNear } from './leave-handoff';
-import { computeLeave, leaveNumbers } from './leave-numbers';
+import { leaveCheckForLink, leaveRequestBalance, ruleLeaveQuestion } from './leave';
+import { freeDaysNear, leaveHourCopyText } from './leave-handoff';
+import { computeLeave, DEFAULT_LEAVE_POLICY, leaveNumbers, leavePolicy } from './leave-numbers';
 import { checkLeaveLink } from './mcp-read';
 
 // 휴가 정확도 고치기 1~4(11/6, ADR-18 개정·ADR-24 보강). 시험 이름 앞 [정확도-…]는 PRD "휴가 완료 기준" 줄이에요.
@@ -83,7 +87,7 @@ describe('① 공휴일 달력(packages/shared holidays.ts)', () => {
     expect(holidayYearKnown('2028-01-03')).toBe(false);
     // 회사 휴일(운영 설정)도 쉬는 날이에요.
     expect(isWorkday('2026-11-20')).toBe(true);
-    expect(isWorkday('2026-11-20', ['2026-11-20'])).toBe(false);
+    expect(isWorkday('2026-11-20', { companyHolidays: ['2026-11-20'] })).toBe(false);
     expect(splitWorkdays(['2026-12-24', '2026-12-25', '2026-12-26', '2028-01-03'])).toEqual({
       workdays: ['2026-12-24', '2028-01-03'],
       weekend: 1,
@@ -109,7 +113,7 @@ describe('① 공휴일 달력(packages/shared holidays.ts)', () => {
       { date: '2027-02-09', name: '대체공휴일(설날)' },
     ]);
     // 회사 휴일(운영 설정)도 빼요.
-    expect(ruleLeaveQuestion('11월 19일부터 20일까지 연차 쓰면', TODAY, ['2026-11-20'])).toMatchObject({
+    expect(ruleLeaveQuestion('11월 19일부터 20일까지 연차 쓰면', TODAY, { companyHolidays: ['2026-11-20'] })).toMatchObject({
       planFull: 1,
       holidaysSkipped: [{ date: '2026-11-20', name: '회사 휴일' }],
     });
@@ -140,7 +144,7 @@ describe('① 공휴일 달력(packages/shared holidays.ts)', () => {
     const slot = { start: Date.parse('2026-12-24T14:00:00+09:00'), end: Date.parse('2026-12-24T15:00:00+09:00'), room: '가상 회의실', own: true };
     expect(freeDaysNear({ date: '2026-12-24', kind: 'full' }, [slot], [], new Set(['2026-12-24']), TODAY)).toEqual(['2026-12-23', '2026-12-28']);
     // 회사 휴일(12/28)도 빼요.
-    expect(freeDaysNear({ date: '2026-12-24', kind: 'full' }, [slot], [], new Set(['2026-12-24']), TODAY, ['2026-12-28'])).toEqual([
+    expect(freeDaysNear({ date: '2026-12-24', kind: 'full' }, [slot], [], new Set(['2026-12-24']), TODAY, { companyHolidays: ['2026-12-28'] })).toEqual([
       '2026-12-23',
       '2026-12-29',
     ]);
@@ -152,12 +156,16 @@ describe('① 공휴일 달력(packages/shared holidays.ts)', () => {
       code: 'holiday',
       message: '12월 25일(금)은 쉬는 날이에요(기독탄신일)',
     });
-    expect(checkLeaveLink({ type: 'annual', days: [{ date: '2026-11-20', kind: 'full' }] }, TODAY, ['2026-11-20'])).toMatchObject({ code: 'holiday' });
+    expect(checkLeaveLink({ type: 'annual', days: [{ date: '2026-11-20', kind: 'full' }] }, TODAY, { companyHolidays: ['2026-11-20'] })).toMatchObject({
+      code: 'holiday',
+    });
     expect(draftDays({ type: 'annual', from: '2026-12-24', to: '2026-12-28', half: 'full' }, TODAY).map((d) => d.date)).toEqual(['2026-12-24', '2026-12-28']);
     expect(() => draftDays({ type: 'annual', from: '2026-12-25', to: '2026-12-27', half: 'full' }, TODAY)).toThrow(
       '고른 날이 모두 주말·쉬는 날(공휴일·회사 휴일)이에요',
     );
-    expect(draftDays({ type: 'annual', from: '2026-11-19', to: '2026-11-20', half: 'full' }, TODAY, ['2026-11-20']).map((d) => d.date)).toEqual(['2026-11-19']);
+    expect(
+      draftDays({ type: 'annual', from: '2026-11-19', to: '2026-11-20', half: 'full' }, TODAY, { companyHolidays: ['2026-11-20'] }).map((d) => d.date),
+    ).toEqual(['2026-11-19']);
   });
 
   it('[정확도-회사휴일] 운영자가 회사 휴일 날짜를 넣으면 날 세기·제안·[이 날로 보기]에서 빠져요. 날짜만 받고 감사에는 개수만 남아요', async () => {
@@ -220,7 +228,7 @@ describe('② 날짜·양 읽기: 시간 단위', () => {
     const t = await setup();
     const haneul = await t.loginAs(MOCK.staff);
     const card = await checkCard(haneul, '연차 2시간 쓰고 싶어');
-    expect(card.headline).toBe('연차 2시간 쓰면 남은 연차는 9.75일이에요');
+    expect(card.headline).toBe('연차 2시간(0.25일) 쓰면 남은 연차는 9.75일이에요');
     expect(field(card, '쓸 날')).toBe('2시간(0.25일, 하루 8시간 기준)');
     expect(field(card, '시간 단위')).toBe(LEAVE_HOURS_TEXT);
     expect(field(card, '남은 연차')).toBe('10일 → 9.75일');
@@ -230,9 +238,20 @@ describe('② 날짜·양 읽기: 시간 단위', () => {
     expect(dated.actions.secondary).toContainEqual({
       type: 'copy',
       text: '신청 내용 복사',
-      value: '휴가 종류: 연차(시간 단위)\n날짜: 11/4(수)\n시간: 하루 2시간\n사유: 그룹웨어 신청서에 직접 적어 주세요',
+      value: '휴가 종류: 연차(시간 단위)\n날짜: 11/4(수)\n시간: 하루 2시간(0.25일)\n사유: 그룹웨어 신청서에 직접 적어 주세요',
     });
     expect(dated.actions.primary).toMatchObject({ href: expect.stringContaining('type=annual&from=2026-11-04&to=2026-11-04&half=') });
+
+    // 여러 날에 시간으로 말하면 날마다 그 시간이에요(11/6): 복사 글 "하루 2시간"과 남은 연차 차감(2시간 × 2일 = 0.5일)이 같아요.
+    expect(ruleLeaveQuestion('11월 4일부터 5일까지 연차 2시간씩 쓰고 싶어', TODAY)).toMatchObject({ planHours: 4, planDates: ['2026-11-04', '2026-11-05'] });
+    const twoDays = await checkCard(haneul, '11월 4일부터 5일까지 연차 2시간씩 쓰고 싶어');
+    expect(field(twoDays, '쓸 날')).toBe('11월 4일(수) · 11월 5일(목) 날마다 2시간 · 모두 4시간(0.5일, 하루 8시간 기준)');
+    expect(field(twoDays, '남은 연차')).toBe('10일 → 9.5일');
+    expect(twoDays.actions.secondary).toContainEqual({
+      type: 'copy',
+      text: '신청 내용 복사',
+      value: '휴가 종류: 연차(시간 단위)\n날짜: 11/4(수), 11/5(목)\n시간: 하루 2시간(0.25일)\n사유: 그룹웨어 신청서에 직접 적어 주세요',
+    });
 
     t.ctx.ops.patchValues({ workdayHours: 4 });
     const four = await checkCard(haneul, '연차 2시간 쓰고 싶어');
@@ -288,7 +307,7 @@ describe('③ 근태 연결 계약과 숫자 우선순위', () => {
     expect(field(fiscal, '소멸일')).toBe('이번 연차는 12월 31일(목)까지예요');
     const nextYear = await checkCard(jiwoo, '1월 5일 연차 쓰고 싶어');
     expect(field(nextYear, '남은 연차')).toBe('12.5일 → 12.5일');
-    expect(field(nextYear, '다음 연차 기간')).toBe('2027-01-01부터는 다음 연차 기간이라 이번 기간에서 빼지 않았어요');
+    expect(field(nextYear, '다음 연차 기간')).toBe('2027년 1월 1일(금)부터는 새 연차 기간이에요. 그 날은 이번 기간 연차에서 빼지 않았어요');
   });
 
   it('[정확도-앱계산] 근태 숫자가 없으면 앱이 센 것(입사일 기준·개근 가정)이라고 적고, 소멸일은 앱 계산 기간 끝이에요', async () => {
@@ -394,6 +413,310 @@ describe('④ 병가·경조 연차 차감은 운영 값', () => {
     const official = await checkCard(haneul, '11월 4일 예비군 훈련이라 공가 쓰려고');
     expect(official.headline).toBe('공가는 연차에서 빠지지 않아요');
     expect(field(official, '남은 연차')).toBe('9.5일 그대로예요(공가는 연차에서 빠지지 않아요)');
+  });
+});
+
+// ── 11/6 사용자 결정(이어서): 5인 미만 사업장 · 공휴일 근무 · 주말 근무자 · 시간 옆 일 · 다음 기간 한 문장 ─────────────
+// 날짜: 10/31(토) · 11/1(일) · 11/2(월) · 11/3(화). 하늘은 앱 계산 10일, 도윤은 앱 계산 7.5일(1년 미만), 서연은 근태 숫자 15.5일이에요.
+
+/** 하늘만 주말 근무자(화~토 근무)로 둔 가상 근태 기록. 다른 사람은 그대로예요. */
+const weekendWorkerLeave = () =>
+  new MockLeave({ ...MOCK_LEAVE_RECORDS, 'haneul@corp.example': { ...MOCK_LEAVE_RECORDS['haneul@corp.example']!, workWeekdays: [2, 3, 4, 5, 6] } });
+const TUE_TO_SAT = { weekdays: [2, 3, 4, 5, 6] };
+const SMALL = { ...DEFAULT_LEAVE_POLICY, smallWorkplace: true };
+
+describe('⑤ 5인 미만 사업장(운영 값 smallWorkplace)', () => {
+  it('[정확도-5인미만] 근태 숫자가 없으면 앱이 법정 연차를 세지 않고 까닭만 보여요. 근태 숫자가 있으면 평소처럼 그 숫자예요', async () => {
+    const t = await setup();
+    const op = await t.loginAs(MOCK.operator);
+    expect((await op.call('PUT', '/api/ops/values', { smallWorkplace: 2 })).status).toBe(400);
+    expect((await op.call('PUT', '/api/ops/values', { smallWorkplace: 1 })).status).toBe(200);
+
+    const haneul = await t.loginAs(MOCK.staff);
+    const card = await balanceCard(haneul);
+    expect(card.headline).toBe('남은 연차를 보여 드릴 수 없어요');
+    expect(field(card, '남은 연차')).toBe(LEAVE_SMALL_WORKPLACE_TEXT);
+    expect(field(card, '생긴 연차')).toBeUndefined();
+    expect(field(card, '계산 기준')).toBeUndefined();
+    expect(card.evidence.text).toBe('인사 근태 기록(근태 숫자 없음 · 5인 미만 사업장)');
+    // 숫자(N일)는 어디에도 없어요.
+    expect(card.fields.map((f) => f.value).join(' ')).not.toMatch(/\d+(\.\d+)?일/);
+
+    const check = await checkCard(haneul, '11월 4일 연차 쓰고 싶어');
+    expect(check.headline).toBe('남은 연차를 보여 드릴 수 없어요');
+    expect(field(check, '쓸 날')).toBe('11월 4일(수) 하루');
+    expect(field(check, '남은 연차')).toBe(LEAVE_SMALL_WORKPLACE_TEXT);
+    expect(field(check, '계산 기준')).toBeUndefined();
+    expect(field(check, '소멸일')).toBeUndefined();
+    expect(check.evidence.text).toBe('인사 근태 기록(근태 숫자 없음 · 5인 미만 사업장)');
+    // 병가 쓴 날은 근태 기록으로 그대로 세요(법정 연차 계산이 아니에요).
+    const sick = await checkCard(haneul, '오늘 몸살이라 병가 쓸래');
+    expect(sick.headline).toBe('병가는 연차와 따로 셌어요');
+    expect(field(sick, '올해 병가')).toBe('1.5일 → 2.5일');
+
+    // 근태 숫자가 있는 사람(서연)은 평소처럼 근태 숫자예요.
+    const seoyeon = await t.loginAs(MOCK.facilities);
+    expect((await balanceCard(seoyeon)).headline).toBe('남은 연차는 15.5일이에요');
+    const hr = await checkCard(seoyeon, '11월 4일 연차 쓰고 싶어');
+    expect(field(hr, '남은 연차')).toBe('15.5일 → 14.5일');
+    expect(field(hr, '계산 기준')).toBe('근태 기록 기준이에요. 결재 중인 신청은 반영하지 않았어요');
+  });
+
+  it('[정확도-5인미만 단위] 오래된 근태 숫자(기간 밖)여도 앱 계산으로 돌아가지 않고, 앱 안 요청 계산도 숫자 없음이에요', () => {
+    const stale: LeaveRecord = { hireDate: '2020-03-02', uses: [], balance: { periodStart: '2025-01-01', periodEnd: '2025-12-31', remaining: 3 } };
+    expect(leaveNumbers(stale, TODAY, SMALL)).toBeNull();
+    expect(leaveNumbers({ ...stale, balance: { periodStart: '2026-01-01', periodEnd: '2026-12-31', remaining: 3 } }, TODAY, SMALL)).toMatchObject({
+      source: 'hr',
+      remaining: 3,
+    });
+    expect(leaveRequestBalance({ hireDate: '2020-03-02', uses: [] }, TODAY, [{ date: '2026-11-04', kind: 'full' }], SMALL)).toBeNull();
+  });
+
+  it('[정확도-5인미만 앱안] 앱 안 휴가 결재(개발·시험)에서는 [휴가 신청하기]를 주지 않고, 받은 문의함은 숫자 대신 까닭 표시예요', async () => {
+    const t = await setup({ leaveInApp: true });
+    t.ctx.ops.patchValues({ smallWorkplace: 1 });
+    const haneul = await t.loginAs(MOCK.staff);
+    const jihu = await t.loginAs(MOCK.hr);
+    const card = await balanceCard(haneul);
+    expect(card.headline).toBe('남은 연차를 보여 드릴 수 없어요');
+    expect(card.actions.secondary.some((a) => a.type === 'leave-request')).toBe(false);
+    expect((await haneul.call('GET', '/api/navi/leave/start')).body).toEqual({ action: null });
+    const sent = await haneul.call('POST', '/api/navi/inquiries', {
+      rowId: 'HR-02',
+      question: '휴가 신청',
+      reason: '가족 행사',
+      requestId: 'req-small-workplace-1',
+      leave: { days: [{ date: '2026-11-04', kind: 'full' }] },
+    });
+    expect(sent.status).toBe(200);
+    const [item] = ((await jihu.call('GET', '/api/navi/inquiries/inbox')).body as InquiryListResponse).items;
+    expect(item!.leave).toMatchObject({ balance: null, smallWorkplace: true });
+  });
+});
+
+describe('⑥ 공휴일을 쉬지 않는 회사(운영 값 publicHolidaysOff)', () => {
+  it('[정확도-공휴일근무 단위] 0이면 법정 공휴일도 일하는 날로 세고 제안해요. 회사 휴일은 그대로 쉬는 날이에요', () => {
+    const work = { publicHolidaysOff: false };
+    const q = ruleLeaveQuestion('12월 24~26일 연차 쓰면 몇 개 남아?', TODAY, work);
+    expect({ full: q.planFull, dates: q.planDates, holidays: q.holidaysSkipped }).toEqual({ full: 2, dates: ['2026-12-24', '2026-12-25'], holidays: [] });
+    expect(isWorkday('2026-12-25', work)).toBe(true);
+    expect(isWorkday('2026-11-20', { ...work, companyHolidays: ['2026-11-20'] })).toBe(false);
+    // 공휴일을 쉬지 않으면 공휴일 표가 없는 해라는 안내도 필요 없어요.
+    expect(splitWorkdays(['2028-01-03'], work).unknownYears).toEqual([]);
+    expect(checkLeaveLink({ type: 'annual', days: [{ date: '2026-12-25', kind: 'full' }] }, TODAY, work)).toMatchObject({ ok: true });
+    expect(draftDays({ type: 'annual', from: '2026-12-24', to: '2026-12-28', half: 'full' }, TODAY, work).map((d) => d.date)).toEqual([
+      '2026-12-24',
+      '2026-12-25',
+      '2026-12-28',
+    ]);
+    const slot = { start: Date.parse('2026-12-24T14:00:00+09:00'), end: Date.parse('2026-12-24T15:00:00+09:00'), room: '가상 회의실', own: true };
+    expect(freeDaysNear({ date: '2026-12-24', kind: 'full' }, [slot], [], new Set(['2026-12-24']), TODAY, work)).toEqual(['2026-12-23', '2026-12-25']);
+    expect(offDaysText()).toBe('주말·공휴일·회사 휴일');
+    expect(offDaysText(work)).toBe('주말·회사 휴일');
+  });
+
+  it('[정확도-공휴일근무] 운영 값을 0으로 하면 카드가 12/25를 연차로 세고, 회사 휴일은 여전히 빼요', async () => {
+    const t = await setup();
+    const op = await t.loginAs(MOCK.operator);
+    expect((await op.call('PUT', '/api/ops/values', { publicHolidaysOff: 2 })).status).toBe(400);
+    expect((await op.call('PUT', '/api/ops/values', { publicHolidaysOff: 0 })).status).toBe(200);
+    const haneul = await t.loginAs(MOCK.staff);
+    const xmas = await checkCard(haneul, '12월 24일부터 26일까지 연차 쓰고 싶어');
+    expect(field(xmas, '쓸 날')).toBe('12월 24일(목) 하루 · 12월 25일(금) 하루 (주말은 뺐어요)');
+    expect(field(xmas, '남은 연차')).toBe('10일 → 8일');
+    expect(field(xmas, '쉬는 날')).toBeUndefined();
+    expect((await op.call('PUT', '/api/ops/holidays', { dates: ['2026-12-24'] })).status).toBe(200);
+    const company = await checkCard(haneul, '12월 24일부터 26일까지 연차 쓰고 싶어');
+    expect(field(company, '남은 연차')).toBe('10일 → 9일');
+    expect(field(company, '쉬는 날')).toBe('12월 24일(목) 회사 휴일 · 공휴일·회사 휴일이라 연차로 세지 않았어요');
+    // 앱 쪽 [이 날로 보기]도 공휴일을 받아요.
+    expect((await haneul.call('POST', '/api/navi/leave/check', { type: 'annual', days: [{ date: '2026-12-25', kind: 'full' }] })).status).toBe(200);
+  });
+});
+
+describe('⑦ 주말 근무자(사람별 근무 요일)와 회사 기본 근무 요일', () => {
+  it('[정확도-주말근무 단위] 근무 요일이 화~토면 토요일은 세고 월요일은 "근무하지 않는 요일"로 빼요(날 세기·제안·검사·가상 그룹웨어)', () => {
+    expect(splitWorkdays(['2026-10-31', '2026-11-01', '2026-11-02', '2026-11-03'], TUE_TO_SAT)).toMatchObject({
+      workdays: ['2026-10-31', '2026-11-03'],
+      weekend: 2,
+    });
+    expect(ruleLeaveQuestion('10월 31일부터 11월 3일까지 연차 쓰면', TODAY, TUE_TO_SAT)).toMatchObject({
+      planFull: 2,
+      planDates: ['2026-10-31', '2026-11-03'],
+      weekendSkipped: 2,
+    });
+    // 회사 기본(월~금)은 그대로 토요일이 주말이에요(MCP 휴가 준비는 근태를 읽지 않아 이 달력이에요).
+    expect(checkLeaveLink({ type: 'annual', days: [{ date: '2026-10-31', kind: 'full' }] }, TODAY)).toMatchObject({ message: '10월 31일(토)은 주말이에요' });
+    expect(checkLeaveLink({ type: 'annual', days: [{ date: '2026-11-02', kind: 'full' }] }, TODAY, TUE_TO_SAT)).toEqual({
+      ok: false,
+      code: 'weekend',
+      message: '11월 2일(월)은 근무하지 않는 요일이에요',
+    });
+    expect(checkLeaveLink({ type: 'annual', days: [{ date: '2026-10-31', kind: 'full' }] }, TODAY, TUE_TO_SAT)).toMatchObject({ ok: true });
+    // 10/30(금)에 일이 있으면: 기본은 10/29·11/2, 주말 근무자는 10/29·10/31(토)을 제안해요.
+    const slot = { start: Date.parse('2026-10-30T14:00:00+09:00'), end: Date.parse('2026-10-30T15:00:00+09:00'), room: '가상 회의실', own: true };
+    const exclude = new Set(['2026-10-30']);
+    expect(freeDaysNear({ date: '2026-10-30', kind: 'full' }, [slot], [], exclude, TODAY)).toEqual(['2026-10-29', '2026-11-02']);
+    expect(freeDaysNear({ date: '2026-10-30', kind: 'full' }, [slot], [], exclude, TODAY, TUE_TO_SAT)).toEqual(['2026-10-29', '2026-10-31']);
+    expect(draftDays({ type: 'annual', from: '2026-10-30', to: '2026-11-03', half: 'full' }, TODAY, TUE_TO_SAT).map((d) => d.date)).toEqual([
+      '2026-10-30',
+      '2026-10-31',
+      '2026-11-03',
+    ]);
+    expect(() => draftDays({ type: 'annual', from: '2026-11-01', to: '2026-11-02', half: 'full' }, TODAY, TUE_TO_SAT)).toThrow(
+      '고른 날이 모두 근무하지 않는 요일이에요',
+    );
+    expect(offDaysText(TUE_TO_SAT)).toBe('근무하지 않는 요일·공휴일·회사 휴일');
+  });
+
+  it('[정확도-주말근무] 근태가 준 근무 요일로 신청 전 카드·[이 날로 보기]·MCP 링크 카드가 세요. 다른 사람은 회사 기본 그대로예요', async () => {
+    const t = await setup({ adapters: { ...createMockAdapters(), leave: weekendWorkerLeave() } });
+    const haneul = await t.loginAs(MOCK.staff);
+    const sat = await checkCard(haneul, '10월 31일 연차 쓰고 싶어');
+    expect(sat.headline).toBe('10월 31일(토) 하루 쓰면 남은 연차는 9일이에요');
+    expect(field(sat, '남은 연차')).toBe('10일 → 9일');
+    const mon = await checkCard(haneul, '11월 2일 연차 쓰고 싶어');
+    expect(field(mon, '쓸 날')).toBe('근무하지 않는 요일이라 연차에서 빼지 않았어요');
+    expect(field(mon, '남은 연차')).toBe('10일 → 10일');
+    const span = await checkCard(haneul, '10월 31일부터 11월 3일까지 연차 쓰고 싶어');
+    expect(field(span, '쓸 날')).toBe('10월 31일(토) 하루 · 11월 3일(화) 하루 (근무하지 않는 요일은 뺐어요)');
+    expect(field(span, '남은 연차')).toBe('10일 → 8일');
+    // [이 날로 보기]는 본인 근무 요일로 검사해요.
+    expect((await haneul.call('POST', '/api/navi/leave/check', { type: 'annual', days: [{ date: '2026-10-31', kind: 'full' }] })).status).toBe(200);
+    expect(await haneul.call('POST', '/api/navi/leave/check', { type: 'annual', days: [{ date: '2026-11-02', kind: 'full' }] })).toMatchObject({
+      status: 400,
+      body: { message: '11월 2일(월)은 근무하지 않는 요일이에요' },
+    });
+    // MCP 링크(회사 기본 달력으로 검사한 날)를 열면 본인이 일하지 않는 요일은 빼고 알려요.
+    const user: DeskUser = {
+      sessionId: 's',
+      pseudonymId: 'p-haneul',
+      idpSubject: MOCK.staff,
+      email: 'haneul@corp.example',
+      displayName: '가상 직원 하늘',
+      department: '재무팀',
+      floor: '3',
+      roles: [],
+    };
+    const fromLink = await leaveCheckForLink(
+      t.ctx,
+      user,
+      [
+        { date: '2026-10-30', kind: 'full' },
+        { date: '2026-11-02', kind: 'full' },
+      ],
+      'annual',
+    );
+    expect(field(fromLink, '쓸 날')).toBe('10월 30일(금) 하루 (근무하지 않는 요일은 뺐어요)');
+    expect(field(fromLink, '남은 연차')).toBe('10일 → 9일');
+    // 회사 기본(월~금)인 도윤은 토요일이 주말이에요.
+    const doyun = await t.loginAs(MOCK.dev);
+    expect(field(await checkCard(doyun, '10월 31일 연차 쓰고 싶어'), '쓸 날')).toBe('주말이라 연차에서 빼지 않았어요');
+  });
+
+  it('[정확도-주말근무 앱안] 앱 안 휴가 요청(개발·시험)도 본인 근무 요일로 검사하고, 양식에 근무 달력을 넘겨요', async () => {
+    const t = await setup({ leaveInApp: true, adapters: { ...createMockAdapters(), leave: weekendWorkerLeave() } });
+    const haneul = await t.loginAs(MOCK.staff);
+    const action = (await balanceCard(haneul)).actions.secondary.find((a): a is Extract<CardAction, { type: 'leave-request' }> => a.type === 'leave-request');
+    expect(action?.calendar).toEqual({ weekdays: [2, 3, 4, 5, 6], publicHolidaysOff: true });
+    const send = (date: string, n: number) =>
+      haneul.call('POST', '/api/navi/inquiries', {
+        rowId: 'HR-02',
+        question: '휴가 신청',
+        reason: '가족 행사',
+        requestId: `req-weekend-worker-${n}`,
+        leave: { days: [{ date, kind: 'full' }] },
+      });
+    expect((await send('2026-10-31', 1)).status).toBe(200);
+    expect(await send('2026-11-02', 2)).toMatchObject({ status: 400, body: { message: '11월 2일(월)은 근무하지 않는 요일이에요' } });
+    // 회사 기본(월~금)인 사람의 양식에는 근무 달력이 없어요.
+    const doyun = await t.loginAs(MOCK.dev);
+    const plain = (await balanceCard(doyun)).actions.secondary.find((a) => a.type === 'leave-request');
+    expect(plain).toBeDefined();
+    expect(plain).not.toHaveProperty('calendar');
+    // 남은 연차 카드의 "읽은 계획"도 시간 옆에 일을 보여요(11/6).
+    expect(field(await balanceCard(doyun, '11월 4일 연차 2시간 쓰면 몇 개 남아?'), '읽은 계획')).toBe('11월 4일(수) 2시간(0.25일)');
+  });
+
+  it('[정확도-근무요일] 회사 기본 근무 요일은 운영자만 바꾸고(0~6, 감사에는 개수만), 월~토면 토요일도 세고 일요일은 빼요', async () => {
+    const t = await setup();
+    const op = await t.loginAs(MOCK.operator);
+    const staff = await t.loginAs(MOCK.staff);
+    expect((await staff.call('PUT', '/api/ops/work-weekdays', { weekdays: [1, 2, 3, 4, 5, 6] })).status).toBe(403);
+    expect((await op.call('PUT', '/api/ops/work-weekdays', { weekdays: [] })).status).toBe(400);
+    expect((await op.call('PUT', '/api/ops/work-weekdays', { weekdays: [7] })).status).toBe(400);
+    expect((await op.call('PUT', '/api/ops/work-weekdays', { weekdays: ['월'] })).status).toBe(400);
+    expect((await op.call('PUT', '/api/ops/work-weekdays', { weekdays: [6, 1, 2, 3, 4, 5, 5] })).status).toBe(200);
+    expect(t.ctx.ops.get().workWeekdays).toEqual([1, 2, 3, 4, 5, 6]);
+    const audit = (await t.db.query<{ action: string; result: string }>("select action, result from audit_log where action = 'workWeekdays.set'")).rows;
+    expect(audit).toEqual([{ action: 'workWeekdays.set', result: '6' }]);
+
+    const doyun = await t.loginAs(MOCK.dev);
+    expect(field(await checkCard(doyun, '10월 31일 연차 쓰고 싶어'), '남은 연차')).toBe('7.5일 → 6.5일');
+    expect(field(await checkCard(doyun, '11월 1일 연차 쓰고 싶어'), '쓸 날')).toBe('근무하지 않는 요일이라 연차에서 빼지 않았어요');
+    // MCP 휴가 준비(회사 기본 달력)도 토요일을 받아요.
+    expect(checkLeaveLink({ type: 'annual', days: [{ date: '2026-10-31', kind: 'full' }] }, TODAY, leavePolicy(t.ctx).calendar)).toMatchObject({ ok: true });
+  });
+
+  it('[정확도-주말근무 자료] 가상 근태 파일(DESK_MOCK_LEAVE_JSON)은 사람별 근무 요일을 받고, 0~6이 아니거나 겹치면 거절해요', () => {
+    const json = (workWeekdays: unknown) => JSON.stringify({ 'a@corp.example': { hireDate: '2024-01-02', uses: [], workWeekdays } });
+    expect(leaveRecordsFromJson(json([2, 3, 4, 5, 6]))['a@corp.example']).toMatchObject({ workWeekdays: [2, 3, 4, 5, 6] });
+    expect(() => leaveRecordsFromJson(json([7]))).toThrow();
+    expect(() => leaveRecordsFromJson(json([1, 1]))).toThrow();
+    expect(() => leaveRecordsFromJson(json([]))).toThrow();
+    // 앱에 든 가상 직원 17명은 바꾸지 않았어요(모두 회사 기본).
+    expect(Object.values(MOCK_LEAVE_RECORDS).filter((r) => r.workWeekdays)).toEqual([]);
+  });
+});
+
+describe('⑧ 시간 옆 일 · 다음 연차 기간 한 문장', () => {
+  it('[정확도-시간일] 복사 글·상태 카드·남은 연차 카드에서 시간 옆에 일도 보여요(하루 근로시간 운영 값 기준)', async () => {
+    expect(leaveHourCopyText('annual', ['2026-11-04', '2026-11-05'], 2, 4)).toBe(
+      '휴가 종류: 연차(시간 단위)\n날짜: 11/4(수), 11/5(목)\n시간: 하루 2시간(0.5일)\n사유: 그룹웨어 신청서에 직접 적어 주세요',
+    );
+    const t = await setup();
+    const doyun = await t.loginAs(MOCK.dev);
+    await t.ctx.adapters.leave.recordUses({ idpSubject: MOCK.dev, email: 'doyun@corp.example' }, [
+      { date: '2026-11-05', kind: 'half', type: 'annual', amountDays: 0.25 },
+    ]);
+    const status = (await doyun.call('POST', '/api/home/ask', { text: '내 휴가 신청 어떻게 됐어?' })).body as HomeAskResponse;
+    expect(status.cards.find((c) => c.id === 'navi-leave-status')!.headline).toBe('11월 5일(목) 연차 2시간(0.25일)이 승인됐어요');
+    const card = await balanceCard(doyun);
+    expect(card.headline).toBe('남은 연차는 7.25일이에요');
+    expect(field(card, '쓴 연차(예정 포함)')).toBe('2.75일 · 하루 2번, 반차 1번, 시간 단위 1번(0.25일)');
+  });
+
+  it('[정확도-다음기간] 다음 연차 기간 날은 근태 숫자든 앱 계산이든 숫자 없이 한 문장이에요(날짜는 "2027년 1월 1일(금)"처럼)', async () => {
+    const t = await setup();
+    const doyun = await t.loginAs(MOCK.dev);
+    const sentence = '12월 1일(화)부터는 새 연차 기간이에요. 그 날은 이번 기간 연차에서 빼지 않았어요';
+    const app = await checkCard(doyun, '12월 2일 연차 쓰고 싶어');
+    expect(field(app, '다음 연차 기간')).toBe(sentence);
+    expect(field(app, '남은 연차')).toBe('7.5일 → 7.5일');
+    const jiwoo = await t.loginAs(JIWOO);
+    expect(field(await checkCard(jiwoo, '1월 5일 연차 쓰고 싶어'), '다음 연차 기간')).toBe(
+      '2027년 1월 1일(금)부터는 새 연차 기간이에요. 그 날은 이번 기간 연차에서 빼지 않았어요',
+    );
+    // 날 없이 달로 말해도 같은 문장이고, 다음 기간 숫자(→)는 없어요.
+    const month = await checkCard(doyun, '12월에 연차 2일 쓰고 싶어');
+    expect(field(month, '다음 연차 기간')).toBe(sentence);
+    expect(field(month, '다음 연차 기간')).not.toMatch(/→|\d+(\.\d+)?일 /);
+    // 앱 안 요청 계산도 다음 기간은 첫날·날 수만이에요.
+    const doyunRecord = MOCK_LEAVE_RECORDS['doyun@corp.example']!;
+    expect(leaveRequestBalance(doyunRecord, TODAY, [{ date: '2027-02-04', kind: 'full' }])!.next).toEqual({ periodStart: '2026-12-01', days: 1 });
+  });
+
+  it('[정확도-AI 새 옵션] 5인 미만·주말 근무자에서도 휴가 해석 모델 입력은 질문 글뿐이에요(근무 요일·숫자 없음)', async () => {
+    const provider = new RecordingProvider();
+    const t = await setup({ provider, adapters: { ...createMockAdapters(), leave: weekendWorkerLeave() } });
+    t.ctx.gateway = new AiGateway(provider, true, t.db);
+    t.ctx.ops.patchValues({ smallWorkplace: 1, publicHolidaysOff: 0 });
+    const haneul = await t.loginAs(MOCK.staff);
+    await askNavi(haneul, '연차 좀 쓰고 싶어');
+    await askNavi(haneul, '10월 31일 연차 쓰고 싶어');
+    const leaveInputs = provider.inputs.filter((i) => i.purpose === 'leave-question');
+    expect(leaveInputs.map((i) => i.input)).toEqual(['질문: 연차 좀 쓰고 싶어']);
+    for (const i of provider.inputs) expect(`${i.input}\n${i.system}`, i.purpose).not.toMatch(/\[2,3,4,5,6\]|workWeekdays|2019-03-04|5인 미만|근무하지 않는/);
   });
 });
 

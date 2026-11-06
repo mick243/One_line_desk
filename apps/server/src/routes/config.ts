@@ -190,6 +190,24 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
     async (req) => ctx.ops.setCompanyHolidays(req.deskUser!.pseudonymId, req.body.dates),
   );
 
+  // 회사 기본 근무 요일(11/6 사용자 결정, 0 일요일 … 6 토요일, 기본 월~금). 목록을 통째로 바꿔요. 감사에는 개수만 남아요.
+  // 교대·주말 근무자처럼 사람마다 다른 근무 요일은 근태 어댑터(LeaveRecord.workWeekdays)가 줘요.
+  app.put<{ Body: { weekdays: number[] } }>(
+    '/api/ops/work-weekdays',
+    {
+      preHandler: opsWrite,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['weekdays'],
+          additionalProperties: false,
+          properties: { weekdays: { type: 'array', minItems: 1, maxItems: 7, items: { type: 'integer', minimum: 0, maximum: 6 } } },
+        },
+      },
+    },
+    async (req) => ctx.ops.setWorkWeekdays(req.deskUser!.pseudonymId, req.body.weekdays),
+  );
+
   // 사내 카페 회사 계좌 안내 글(11/6 2묶음, ADR-29). 직원 청구서에 그대로 보여요. 80자 안, 줄바꿈 없음, 빈 글이면 지워요.
   app.put<{ Body: { text: string } }>(
     '/api/ops/cafe-account',

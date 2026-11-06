@@ -11,7 +11,7 @@ import {
   type GroupwareDraftRequest,
   type GroupwareFormResponse,
   type GroupwareInboxResponse,
-  isWeekend,
+  isWorkWeekday,
   kstDate,
   LEAVE_REQUEST_MAX_DAYS,
   LEAVE_KIND_LABEL,
@@ -23,7 +23,10 @@ import {
   type LeaveKind,
   reasonRequired,
   recordCutoff,
+  restDayWord,
   SICK_LEAVE_PAST_DAYS,
+  type WorkCalendar,
+  workCalendar,
 } from '@one-line-desk/shared';
 import type { FastifyInstance } from 'fastify';
 import { MockLeave } from '../adapters/mock/leave';
@@ -31,6 +34,7 @@ import type { LeaveUse } from '../adapters/types';
 import type { AppContext } from '../context';
 import { DeskError } from '../core/errors';
 import type { DeskUser } from '../core/user';
+import { companyCalendar, personCalendar } from '../core/work-calendar';
 
 // 시연 전용 가상 그룹웨어 전자결재(11/6 사용자 결정, 휴가 A안). 한 줄 데스크가 아니라 "회사 그룹웨어" 자리에 서는 흉내예요.
 // 시연에서 한 바퀴(신청 → 팀장 결재 → 인사 결재 → 근태 반영 → 앱 반영)를 보여 주려고 둬요. 시연 받은편지함(ADR-17)과 같은 시연 전용 장치예요.
@@ -158,15 +162,20 @@ function view(d: Doc, withReason = false): GroupwareDoc {
   };
 }
 
+/** 여러 날 신청서에서 빼는 날 이름(11/6 근무 달력): "주말·공휴일·회사 휴일" · "근무하지 않는 요일·…" · 공휴일을 쉬지 않으면 "…·회사 휴일" */
+export const offDaysText = (cal: Partial<WorkCalendar> = {}): string => {
+  const c = workCalendar(cal);
+  return [restDayWord(c.weekdays), ...(c.publicHolidaysOff ? ['공휴일'] : []), '회사 휴일'].join('·');
+};
+
 /**
  * 신청서의 날: 시작일~끝날의 일하는 날. 반차는 하루짜리만이에요. 연차·공가는 오늘부터, 병가는 지난 3일부터, 1년 안이에요.
  * 11/6 휴가 정확도: 주말과 함께 법정 공휴일·회사 휴일(운영 설정)도 빼요(쉬는 날은 휴가로 세지 않아요).
+ * 11/6 근무 달력: 쉬는 요일·공휴일은 기안자 근무 달력(cal)을 따라요(주말 근무자의 토요일은 세고, 근무하지 않는 평일은 빼요).
  */
-export function draftDays(
-  req: Pick<GroupwareDraftRequest, 'type' | 'from' | 'to' | 'half'>,
-  today: string,
-  companyHolidays: readonly string[] = [],
-): LeaveDay[] {
+export function draftDays(req: Pick<GroupwareDraftRequest, 'type' | 'from' | 'to' | 'half'>, today: string, cal: Partial<WorkCalendar> = {}): LeaveDay[] {
+  const c = workCalendar(cal);
+  const rest = restDayWord(c.weekdays);
   const real = (d: string) => DATE.test(d) && addDays(d, 0) === d;
   if (!real(req.from) || !real(req.to)) throw new DeskError('bad-request', 400, '날짜는 YYYY-MM-DD로 적어 주세요');
   if (req.to < req.from) throw new DeskError('bad-request', 400, '끝날이 시작일보다 앞이에요');
@@ -178,14 +187,15 @@ export function draftDays(
   const out: LeaveDay[] = [];
   let holidays = 0;
   for (let d = req.from; d <= req.to; d = addDays(d, 1)) {
-    if (isWeekend(d)) continue;
-    if (offDayName(d, companyHolidays)) {
+    if (!isWorkWeekday(d, c.weekdays)) continue;
+    if (offDayName(d, c)) {
       holidays += 1;
       continue;
     }
     out.push(req.half === 'full' ? { date: d, kind: 'full' } : { date: d, kind: 'half', half: req.half });
   }
-  if (!out.length) throw new DeskError('bad-request', 400, holidays ? '고른 날이 모두 주말·쉬는 날(공휴일·회사 휴일)이에요' : '고른 날이 모두 주말이에요');
+  if (!out.length)
+    throw new DeskError('bad-request', 400, holidays ? `고른 날이 모두 ${rest}·쉬는 날(공휴일·회사 휴일)이에요` : `고른 날이 모두 ${rest}이에요`);
   if (out.length > LEAVE_REQUEST_MAX_DAYS) throw new DeskError('bad-request', 400, `한 번에 ${LEAVE_REQUEST_MAX_DAYS}일까지 신청할 수 있어요`);
   return out;
 }
@@ -221,6 +231,11 @@ export function registerDemoGroupwareRoutes(app: FastifyInstance, ctx: AppContex
   const refKey = randomBytes(16);
   const refOf = (subject: string) => createHmac('sha256', refKey).update(subject).digest('hex').slice(0, 16);
   const person = (d: Doc['drafter']) => ({ idpSubject: d.subject, ...(d.email ? { email: d.email } : {}) });
+  /** 기안자 근무 달력(11/6): 회사 기본 + 가상 근태가 준 근무 요일(주말 근무자) */
+  const calendarFor = async (user: Pick<DeskUser, 'idpSubject' | 'email'>) => {
+    const record = await ctx.adapters.leave.leaveOf({ idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) }).catch(() => null);
+    return { record, calendar: personCalendar(companyCalendar(ctx), record) };
+  };
 
   /** 결재자로 보기 목록: 가상 직원 중 팀장(IdP 역할 team-lead)과 인사팀 사람 */
   async function approvers(): Promise<Approver[]> {
@@ -259,7 +274,13 @@ export function registerDemoGroupwareRoutes(app: FastifyInstance, ctx: AppContex
 
   app.get('/api/demo/groupware/form', { preHandler: ctx.guards.user }, async (req): Promise<GroupwareFormResponse> => {
     const user = req.deskUser!;
-    return { drafter: { name: user.displayName, department: user.department }, line: (await lineFor(user)).map((s) => s.label), today: kstDate(ctx.now()) };
+    const { calendar } = await calendarFor(user);
+    return {
+      drafter: { name: user.displayName, department: user.department },
+      line: (await lineFor(user)).map((s) => s.label),
+      today: kstDate(ctx.now()),
+      offDays: offDaysText(calendar),
+    };
   });
 
   // 기안: 기안자는 지금 앱에 로그인한 사람이에요. 날짜·종류·하루/반차와 사유(병가·공가·경조는 꼭)를 받아요. 사유는 이 메모리에만 둬요.
@@ -289,10 +310,10 @@ export function registerDemoGroupwareRoutes(app: FastifyInstance, ctx: AppContex
       const requestKey = `${user.idpSubject}|${req.body.requestId}`;
       const again = store.byRequest(requestKey);
       if (again) return { doc: view(again, true) };
-      const list = draftDays(req.body, kstDate(ctx.now()), ctx.ops.get().companyHolidays);
+      const { record, calendar } = await calendarFor(user);
+      const list = draftDays(req.body, kstDate(ctx.now()), calendar);
       const reason = checkedReason(req.body.reason ?? '', reasonRequired(req.body.type) ? `${LEAVE_KIND_LABEL[req.body.type]} 사유를 적어 주세요` : null);
       const drafter = { subject: user.idpSubject, ...(user.email ? { email: user.email } : {}), name: user.displayName, department: user.department };
-      const record = await ctx.adapters.leave.leaveOf(person(drafter)).catch(() => null);
       const taken = clashOf(record?.uses ?? [], list);
       if (taken.length) throw new DeskError('conflict', 409, `이미 근태 기록에 휴가가 있는 날이에요: ${daysText(taken)}`);
       const pending = store.all().filter((d) => d.drafter.subject === user.idpSubject && d.state === 'pending');

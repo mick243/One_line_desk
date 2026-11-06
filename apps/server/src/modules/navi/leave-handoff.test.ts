@@ -86,10 +86,10 @@ describe('신청 전 카드(11/6 A안): 숫자는 서버 규칙이에요', () =>
     expect(actionsOf(amount).some((a) => a.type === 'copy')).toBe(false);
     expect(field(amount, '그날 내 일정')).toBeUndefined();
 
-    // 다음 연차 기간(12월~)의 날은 이번 기간에서 빼지 않고 다음 기간에서 빼요.
+    // 다음 연차 기간(12월~)의 날은 이번 기간에서 빼지 않고, 숫자 없이 한 문장으로 알려요(11/6 사용자 결정: 숫자는 이번 기간 것만).
     const later = await checkCard(doyun, '12월 2일 연차 쓰고 싶어');
     expect(field(later, '남은 연차')).toBe('7.5일 → 7.5일');
-    expect(field(later, '다음 연차 기간')).toMatch(/^2026-12-01부터 .+일 → .+일$/);
+    expect(field(later, '다음 연차 기간')).toBe('12월 1일(화)부터는 새 연차 기간이에요. 그 날은 이번 기간 연차에서 빼지 않았어요');
 
     // 맞는 공지를 찾지 못하면(공지 끔) 규정 줄은 지어내지 않고 빼요.
     const op = await t.loginAs(MOCK.operator);
