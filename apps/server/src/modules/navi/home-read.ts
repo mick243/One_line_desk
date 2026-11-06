@@ -2,6 +2,7 @@ import { recordCutoff } from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
 import type { NaviHomeRead } from '../../core/services';
 import { GENERAL_DESK } from './fixtures';
+import { leaveStatusCard } from './leave-handoff';
 import * as repo from './repo';
 
 // 홈 "나에게 해당하는 일"(ADR-27)이 쓰는 navi 읽기. 홈은 ctx.services.navi.home으로만 불러요(모듈 경계).
@@ -32,6 +33,9 @@ export function createNaviHomeRead(ctx: AppContext): NaviHomeRead {
         days: r.kind === 'leave' ? (r.leaveDays ?? []).map((d) => ({ date: d.date, kind: d.kind })) : [],
       }));
     },
+
+    // 11/6 A안 "내 휴가 신청 어떻게 됐어?": 근태 기록의 승인된 본인 휴가만 읽어요. 결재 중인 것은 그룹웨어 결재함으로 보내요.
+    leaveStatus: (user, from, to) => leaveStatusCard(ctx, user, from, to),
 
     async newInboxCount(user) {
       const owners = ctx.services.navi ? await ctx.services.navi.ownerDepartments() : new Set<string>();

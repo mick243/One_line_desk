@@ -8,7 +8,12 @@ import { createNoticesService } from './service';
 // MCP notices_search는 ctx.services.notices.search를 불러서 제목·게시일·원문 링크만이에요.
 export function createNoticesModule(ctx: AppContext): DeskModule {
   const notices = createNoticesService(ctx);
-  ctx.services.notices = { search: (query, limit) => notices.search(query, limit), boards: () => [...ALLOWED_BOARDS] };
+  // 규정 한 줄(11/6 휴가 A안): 휴가 신청 전 카드가 허용 게시판 공지의 원문 문장 하나를 붙일 때 불러요(낱말 규칙만).
+  ctx.services.notices = {
+    search: (query, limit) => notices.search(query, limit),
+    boards: () => [...ALLOWED_BOARDS],
+    ruleLine: (query, mustHave) => notices.ruleLine(query, mustHave),
+  };
 
   return {
     kind: 'notices',

@@ -1,3 +1,4 @@
+import type { LeaveKind } from './api/navi';
 import type { RoomOverview } from './api/rooms';
 import type { Kind, ModuleKind } from './kinds';
 
@@ -32,6 +33,16 @@ export type CardAction =
       confirm?: { title: string; lines: string[]; confirmLabel: string; note?: string };
     }
   | { type: 'link'; text: string; href: string }
+  /**
+   * 글을 클립보드에 복사해요(11/6 A안 [신청 내용 복사]). value는 서버가 정한 구조 값 글(종류·날짜)이고 사람이 쓴 글이 아니에요.
+   * 앱은 복사한 글을 어디에도 남기지 않아요(브라우저 저장소·서버 0).
+   */
+  | { type: 'copy'; text: string; value: string }
+  /**
+   * [이 날로 보기](11/6 A안 신청 전 카드): 걸린 일이 없는 가까운 날로 신청 전 카드를 다시 계산해요(읽기만, 쓰기 없음).
+   * 날짜·종류 코드만 들고, 화면이 POST /api/navi/leave/check로 보내요.
+   */
+  | { type: 'leave-day'; text: string; leaveType: LeaveKind; days: { date: string; kind: 'full' | 'half'; half?: 'am' | 'pm' }[] }
   | { type: 'reask'; text: string; kind: Kind }
   | { type: 'navigate'; text: string; to: AppDestination }
   /**

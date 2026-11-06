@@ -95,6 +95,12 @@ export interface ServerConfig {
    * 웹 화면만 Vercel(공개 주소)에 올린 시연에서 자료·API를 비밀번호 뒤에 둬요. 시연 배포에서만 써요.
    */
   demoPassword: string | undefined;
+  /**
+   * 앱 안 휴가 결재(문의함 휴가 요청 → 인사팀 승인·반려, ADR-24)를 켤지(DESK_LEAVE_IN_APP=true, 11/6 사용자 결정 A안).
+   * 팀장 결재 단계가 없어서 운영(production)에서는 켤 수 없어요(설정 검사가 막아요). 개발·시험에서만 써요.
+   * 끄면(기본) 휴가 신청·결재는 회사 그룹웨어 전자결재가 하고, 앱은 신청 전 카드와 승인 뒤 반영(근태 기록 읽기)만 해요.
+   */
+  leaveInApp: boolean;
 }
 
 const BUILD_ID = /^[A-Za-z0-9._-]{1,64}$/;
@@ -134,6 +140,9 @@ function aiProviderOf(value: string | undefined): AiProviderName {
   return value === 'anthropic' || value === 'gemini' ? value : 'fake';
 }
 
+/** 운영에서 DESK_LEAVE_IN_APP=true를 거부하는 이유(11/6 사용자 결정, ADR-24 개정) */
+export const LEAVE_IN_APP_BLOCKED = '앱 안 휴가 결재는 팀장 단계를 더하기 전까지 운영에서 켤 수 없어요';
+
 const SECRET_MIN = 32;
 /** 시연 비밀번호 최소 길이. 공개 주소에 올라가서 맞히기 어렵게 해요. */
 const DEMO_PASSWORD_MIN = 12;
@@ -167,6 +176,8 @@ function productionProblems(env: NodeJS.ProcessEnv, config: ServerConfig, runtim
   if (config.aiProvider === 'anthropic' && !env.ANTHROPIC_API_KEY) problems.push('DESK_AI_PROVIDER=anthropic인데 ANTHROPIC_API_KEY가 없어요');
   if (config.aiProvider === 'gemini' && !env.GEMINI_API_KEY) problems.push('DESK_AI_PROVIDER=gemini인데 GEMINI_API_KEY가 없어요');
   problems.push(...networkProblems(env, runtime));
+  // 11/6 사용자 결정(A안): 앱 안 휴가 결재는 팀장 단계가 없어서 운영(시연 배포 포함)에서 켤 수 없어요. 개발·시험에서만 써요.
+  if (env.DESK_LEAVE_IN_APP === 'true') problems.push(LEAVE_IN_APP_BLOCKED);
   if (config.demo) {
     // 시연 깃발이 운영 배포에 섞이면 가상 자료·모의 로그인이 실제 연결과 같이 떠요(QA-47). 시연은 다른 주소·DB·비밀로 따로 띄워요(CD-34).
     const real = [env.DESK_IDP && 'DESK_IDP', env.SLACK_BOT_TOKEN && 'SLACK_BOT_TOKEN'].filter((x): x is string => Boolean(x));
@@ -289,6 +300,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, runtime: Runtim
     mockLeaveJson: demo ? env.DESK_MOCK_LEAVE_JSON || undefined : undefined,
     mockRosterJson: demo ? env.DESK_MOCK_ROSTER_JSON || undefined : undefined,
     demoPassword: demo ? env.DESK_DEMO_PASSWORD || undefined : undefined,
+    leaveInApp: env.DESK_LEAVE_IN_APP === 'true',
   };
   // 응답 머리에 그대로 실어서 글자를 좁혀 둬요.
   if (!BUILD_ID.test(config.build)) throw new Error('DESK_BUILD는 영문·숫자·.·_·- 64자까지예요');

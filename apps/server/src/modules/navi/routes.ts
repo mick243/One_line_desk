@@ -15,13 +15,17 @@ import {
   type InquiryRequest,
   LEAVE_REJECT_REASON_MAX,
   LEAVE_REQUEST_MAX_DAYS,
+  LEAVE_KINDS,
   LEAVE_TYPES,
+  type LeaveCheckRequest,
+  type LeaveCheckResponse,
   OFFICIAL_LEAVE_REASONS,
   SICK_LEAVE_REASONS,
   NAVI_ROW_ID_PATTERN,
   type LeaveStartResponse,
   type NaviRowCardRequest,
   type OnboardingResponse,
+  kstDate,
 } from '@one-line-desk/shared';
 import type { FastifyInstance } from 'fastify';
 import { accessFrom } from '../../core/access-record';
@@ -29,7 +33,8 @@ import type { AppContext } from '../../context';
 import { DeskError } from '../../core/errors';
 import type { InquiryService } from './inquiries';
 import type { ItHelpService } from './it-help';
-import { findLeaveRequestRow, leaveLinkAction } from './leave';
+import { findLeaveRequestRow, leaveCheckForLink, leaveLinkAction } from './leave';
+import { checkLeaveLink } from './mcp-read';
 import * as repo from './repo';
 import type { NaviService } from './service';
 
@@ -41,6 +46,11 @@ const CHART_BODY_LIMIT = 512 * 1024;
 const CHART_CSV_MAX = 400_000;
 
 const featureOff = () => new DeskError('feature-off', 409, '지금은 이 기능이 꺼져 있어요');
+/**
+ * 11/6 사용자 결정(A안): 앱 안 휴가 결재(휴가 요청 보내기·승인·반려)는 DESK_LEAVE_IN_APP=true(개발·시험)일 때만 열려요.
+ * 팀장 결재 단계가 없어서 운영에서는 켤 수 없어요(config.ts). 휴가 신청·결재는 회사 그룹웨어가 해요.
+ */
+const leaveInAppOff = () => new DeskError('leave-in-app-off', 409, '휴가 신청·결재는 그룹웨어에서 해요. 앱에서는 신청 전 확인만 해요');
 
 export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: NaviService, inquiries: InquiryService, itHelp: ItHelpService) {
   const owner = [ctx.guards.user, ctx.guards.role('chart-owner')];
@@ -66,11 +76,50 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
 
   // 휴가 신청 바로 가기(11/5): 홈·문의하기의 [휴가 신청하기]가 날 없이 본인 양식을 열어요. 보내기는 양식의 확인 시트예요(ADR-24).
   // 남은 연차는 이 요청에서만 계산해 본인에게만 주고 저장하지 않아요(ADR-18). 읽기만이라 감사·접속기록은 없어요.
+  // 11/6 A안: 앱 안 휴가 결재가 꺼져 있으면(운영 기본) 양식 대신 신청 전 카드(남은 연차·[그룹웨어에서 신청하기])예요.
   app.get('/api/navi/leave/start', { preHandler: ctx.guards.user }, async (req): Promise<LeaveStartResponse> => {
     assertNotOff();
+    if (!ctx.config.leaveInApp) return { action: null, card: await leaveCheckForLink(ctx, req.deskUser!, [], 'annual') };
     const target = findLeaveRequestRow(await repo.allRows(ctx.db));
     return { action: target ? await leaveLinkAction(ctx, req.deskUser!, target, [], 'annual') : null };
   });
+
+  // [이 날로 보기](11/6 A안 신청 전 카드): 걸린 일이 없는 가까운 날로 카드를 다시 계산해요. 읽기만이고 저장·감사·AI 호출이 없어요.
+  // 날짜·종류 코드만 POST 본문으로 받아요(글 없음). 날 검사는 MCP 휴가 준비 링크와 같아요(평일·1년 안·병가는 지난 3일까지).
+  app.post<{ Body: LeaveCheckRequest }>(
+    '/api/navi/leave/check',
+    {
+      preHandler: ctx.guards.user,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['type', 'days'],
+          additionalProperties: false,
+          properties: {
+            type: { enum: [...LEAVE_KINDS] },
+            days: {
+              type: 'array',
+              minItems: 1,
+              maxItems: LEAVE_REQUEST_MAX_DAYS,
+              items: {
+                type: 'object',
+                required: ['date', 'kind'],
+                additionalProperties: false,
+                properties: { date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }, kind: { enum: ['full', 'half'] }, half: { enum: ['am', 'pm'] } },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (req): Promise<LeaveCheckResponse> => {
+      assertNotOff();
+      if (ctx.config.leaveInApp) throw new DeskError('not-found', 404, '앱 안 휴가 결재가 켜져 있으면 휴가 신청 양식에서 날을 골라요');
+      const checked = checkLeaveLink(req.body, kstDate(ctx.now()));
+      if (!checked.ok) throw new DeskError('bad-request', 400, checked.message);
+      return { card: await leaveCheckForLink(ctx, req.deskUser!, checked.days, req.body.type) };
+    },
+  );
 
   // 신규 입사자 첫 2주 할 일(넓힐 후보 ①). 누구나 읽어요. 진행은 저장하지 않아요.
   app.get('/api/navi/onboarding', { preHandler: ctx.guards.user }, async (): Promise<OnboardingResponse> => {
@@ -280,6 +329,8 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
       // 명단 밖으로 넓힌 시연은 여러 사람이 같은 가상 직원으로 들어와서, 저장한 문의를 받는 팀 가상 직원으로 들어온 남이 봐요.
       // 그래서 저장하지 않고 알려 줘요(10/29 배포 준비 회의 쟁점 5).
       if (ctx.config.demoWide) return reply.code(409).send({ error: 'demo-locked', message: '시연에서는 보내지 않아요' });
+      // 휴가 요청(ADR-24)은 앱 안 휴가 결재가 켜졌을 때만이에요(11/6 A안). 일반 문의는 그대로예요.
+      if (req.body.leave && !ctx.config.leaveInApp) throw leaveInAppOff();
       return inquiries.send(req.deskUser!, req.body);
     },
   );
@@ -338,6 +389,8 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
       },
     },
     async (req) => {
+      // 승인·반려도 앱 안 휴가 결재가 켜졌을 때만이에요(11/6 A안). 앱은 결재 권한이 없어요.
+      if (!ctx.config.leaveInApp) throw leaveInAppOff();
       const item = await inquiries.decide(req.deskUser!, req.params.id, req.body);
       await ctx.access.record({
         pseudonymId: req.deskUser!.pseudonymId,

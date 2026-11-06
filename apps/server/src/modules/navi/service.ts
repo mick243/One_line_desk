@@ -365,6 +365,8 @@ export function createNaviService(ctx: AppContext) {
       const snapshot = await currentChart();
       const rows = snapshot.rows;
       const leave = await myLeaveCard(ctx, input.user, input.text, findLeaveRequestRow(rows));
+      // 11/6 A안: 휴가를 쓰려는 말이면 신청 전 카드 하나로 답해요. 담당 카드의 [인사팀에 문의하기]와 섞이지 않게요.
+      if (leave?.id === 'navi-leave-check') return { cards: [leave], found: true };
       const guides = guidesFor(input.text, snapshot);
       const withLeave = (card: Card, row?: StoredRow): Card[] => {
         const guided = withGuides(card, [...guides.onboarding, ...(!row || guides.itRows.has(row.id) ? guides.it(row) : [])]);

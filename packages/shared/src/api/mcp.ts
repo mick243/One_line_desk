@@ -18,7 +18,9 @@ export type LinkAbout = 'leave' | 'pantry' | 'equipment';
  * - rooms: 회의실 예약 링크 → 화면이 /api/rooms/recheck로 지금 다시 확인해요
  * - inquiry: 담당 팀 문의 링크 → 그 팀 문의 양식을 빈 칸으로 열어요(질문 글은 링크에 없어요, R13)
  * - leave: 휴가 준비 링크 → 휴가 신청 양식을 그 날짜·종류로 채워 열어요. 사유는 앱에서 직접 골라요(남은 연차는 본인 화면에서만)
- * - pantry: 판 품목 링크 → 지금 다시 읽은 그 품목 카드. [여기에 +1]은 사람이 누르는 고정 버튼이에요
+ * - leave-check: 11/6 A안(앱 안 휴가 결재가 꺼져 있을 때, 운영 기본) → 그 날짜·종류의 신청 전 카드(남은 연차·그날 내 일정·
+ *   [그룹웨어에서 신청하기]). 신청·결재는 회사 그룹웨어가 해요
+ * - pantry:판 품목 링크 → 지금 다시 읽은 그 품목 카드. [여기에 +1]은 사람이 누르는 고정 버튼이에요
  * - pantry-new: 새 요청 링크 → 판의 요청 쓰기 칸을 빈 채로 열어요(품목 이름은 링크에 없어요)
  * - equipment: 장비 대여 링크 → 지금 다시 확인한 남은 수 카드. [빌리기] → 확인 시트가 유일한 확인이에요
  * - gone: 그 업무·품목이 없어요 · expired: 링크 시간이 지났어요 · off: 그 기능이 꺼져 있어요
@@ -27,6 +29,7 @@ export type LinkOpenResponse =
   | { kind: 'rooms' }
   | { kind: 'inquiry'; rowId: string | null; team: string; task: string }
   | { kind: 'leave'; action: Extract<CardAction, { type: 'leave-request' }> }
+  | { kind: 'leave-check'; card: Card }
   | { kind: 'pantry'; cards: Card[] }
   | { kind: 'pantry-new' }
   | { kind: 'equipment'; cards: Card[] }

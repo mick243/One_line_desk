@@ -265,11 +265,13 @@ export function createInquiryService(ctx: AppContext) {
       ctx.db,
       rows.map((r) => r.id),
     );
-    return Promise.all(
+    const items = await Promise.all(
       rows.map(async (i) =>
         toItem(i, view, replies, view === 'inbox' && i.kind === 'leave' && OPEN.includes(i.state) ? await extraOf(i) : { sickNote: sickNoteOf(i) }),
       ),
     );
+    // 11/6 A안: 앱 안 휴가 결재가 꺼져 있으면 [승인]·[반려]를 그리지 않아요(경로도 409예요). 결재는 회사 그룹웨어가 해요.
+    return ctx.config.leaveInApp ? items : items.map((it) => (it.canDecide ? { ...it, canDecide: false } : it));
   };
 
   return {

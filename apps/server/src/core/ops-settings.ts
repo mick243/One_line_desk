@@ -4,6 +4,7 @@ import {
   hasControlChar,
   isPantryStandalone,
   type ModuleKind,
+  OPS_CLEARABLE_LINKS,
   type ModuleSwitch,
   type OpsLinkKey,
   type OpsSettings,
@@ -143,12 +144,15 @@ export class OpsSettingsStore {
     );
   }
 
-  /** "링크만"일 때 보내는 그룹웨어 주소(CD-4)와 그룹웨어 팀 일정 주소(11/4). https 주소만 받아요. */
+  /**
+   * "링크만"일 때 보내는 그룹웨어 주소(CD-4)와 그룹웨어 팀 일정 주소(11/4), 그룹웨어 휴가 신청·결재함 주소(11/6 A안). https 주소만 받아요.
+   * 휴가 신청 주소의 {from}·{to}·{type}·{half} 자리 표시는 그대로 두고, 카드를 만들 때 날짜·종류 코드로 채워요.
+   */
   async setLink(operatorId: string, module: OpsLinkKey, url: string): Promise<OpsSettings> {
-    // 팀 일정 주소(11/4)는 빈 글로 지울 수 있어요. 지우면 버튼 없이 글 안내만 해요.
-    if (module === 'teamSchedule' && url === '')
+    // 팀 일정(11/4)·휴가 신청·결재함(11/6) 주소는 빈 글로 지울 수 있어요. 지우면 버튼 없이 글 안내만 해요.
+    if ((OPS_CLEARABLE_LINKS as readonly string[]).includes(module) && url === '')
       return this.save(
-        { ...this.overrides, links: { ...this.overrides.links, teamSchedule: '' } },
+        { ...this.overrides, links: { ...this.overrides.links, [module]: '' } },
         { pseudonymId: operatorId, channel: 'ops', module, action: 'link.set', result: 'cleared' },
       );
     let parsed: URL;

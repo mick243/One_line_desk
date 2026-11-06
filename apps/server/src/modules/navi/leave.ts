@@ -3,11 +3,13 @@ import {
   type Card,
   type CardAction,
   dayLabel,
+  fillLeaveLink,
   GRADE,
   type HalfPart,
   kstDate,
   type LeaveDay,
   type LeaveRequestBalance,
+  type LeaveKind,
   OFFICIAL_LEAVE_REASON_LABEL,
   OFFICIAL_LEAVE_REASONS,
   personNameWords,
@@ -24,6 +26,7 @@ import type { AppContext } from '../../context';
 import { makeCard } from '../../core/cards';
 import { mondayOf, upcomingMonthDay, WEEK_OFFSET, type Weekday, WEEKDAYS, weekdayOf } from '../../core/slots';
 import type { DeskUser } from '../../core/user';
+import { groupwareLinks, leaveCheckCard, type LeaveCheckNumbers, leaveLinkValues } from './leave-handoff';
 
 // 담당 찾기 "내 남은 연차"(ADR-18). 휴가 질문이면 담당 카드 뒤에 본인 연차 카드를 하나 더 붙여요.
 // - 숫자는 서버가 근로기준법 규칙으로 계산해요. 연차 자료(입사일·쓴 날)는 AI·로그·DB에 넣지 않아요(등급 2).
@@ -494,6 +497,30 @@ function officialLeaveCard(
   });
 }
 
+// ── 경조(11/6, 휴가 A안) ─────────────────────────────────────────────────
+// 결혼·장례 같은 경조사로 쉬는 날이에요. 연차에서 빠지지 않아요(공가처럼). 질문은 규칙으로만 알아봐요(AI 안 불러요).
+// 질문 글은 이 요청 메모리에서만 대조하고 저장하지 않아요. 사유는 앱이 받지 않고 그룹웨어 신청서에만 적어요.
+// "친구 결혼식이라 연차 쓰고 싶어"처럼 연차·반차를 직접 말하면 연차예요.
+
+const EVENT_WORDS = /경조/;
+const EVENT_REASON = /결혼식|장례|부고|조문|문상|빈소|발인|상을\s*당|상\s*당했/;
+const EVENT_ASK = /휴가|쉬|빠지|빠져|신청|결근/;
+const ANNUAL_SAID = /연차|반차|월차/;
+
+export function isEventLeaveQuestion(text: string): boolean {
+  if (EVENT_WORDS.test(text)) return true;
+  return EVENT_REASON.test(text) && EVENT_ASK.test(text) && !ANNUAL_SAID.test(text);
+}
+
+/** 경조 날: 오늘·내일·모레와 그 밖의 날 말(연차와 같은 규칙). 지난 날은 받지 않고 주말은 빼요. */
+export function readEventDates(text: string, today: string): string[] {
+  const near: string[] = [];
+  if (/오늘/.test(text)) near.push(today);
+  if (/내일/.test(text)) near.push(addDays(today, 1));
+  if (/모레/.test(text)) near.push(addDays(today, 2));
+  return [...new Set([...near, ...readPlanDates(text, today).dates])].filter((d) => d >= today && weekdayOf(d) !== 0 && weekdayOf(d) !== 6).sort();
+}
+
 // ── 병가(11/3) ────────────────────────────────────────────────────────────
 // 아파서 쉬는 날이에요. 연차에서 빠지지 않아요. 질문은 공가처럼 규칙으로만 알아봐요(AI 안 불러요).
 // 사유는 정해진 선택지만 받아요(건강 정보를 받지 않아요). 올해 병가 쓴 날은 서버가 근태 기록으로 계산하고 저장하지 않아요(ADR-18).
@@ -582,6 +609,8 @@ export function leaveCard(
   request?: LeaveRequestTarget | null,
   next: LeaveBalance | null = null,
   sick: SickInfo | null = null,
+  /** 11/6 A안: 앱 안 휴가 결재가 꺼져 있으면 [휴가 신청하기] 대신 [그룹웨어에서 신청하기](링크)예요. */
+  apply: CardAction | null = null,
 ): Card {
   if (q.aboutOther) return otherPersonCard();
   if (!balance) {
@@ -630,7 +659,7 @@ export function leaveCard(
       ...(q.otherPeriod ? [{ name: '작년·내년', value: '이번 연차 기간만 보여요. 지난 기간은 그룹웨어 근태 메뉴에서 봐요' }] : []),
     ],
     evidence: { text: `인사 근태 기록으로 서버가 계산 · 근로기준법(개근 가정) · ${today} 기준`, aiSummarized: q.viaAi && plan > 0 },
-    ...(request ? { secondary: [leaveRequestAction(request, q, balance, next, sick)] } : {}),
+    ...(request ? { secondary: [leaveRequestAction(request, q, balance, next, sick)] } : apply ? { secondary: [apply] } : {}),
     tail: LEAVE_TAIL,
   });
 }
@@ -648,20 +677,102 @@ function namesOtherPerson(text: string, roster: readonly string[], mine: readonl
   return pattern.test(text);
 }
 
-export async function myLeaveCard(
+// ── 휴가 A안: 그룹웨어로 넘기기(11/6 사용자 결정) ─────────────────────────────
+// 앱 안 휴가 결재(DESK_LEAVE_IN_APP)가 꺼져 있으면(운영 기본) [휴가 신청하기] 양식 대신 신청 전 카드(leave-handoff.ts)를 줘요.
+// 숫자는 여기서 서버 규칙으로 계산해 넘기고, 카드는 그룹웨어 주소·그날 내 일정·규정 한 줄을 더해요. AI에는 질문 글만 가요.
+
+/** 쓰려는 말이 있는지(날·양을 읽었거나 "쓰고 싶어" 같은 말). 없으면("연차 몇 개 남았어?") 남은 연차 카드예요. */
+const wantsToUse = (q: LeaveQuestion, text: string) => q.planDates.length > 0 || q.planFull > 0 || q.planHalf > 0 || USE_VERB.test(text);
+
+/** 연차 질문에서 읽은 날(반차는 읽은 오전·오후로, 모르면 구분 없이) */
+function plannedDays(q: Pick<LeaveQuestion, 'planDates' | 'planFull' | 'planHalf' | 'planPart'>): LeaveDay[] {
+  const half = q.planHalf > 0 && q.planFull === 0;
+  return q.planDates.map((date) => (half ? { date, kind: 'half' as const, ...(q.planPart ? { half: q.planPart } : {}) } : { date, kind: 'full' as const }));
+}
+
+/** 신청 전 카드 숫자(서버 규칙, ADR-18). 공가·병가는 연차에서 빠지지 않고, 병가는 올해 병가 쓴 날이 늘어요. */
+function checkNumbers(
   ctx: AppContext,
-  user: Pick<DeskUser, 'idpSubject' | 'email' | 'displayName'>,
-  text: string,
-  request?: LeaveRequestTarget | null,
-): Promise<Card | null> {
+  record: LeaveRecord | null,
+  today: string,
+  type: LeaveKind,
+  days: readonly LeaveDay[],
+  amount: { full: number; half: number } | undefined,
+  planMonthStart: string | null,
+): LeaveCheckNumbers {
+  if (!record) return { annual: null };
+  const balance = computeLeave(record, today);
+  const v = ctx.ops.get().values;
+  const sick =
+    type === 'sick'
+      ? (() => {
+          const u = sickUsage(record, today, v.sickLeaveYearDays);
+          const thisYear = days.filter((d) => Number(d.date.slice(0, 4)) === u.year);
+          return { used: u.used, after: u.used + daysOf(thisYear), limit: u.limit, note: needsSickNote(days, v.sickNoteOverDays) };
+        })()
+      : null;
+  if (type !== 'annual') return { annual: { remaining: balance.remaining, after: balance.remaining }, sick };
+  if (days.length) {
+    const b = leaveRequestBalance(record, today, days);
+    return {
+      annual: { remaining: b.remaining, after: b.after },
+      next: b.next ? { periodStart: b.next.periodStart, remaining: b.next.remaining, after: b.next.after } : null,
+    };
+  }
+  const plan = amount ? amount.full + amount.half * HALF_DAY : 0;
+  // "12월에 3일"처럼 다음 연차 기간의 달이면 이번 기간에서 빼지 않고 다음 기간에서 빼요(남은 연차 카드와 같아요).
+  if (planMonthStart !== null && planMonthStart > balance.periodEnd) {
+    const next = nextPeriodLeave(record, balance);
+    return {
+      annual: { remaining: balance.remaining, after: balance.remaining },
+      next: plan ? { periodStart: next.periodStart, remaining: next.remaining, after: next.remaining - plan } : null,
+    };
+  }
+  return { annual: { remaining: balance.remaining, after: balance.remaining - plan } };
+}
+
+async function handoffCard(
+  ctx: AppContext,
+  user: DeskUser,
+  record: LeaveRecord | null,
+  type: LeaveKind,
+  days: LeaveDay[],
+  extra: { amount?: { full: number; half: number }; weekendSkipped?: number; planMonthStart?: string | null; viaAi?: boolean } = {},
+): Promise<Card> {
+  const today = kstDate(ctx.now());
+  return leaveCheckCard(ctx, user, {
+    type,
+    days,
+    ...(extra.amount ? { amount: extra.amount } : {}),
+    ...(extra.weekendSkipped ? { weekendSkipped: extra.weekendSkipped } : {}),
+    numbers: checkNumbers(ctx, record, today, type, days, extra.amount, extra.planMonthStart ?? null),
+    taken: record?.uses ?? [],
+    viaAi: extra.viaAi ?? false,
+  });
+}
+
+/** 남은 연차 카드의 [그룹웨어에서 신청하기](A안). 날이 없어서 종류만 채워요. 주소가 없으면 버튼 없어요. */
+function groupwareApply(ctx: AppContext): CardAction | null {
+  const link = groupwareLinks(ctx).leave;
+  return link ? { type: 'link', text: '그룹웨어에서 신청하기', href: fillLeaveLink(link, leaveLinkValues('annual', [])) } : null;
+}
+
+export async function myLeaveCard(ctx: AppContext, user: DeskUser, text: string, request?: LeaveRequestTarget | null): Promise<Card | null> {
   const today = kstDate(ctx.now());
   const person = { idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) };
+  // 11/6 A안: 앱 안 휴가 결재가 꺼져 있으면(운영 기본) 신청 전 카드예요. 남의 연차·병가 카드는 그대로예요(근태 기록을 읽지 않아요).
+  const handoff = !ctx.config.leaveInApp;
   const sickOf = (record: LeaveRecord | null): SickInfo | null => {
     if (!record) return null;
     const v = ctx.ops.get().values;
     return { ...sickUsage(record, today, v.sickLeaveYearDays), noteOverDays: v.sickNoteOverDays };
   };
   if (isOfficialLeaveQuestion(text)) {
+    if (handoff) {
+      const { dates, weekendSkipped } = readPlanDates(text, today);
+      const record = await ctx.adapters.leave.leaveOf(person).catch(() => null);
+      return handoffCard(ctx, user, record, 'official', explicitDays(dates, text), { weekendSkipped });
+    }
     // 공가 카드는 숫자를 보여 주지 않아요. 남은 연차는 양식에서 연차로 바꿀 때만 쓰려고 본인 것만 읽어요.
     const record = request ? await ctx.adapters.leave.leaveOf(person).catch(() => null) : null;
     const balance = record ? computeLeave(record, today) : null;
@@ -671,8 +782,15 @@ export async function myLeaveCard(
     // 병가 카드: 올해 병가 쓴 날(본인 것만, 서버 계산). 남의 병가를 물으면 근태 기록을 읽지 않아요.
     if (OTHER_SICK.test(text)) return sickLeaveCard(today, text, null, null, null, null);
     const record = await ctx.adapters.leave.leaveOf(person).catch(() => null);
+    if (handoff) return handoffCard(ctx, user, record, 'sick', explicitDays(readSickDates(text, today), text));
     const balance = record ? computeLeave(record, today) : null;
     return sickLeaveCard(today, text, request ?? null, balance, record && balance ? nextPeriodLeave(record, balance) : null, sickOf(record));
+  }
+  // 경조(11/6): 그룹웨어로 넘길 때만 따로 카드를 줘요. 앱 안 흐름(DESK_LEAVE_IN_APP)에는 경조 종류가 없어서 예전처럼 담당 카드예요.
+  if (handoff && isEventLeaveQuestion(text)) {
+    const record = await ctx.adapters.leave.leaveOf(person).catch(() => null);
+    const { weekendSkipped } = readPlanDates(text, today);
+    return handoffCard(ctx, user, record, 'family-event', explicitDays(readEventDates(text, today), text), { weekendSkipped });
   }
   const q = await readLeaveQuestion(ctx.gateway, text, today);
   if (!q.about) return null;
@@ -681,8 +799,35 @@ export async function myLeaveCard(
   const names = await ctx.adapters.directory.personNameWords().catch(() => [] as string[]);
   if (namesOtherPerson(text, names, personNameWords(user.displayName))) return otherPersonCard();
   const record = await ctx.adapters.leave.leaveOf(person).catch(() => null);
+  if (handoff && !q.otherPeriod && wantsToUse(q, text)) {
+    const days = plannedDays(q);
+    const amount = !days.length && (q.planFull > 0 || q.planHalf > 0) ? { full: q.planFull, half: q.planHalf } : undefined;
+    return handoffCard(ctx, user, record, 'annual', days, {
+      ...(amount ? { amount } : {}),
+      weekendSkipped: q.weekendSkipped,
+      planMonthStart: q.planMonthStart,
+      viaAi: q.viaAi,
+    });
+  }
   const balance = record ? computeLeave(record, today) : null;
-  return leaveCard(balance, q, today, request, record && balance ? nextPeriodLeave(record, balance) : null, sickOf(record));
+  const next = record && balance ? nextPeriodLeave(record, balance) : null;
+  if (handoff) return leaveCard(balance, q, today, null, next, null, groupwareApply(ctx));
+  return leaveCard(balance, q, today, request, next, sickOf(record));
+}
+
+/**
+ * MCP 휴가 준비 링크를 열 때(11/6 A안): 링크의 날짜·종류로 만든 신청 전 카드. 본인이 앱에서 로그인해 열 때만 불러요.
+ * 남은 연차·그날 내 일정은 이 사람 화면에만 가고 MCP 출력에는 없어요(ADR-18).
+ */
+export async function leaveCheckForLink(ctx: AppContext, user: DeskUser, days: readonly LeaveDay[], type: LeaveKind): Promise<Card> {
+  const record = await ctx.adapters.leave.leaveOf({ idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) }).catch(() => null);
+  return handoffCard(
+    ctx,
+    user,
+    record,
+    type,
+    days.map((d) => ({ date: d.date, kind: d.kind, ...(d.kind === 'half' && d.half ? { half: d.half } : {}) })),
+  );
 }
 
 /**
