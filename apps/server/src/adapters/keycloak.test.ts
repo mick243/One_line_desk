@@ -393,6 +393,31 @@ describe('IdP 로그인 경로(OIDC 인가 코드 + PKCE)', () => {
     expect(auth.searchParams.get('max_age')).toBe('0');
   });
 
+  it('[ADR-20 시험] [카페 판으로 로그인]은 판 전용 표시를 진행 쿠키에 실어요. 바리스타가 아니면 세션을 만들지 않고, 역할이 빠지면 다음 요청에서 끊겨요', async () => {
+    const { t, state } = await setup();
+    await t.ctx.ops.setModule('p_test-operator', 'cafeteria', 'on');
+    // 도윤은 바리스타(역할 그룹 /역할/cafe)가 아니에요.
+    const s = await start(t, state, '?board=1');
+    const refused = await callback(t, s.state, s.cookie);
+    expect(refused.headers.location).toBe('/?login=not-barista');
+    expect(sessionCookie(refused)).toBeUndefined();
+    expect(t.ctx.sessions.size).toBe(0);
+    expect((await t.ctx.audit.recent(1))[0]).toMatchObject({ channel: 'auth', action: 'login', result: 'not-barista' });
+
+    // ID 토큰이 바리스타라고 하면 판 전용 세션이 열리고 카페 판(홈)으로 가요. 접속기록은 cafe-board.login이에요.
+    state.claims = { groups: ['/부서/개발팀', '/층/5층', '/역할/cafe'] };
+    const s2 = await start(t, state, '?board=1&return=%2Frooms');
+    const ok = await callback(t, s2.state, s2.cookie);
+    expect(ok.headers.location).toBe('/');
+    const cookie = sessionCookie(ok)!;
+    expect(cookie).toBeDefined();
+    const { rows } = await t.db.query<{ action: string }>('select action from access_log order by id');
+    expect(rows.map((r) => r.action)).toEqual(['cafe-board.login']);
+    // 직원 명단(디렉터리)은 도윤에게 바리스타 역할이 없다고 해요. 다음 요청에서 판 세션이 끊겨요(재확인).
+    expect((await t.app.inject({ method: 'GET', url: '/api/me', headers: { cookie } })).statusCode).toBe(401);
+    expect((await t.ctx.audit.recent(1))[0]).toMatchObject({ action: 'board.recheck', result: 'ended' });
+  });
+
   it('다른 사이트로는 돌려보내지 않고, 모의 로그인은 닫혀 있어요', async () => {
     const { t, state } = await setup();
     // QA-1: tab·줄바꿈·`\`·인코딩한 `/`·전각 `／`·`..`로 돌아 나가는 주소도 앱 첫 화면으로 보내요. 콜백은 500이 나지 않아요.

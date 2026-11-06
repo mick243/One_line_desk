@@ -3,11 +3,11 @@ export const KINDS = ['navi', 'notices', 'rooms', 'pantry', 'unknown'] as const;
 export type Kind = (typeof KINDS)[number];
 
 // 끄기 스위치가 붙는 모듈. unknown은 담당 안내(navi)로 가요.
-// cafeteria(11/6, ADR-29): 사내 카페 주문. 출시 기본 끔이에요. 앞문 라우터 종류(KINDS)에는 아직 넣지 않아요(채팅 주문은 다음 묶음).
+// cafeteria(11/6, ADR-29): 사내 카페 주문. 출시 기본 끔이에요. 앞문 라우터 종류(KINDS)에는 넣지 않아요(채팅 주문은 홈 채팅에서만, 11/6 3묶음).
 export const MODULES = ['navi', 'notices', 'rooms', 'pantry', 'cafeteria'] as const;
 export type ModuleKind = (typeof MODULES)[number];
 
-/** 앞문 라우터가 보내는 모듈(종류 중 unknown 빼고). 카페(cafeteria)는 아직 들어 있지 않아요(채팅 주문은 다음 묶음, ADR-29). */
+/** 앞문 라우터가 보내는 모듈(종류 중 unknown 빼고). 카페(cafeteria)는 들어 있지 않아요(채팅 주문은 홈 채팅에서만, ADR-29 3묶음). */
 export const ROUTER_MODULES = ['navi', 'notices', 'rooms', 'pantry'] as const satisfies readonly ModuleKind[];
 export type RouterModule = (typeof ROUTER_MODULES)[number];
 

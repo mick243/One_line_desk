@@ -3,6 +3,8 @@ import type { AiGateway } from '../core/ai/gateway';
 import { interpretByRules as homeByRules, interpretHomeText } from '../core/home';
 import { classifyText } from '../core/router';
 import { matchRules } from '../core/router-rules';
+import { menuWords } from '../modules/cafe/chat';
+import { CAFE_MENU_FIXTURES } from '../modules/cafe/fixtures';
 import { chatReadLabel, interpretByRules as chatByRules, interpretChatText } from '../modules/rooms/chat';
 import { type EvalTask, GOLDEN, type GoldenCase } from './ai-golden';
 
@@ -14,6 +16,8 @@ import { type EvalTask, GOLDEN, type GoldenCase } from './ai-golden';
 export const EVAL_NOW = Date.parse('2026-10-26T09:00:00+09:00');
 /** 홈 규칙이 직원 이름 낱말로 "서준 오늘 자리에 있어?"를 알아봐요. 가상 직원 이름만 써요. */
 const NAMES = ['가상 직원 서준', '가상 직원 하은', '가상 직원 주원', '가상 직원 도윤'].flatMap((n) => personNameWords(n));
+/** 홈 채팅은 사내 카페가 켜진 회사로 재요(11/6). 가상 메뉴의 이름·별칭 낱말이에요(값 없음). */
+const CAFE_WORDS = menuWords(CAFE_MENU_FIXTURES.map((m) => ({ id: m.id, name: m.name, options: m.options })));
 
 export interface CaseResult extends GoldenCase {
   rule: string;
@@ -30,7 +34,7 @@ const chatKey = (r: { intent: string; kinds: readonly string[] }) => {
 function byRules(c: GoldenCase): string {
   switch (c.task) {
     case 'home':
-      return homeKey(homeByRules(c.text, NAMES));
+      return homeKey(homeByRules(c.text, NAMES, CAFE_WORDS));
     case 'room-chat':
       return chatKey(chatByRules(c.text, EVAL_NOW));
     case 'router':
@@ -41,7 +45,7 @@ function byRules(c: GoldenCase): string {
 async function byModel(gateway: AiGateway, c: GoldenCase): Promise<string> {
   switch (c.task) {
     case 'home': {
-      const r = await interpretHomeText(gateway, c.text, NAMES);
+      const r = await interpretHomeText(gateway, c.text, NAMES, CAFE_WORDS);
       return r.byModel ? homeKey(r) : 'error';
     }
     case 'room-chat': {

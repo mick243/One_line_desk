@@ -7,16 +7,22 @@ import type { ReadNote } from './read-note';
 // 11/5 사용자 결정(ADR-27 보강): 마이 페이지의 내 예약·내 요청·나에게 온 요청·자리비움 알리기를 홈 채팅으로 옮겼어요.
 // 답 아래에서 그 칸을 펼쳐 바로 취소·답하기·자리비움 알리기를 해요(새 예약·신청은 여전히 그 페이지에서 해요).
 
-/** 홈이 모으는 내 일 종류 */
-export const HOME_KINDS = ['reservations', 'loans', 'invites', 'inquiries', 'leave', 'pantry', 'inbox'] as const;
+/**
+ * 홈이 모으는 내 일 종류. cafe(11/6 3묶음, ADR-29)는 "이번 달 커피값 얼마야?"처럼 내 카페 값을 묻는 말이에요.
+ * 카페 값은 목록 항목이 아니라 서버가 계산한 본인 카드 하나로 와요(물었을 때만, AI에는 질문 글만 가요).
+ */
+export const HOME_KINDS = ['reservations', 'loans', 'invites', 'inquiries', 'leave', 'pantry', 'inbox', 'cafe'] as const;
 export type HomeKind = (typeof HOME_KINDS)[number];
 
 /** 물은 때. recent는 기간을 말하지 않았을 때예요(일정은 앞으로 7일, 요청은 보관 중인 7일). */
 export const HOME_PERIODS = ['today', 'tomorrow', 'this-week', 'next-week', 'recent'] as const;
 export type HomePeriod = (typeof HOME_PERIODS)[number];
 
-/** 다른 일이면 옮겨 갈 기능 페이지. away는 "자리비움 알리기" 양식이에요(11/3). 11/5부터 홈 답 아래에 바로 펼쳐요. */
-export const HOME_MOVE_TO = ['rooms', 'navi', 'notices', 'board', 'away'] as const;
+/**
+ * 다른 일이면 옮겨 갈 기능 페이지. away는 "자리비움 알리기" 양식이에요(11/3). 11/5부터 홈 답 아래에 바로 펼쳐요.
+ * cafe(11/6 3묶음): 사내 카페 주문 문장("2시에 아아 하나 연하게"). 홈 답에 [확인하고 주문하기] 카드가 붙고, 누르면 확인 시트예요(자동 실행 없음).
+ */
+export const HOME_MOVE_TO = ['rooms', 'navi', 'notices', 'board', 'away', 'cafe'] as const;
 export type HomeMoveTo = (typeof HOME_MOVE_TO)[number];
 
 /**
@@ -44,6 +50,7 @@ export const HOME_KIND_LABEL: Record<HomeKind, string> = {
   leave: '휴가 요청',
   pantry: '같이 채워요',
   inbox: '받은 문의',
+  cafe: '카페 값',
 };
 
 /** 옮겨 갈 곳 이름("알아들은 것" 라벨, 11/5 시험) */
@@ -53,6 +60,7 @@ export const HOME_MOVE_LABEL: Record<HomeMoveTo, string> = {
   notices: '공지',
   board: '같이 채워요',
   away: '자리비움 알리기',
+  cafe: '카페',
 };
 
 /** 홈 질문을 해석한 구조 값(AI든 낱말 규칙이든 같은 모양) */
@@ -74,6 +82,8 @@ export function homeReadLabel(r: HomeRead): string {
     case 'move':
       // 자리비움은 홈 답 아래에서 바로 알려요(11/5). 다른 곳은 그 기능 페이지에서 해요.
       if (r.moveTo === 'away') return `하려는 일 · ${HOME_MOVE_LABEL.away}`;
+      // 카페 주문(11/6)은 홈 답에서 카드로 바로 이어져요(확인 시트는 사람이 눌러야 떠요).
+      if (r.moveTo === 'cafe') return '하려는 일 · 카페 주문';
       return r.moveTo ? `하려는 일 · ${HOME_MOVE_LABEL[r.moveTo]}에서 해요` : '하려는 일';
     case 'team-schedule':
       return `${HOME_PERIOD_LABEL[r.period]} · 같은 팀 일정`;

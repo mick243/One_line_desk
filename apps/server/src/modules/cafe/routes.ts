@@ -82,6 +82,11 @@ export function registerCafeRoutes(app: FastifyInstance, ctx: AppContext, desk: 
     desk.cancel(req.deskUser!, req.params.id),
   );
 
+  // [못 받았어요](고정 버튼, 3묶음): 내 주문이고 오늘 나왔어요·가져감일 때만. 사유 글은 받지 않아요. 총무 역할에게 알림이 가요.
+  app.post<{ Params: { id: string } }>('/api/cafe/orders/:id/missed', { preHandler: user, schema: { params: ORDER_ID } }, async (req) =>
+    desk.reportMissed(req.deskUser!, req.params.id),
+  );
+
   // ── S8 카페 판(바리스타만) ──
 
   // 웹은 3초마다 배경 요청(x-desk-background)으로 불러요. 쉬는 시간을 늘리지 않아요(ADR-20).
@@ -155,6 +160,14 @@ export function registerCafeRoutes(app: FastifyInstance, ctx: AppContext, desk: 
   );
   app.post<{ Params: { id: string } }>('/api/cafe/limit/:id/reject', { preHandler: facilities, schema: { params: ROW_ID } }, async (req) =>
     desk.billing.decideLimit(req.deskUser!, req.params.id, 'rejected', accessFrom(req)),
+  );
+
+  // [못 받았어요] 확인(고정 버튼, 3묶음): [청구에서 빼기]·[그대로 두기]. 빼면 청구·한도·매출 합계에서 빠지고, 입금 확인 전 청구서는 합계를 다시 세요.
+  app.post<{ Params: { id: string } }>('/api/cafe/missed/:id/remove', { preHandler: facilities, schema: { params: ROW_ID } }, async (req) =>
+    desk.billing.decideMissed(req.deskUser!, req.params.id, 'removed', accessFrom(req)),
+  );
+  app.post<{ Params: { id: string } }>('/api/cafe/missed/:id/keep', { preHandler: facilities, schema: { params: ROW_ID } }, async (req) =>
+    desk.billing.decideMissed(req.deskUser!, req.params.id, 'kept', accessFrom(req)),
   );
 
   // 메뉴·직원가 관리(고정 버튼): 더하기·바꾸기(이름·직원가·옵션·파는지). 품절은 바리스타가 카페 판에서 바꿔요.

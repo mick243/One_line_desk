@@ -22,7 +22,8 @@ import { DeskError } from '../../core/errors';
 import type { ExecContext, ExecOutcome, PlanHandler } from '../../core/module';
 import type { DeskUser } from '../../core/user';
 import { CafeBilling, type CafeGate } from './billing';
-import { blockedCard, cafeLinkCard, cancelledCard, expiredCard, lineText, linesOf, orderedCard, slotLabel } from './cards';
+import { blockedCard, cafeLinkCard, cancelledCard, chatInfoCard, chatOrderCard, expiredCard, lineText, linesOf, orderedCard, slotLabel } from './cards';
+import { type ChatPickup, menuWords, readChatOrder, tooMuch } from './chat';
 import { CAFE_MENU_FIXTURES } from './fixtures';
 import * as repo from './repo';
 
@@ -32,6 +33,7 @@ import * as repo from './repo';
 // - 영업 중(바리스타가 [영업 시작]을 누르고 카페 판이 2분 안에 서버에 보임)일 때만 제안·확인 시트·실행이 돼요. 실행은 트랜잭션 안에서 다시 봐요.
 // - 금액은 서버가 메뉴 표의 지금 직원가 × 수량으로 계산해요. 토큰·화면이 보낸 값을 쓰지 않아요. AI는 부르지 않아요.
 // - 취소(본인·접수 대기만)와 카페 판 쓰기(영업·상태·품절)는 고정 버튼(ctx.fixed)이에요. 카페 판 응답에는 이름·가명 ID·금액이 없어요.
+// 3묶음(11/6): [못 받았어요](본인·그날·나왔어요·가져감만, 고정 버튼)와 홈 채팅 주문 카드(chat.ts로 나누고 같은 제안 검사를 거쳐요).
 
 const SLOT_MS = CAFE_LIMITS.slotMinutes * 60_000;
 const KST_SLOT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\+09:00$/;
@@ -86,6 +88,8 @@ export function slotStarts(now: number): number[] {
 }
 
 const kstIso = (at: number) => `${kstDate(at)}T${kstTime(at)}:00+09:00`;
+/** 그날 한국 자정(ms) */
+const startOfKstDay = (now: number) => Date.parse(`${kstDate(now)}T00:00:00+09:00`);
 /** 이번 달 1일(한국 날짜) */
 const monthStart = (now: number) => `${kstDate(now).slice(0, 7)}-01`;
 
@@ -179,6 +183,9 @@ export class CafeDesk {
       status: o.status,
       totalWon: o.totalWon,
       cancellable: o.status === 'waiting',
+      missed: o.missed,
+      // [못 받았어요]: 나왔어요·가져감인 오늘 주문이고 아직 신고하지 않았을 때만(이 목록은 오늘 주문뿐이에요).
+      canReportMissed: (o.status === 'ready' || o.status === 'picked') && o.missed === null,
     }));
     const monthTotalWon = await repo.monthTotal(db, user.pseudonymId, monthStart(now));
     return {
@@ -194,6 +201,14 @@ export class CafeDesk {
 
   /** [주문하기]: 고른 메뉴·픽업 칸을 검사하고 제안 토큰만 돌려줘요. DB에는 쓰지 않아요(확인 시트가 plan을 만들어요). */
   async propose(user: DeskUser, body: CafeProposeRequest): Promise<CafeProposeResponse> {
+    return { proposalToken: (await this.prepare(user, body)).proposalToken };
+  }
+
+  /**
+   * 제안 검사(카페 페이지 [주문하기]와 홈 채팅 주문 카드가 같이 써요): 영업 중·같은 줄·칸·메뉴·품절·옵션·미납·한도·칸 잔 수를 보고
+   * 메뉴 직원가로 값을 매긴 뒤 제안 토큰을 만들어요. 막히면 DeskError(화면 문구)를 던져요. DB에는 쓰지 않아요.
+   */
+  private async prepare(user: DeskUser, body: CafeProposeRequest): Promise<{ proposalToken: string; priced: Priced; slot: number }> {
     this.assertOn();
     const db = this.ctx.db;
     const now = this.ctx.now();
@@ -216,7 +231,111 @@ export class CafeDesk {
       pickupSlot: kstIso(slot),
       quotedWon: priced.totalWon,
     });
-    return { proposalToken: this.ctx.plans.propose(user, 'cafeteria', 'order', params) };
+    return { proposalToken: this.ctx.plans.propose(user, 'cafeteria', 'order', params), priced, slot };
+  }
+
+  // ── 홈 채팅 주문(3묶음, PRD F4-1) ─────────────────────
+
+  /** 홈 낱말 규칙용 메뉴 이름·별칭(값 없음) */
+  async menuWords(): Promise<string[]> {
+    return menuWords(await repo.listMenu(this.ctx.db));
+  }
+
+  /**
+   * 홈 채팅 주문 문장 → 카드(쓰기 0, 자동 실행 없음). 영업 중이 아니면 모델을 부르지 않고 바로 "지금은 카페가 주문을 받지 않아요" 안내예요.
+   * 메뉴·옵션·잔 수·픽업 시각은 chat.ts가 나누고(모델에는 질문 글과 메뉴 이름·옵션 이름만), 픽업 칸은 그 시각 칸 또는 가장 가까운 다음 칸이에요.
+   * 값은 카페 페이지 [주문하기]와 같은 검사(prepare)가 메뉴 직원가로 매겨요. 카드의 [확인하고 주문하기]는 그 제안 토큰으로 기존 확인 시트를 열어요.
+   */
+  async orderCards(user: DeskUser, text: string): Promise<Card[]> {
+    const s = this.ctx.ops.get();
+    if (s.modules.cafeteria === 'link') return [cafeLinkCard(s.links.cafeteria)];
+    if (s.modules.cafeteria !== 'on') return [];
+    const db = this.ctx.db;
+    const now = this.ctx.now();
+    if (!acceptingOrders(await repo.getDuty(db), now)) return [chatInfoCard('closed', CAFE_TEXT.closed)];
+    const menu = await repo.listMenu(db);
+    const read = await readChatOrder(
+      this.ctx.gateway,
+      text,
+      menu.map((m) => ({ id: m.id, name: m.name, options: m.options })),
+    );
+    if (!read.lines.length) return [chatInfoCard('menu', '어떤 메뉴인지 알아듣지 못했어요. 카페에서 골라 주세요')];
+    const much = tooMuch(read.lines);
+    if (much) return [chatInfoCard('too-much', much)];
+    const cups = read.lines.reduce((n, l) => n + l.qty, 0);
+    const picked = await this.slotFor(read.pickup, cups, now);
+    if ('info' in picked) return [chatInfoCard('slot', picked.info)];
+    try {
+      const prepared = await this.prepare(user, { lines: read.lines, pickupSlot: kstIso(picked.slot) });
+      return [
+        chatOrderCard({
+          items: prepared.priced.items,
+          totalWon: prepared.priced.totalWon,
+          slot: prepared.slot,
+          proposalToken: prepared.proposalToken,
+          byModel: read.byModel,
+          notes: picked.note ? [picked.note] : [],
+        }),
+      ];
+    } catch (e) {
+      // 미납·한도·품절·바뀐 메뉴처럼 제안이 막히면 그 문구 그대로 안내해요. 주문은 들어가지 않아요.
+      if (e instanceof DeskError) return [chatInfoCard(e.code, e.message)];
+      throw e;
+    }
+  }
+
+  /**
+   * 말한 픽업 때 → 고를 수 있는 칸. 그 시각이 든 칸이 꽉 찼거나 지났으면 가장 가까운 다음 칸이에요(알아 둘 것에 적어요).
+   * 고를 수 있는 칸(지금 다음 칸부터 2시간)보다 늦으면 고르지 않고 안내해요.
+   */
+  private async slotFor(pickup: ChatPickup, cups: number, now: number): Promise<{ slot: number; note: string | null } | { info: string }> {
+    const starts = slotStarts(now);
+    const target = pickup === null ? starts[0]! : pickup.kind === 'after' ? now + pickup.minutes * 60_000 : startOfKstDay(now) + pickup.minutes * 60_000;
+    const asked = Math.floor(target / SLOT_MS) * SLOT_MS;
+    if (asked > starts.at(-1)!)
+      return { info: `그 시각은 아직 고를 수 없어요. 픽업은 지금부터 ${(CAFE_LIMITS.slotCount * CAFE_LIMITS.slotMinutes) / 60}시간 안에서 골라요` };
+    const from = Math.max(
+      0,
+      starts.findIndex((st) => st >= asked),
+    );
+    const used = await repo.slotCups(this.ctx.db, starts[0]!, starts.at(-1)! + SLOT_MS);
+    const free = starts.slice(from).find((st) => (used.get(st) ?? 0) + cups <= this.capacity());
+    if (free === undefined) return { info: '고를 수 있는 픽업 칸이 모두 꽉 찼어요. 조금 뒤에 다시 해 주세요' };
+    const note =
+      pickup !== null && asked < starts[0]!
+        ? target < now
+          ? '말한 시각이 지나서 가장 가까운 칸으로 골랐어요'
+          : '가장 빠른 픽업 칸으로 골랐어요'
+        : free !== starts[from]
+          ? '그 칸이 꽉 차서 다음 칸으로 골랐어요'
+          : null;
+    return { slot: free, note };
+  }
+
+  // ── [못 받았어요](3묶음, PRD F4-5) ─────────────────────
+
+  /**
+   * [못 받았어요](고정 버튼, 사유 글 없음): 내 주문이고 오늘 나왔어요·가져감일 때만 신고 표시를 붙여요.
+   * 총무 역할에게 "카페 못 받은 주문 확인 요청이 왔어요"(이름·메뉴·금액 없음)가 가요. 청구에서 빼는 건 총무가 S9에서 해요.
+   */
+  async reportMissed(user: DeskUser, id: string): Promise<{ id: string; missed: 'reported' }> {
+    const ctx = this.ctx;
+    return ctx.fixed.run(user, {
+      module: 'cafeteria',
+      action: 'order-missed',
+      idempotencyKey: id,
+      async run(q, now) {
+        if (await repo.reportMissed(q, id, user.pseudonymId, kstDate(now), now)) {
+          await ctx.notify.toRole(q, 'facilities', { module: 'cafeteria', title: CAFE_TEXT.notifyMissed, page: 'cafe-settle' }, user.pseudonymId);
+          return { id, missed: 'reported' as const };
+        }
+        const info = await repo.myOrderInfo(q, id, user.pseudonymId);
+        if (!info) throw new DeskError('not-found', 404, '주문을 찾지 못했어요');
+        if (info.missed) throw new DeskError('already-reported', 409, '이미 못 받았다고 알렸어요. 총무가 확인하면 알려 드려요');
+        if (info.day !== kstDate(now)) throw new DeskError('not-today', 409, '못 받았어요는 주문한 그날에만 누를 수 있어요. 총무에게 직접 말해 주세요');
+        throw new DeskError('not-ready', 409, '음료가 나온 뒤에 누를 수 있어요');
+      },
+    });
   }
 
   /** 확인 시트. 영업·품절·값·미납·한도·칸을 다시 보고, 메뉴·옵션·수량·합계·픽업 칸·이번 달 지금까지·남은 한도를 보여 줘요. */

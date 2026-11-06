@@ -22,6 +22,7 @@ import { FeaturePage } from './screens/FeaturePage';
 import { Home } from './screens/Home';
 import { Login } from './screens/Login';
 import { AiEvalScreen } from './screens/AiEval';
+import { BoardOnly } from './screens/BoardOnly';
 import { LeaveStart } from './screens/LeaveStart';
 import { Mine } from './screens/Mine';
 
@@ -193,7 +194,11 @@ export function App() {
           login={config.login}
           notice={ended ? (sessionEndedByIdle() ? IDLE_ENDED_MESSAGE : sessionEndedByRestart() ? RESTARTED_MESSAGE : SESSION_ENDED_MESSAGE) : undefined}
           reauth={ended && sessionEndedByIdle()}
+          cafeBoard={config.modules.cafeteria === 'on'}
         />
+      ) : me.board ? (
+        // 카운터 기기의 카페 판 전용 세션(11/6 3묶음, ADR-20 예외): 탭·알림 없이 카페 판만 그려요.
+        <BoardOnly leftMs={me.board.leftMs} onLoggedOut={() => setMe(null)} />
       ) : (
         <ActionHost onNavigate={navigate} InviteSheet={webModules.InviteSheet} inviteChannels={config.inviteChannels}>
           <div className='app-bar'>

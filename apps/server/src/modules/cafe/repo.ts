@@ -1,8 +1,15 @@
-import type { CafeOrderStatus } from '@one-line-desk/shared';
+import type { CafeMissedStatus, CafeOrderStatus } from '@one-line-desk/shared';
 import type { Queryable } from '../../core/db';
 
 // 사내 카페 SQL은 여기에만 둬요. 값은 늘 매개변수로 넘겨요.
 // 시각은 UTC 밀리초로 주고받고, DB에는 ISO 문자열로 넘겨요. order_day는 한국 날짜 'YYYY-MM-DD'예요.
+
+/**
+ * 청구에 드는 주문(3묶음): 취소하지 않았고, [못 받았어요]로 총무가 청구에서 빼지 않은 것. 이번 달 합계·한도·청구서·건별 내역·매출 합계가 같이 써요.
+ * 이 조건 하나로 세서 "청구 합계 = 주문 행에서 다시 센 값"이 늘 맞아요.
+ */
+const BILLED = "status <> 'cancelled' and missed_status is distinct from 'removed'";
+const BILLED_O = "o.status <> 'cancelled' and o.missed_status is distinct from 'removed'";
 
 export interface MenuRow {
   id: string;
@@ -35,6 +42,8 @@ export interface OrderRow {
   slot: number;
   status: CafeOrderStatus;
   createdAt: number;
+  /** [못 받았어요] 신고 상태(3묶음). 신고하지 않았으면 null이에요. */
+  missed: CafeMissedStatus | null;
 }
 
 const iso = (at: number) => new Date(at).toISOString();
@@ -152,7 +161,7 @@ export async function insertOrder(
 
 const ORDER_COLUMNS = `id::text as id, pickup_no as "pickupNo", items, total_won as "totalWon",
   (extract(epoch from pickup_slot) * 1000)::float8 as slot, status,
-  (extract(epoch from created_at) * 1000)::float8 as "createdAt"`;
+  (extract(epoch from created_at) * 1000)::float8 as "createdAt", missed_status as missed`;
 
 /** 그날 내 주문(취소 포함, 최근 것부터) */
 export async function myOrdersOn(q: Queryable, pseudonymId: string, day: string): Promise<OrderRow[]> {
@@ -163,20 +172,20 @@ export async function myOrdersOn(q: Queryable, pseudonymId: string, day: string)
   return rows;
 }
 
-/** 그달(한국 날짜 monthStart부터 한 달) 내 주문 합계. 취소한 주문은 빼요. 주문 행에서 바로 세요. */
+/** 그달(한국 날짜 monthStart부터 한 달) 내 주문 합계. 취소한 주문과 청구에서 뺀 주문은 빼요. 주문 행에서 바로 세요. */
 export async function monthTotal(q: Queryable, pseudonymId: string, monthStart: string): Promise<number> {
   const { rows } = await q.query<{ won: number }>(
     `select coalesce(sum(total_won), 0)::int as won
        from cafe_orders
-      where pseudonym_id = $1 and status <> 'cancelled' and order_day >= $2::date and order_day < ($2::date + interval '1 month')`,
+      where pseudonym_id = $1 and ${BILLED} and order_day >= $2::date and order_day < ($2::date + interval '1 month')`,
     [pseudonymId, monthStart],
   );
   return rows[0]?.won ?? 0;
 }
 
-/** 카페 판: 그날 아직 건네지 않은 주문(픽업 칸·번호 순). 가명 ID·금액 칸은 읽지 않아요. */
-export async function boardOrders(q: Queryable, day: string): Promise<Omit<OrderRow, 'totalWon'>[]> {
-  const { rows } = await q.query<Omit<OrderRow, 'totalWon'>>(
+/** 카페 판: 그날 아직 건네지 않은 주문(픽업 칸·번호 순). 가명 ID·금액·못 받음 신고 칸은 읽지 않아요. */
+export async function boardOrders(q: Queryable, day: string): Promise<Omit<OrderRow, 'totalWon' | 'missed'>[]> {
+  const { rows } = await q.query<Omit<OrderRow, 'totalWon' | 'missed'>>(
     `select id::text as id, pickup_no as "pickupNo", items, (extract(epoch from pickup_slot) * 1000)::float8 as slot, status,
             (extract(epoch from created_at) * 1000)::float8 as "createdAt"
        from cafe_orders
@@ -283,7 +292,7 @@ export interface BillRow {
 const BILL_COLUMNS = `id::text as id, pseudonym_id as "pseudonymId", idp_subject as subject, month, total_won as "totalWon",
   order_count as count, code, due_on::text as "dueOn", status, (extract(epoch from paid_at) * 1000)::float8 as "paidAt"`;
 
-/** 아직 청구서가 없는 (사람, 달)마다 주문 합계·건수(취소 뺌). before(이번 달 1일) 앞 주문만이에요. lockOrders를 잡은 뒤에 불러요. */
+/** 아직 청구서가 없는 (사람, 달)마다 주문 합계·건수(취소·청구에서 뺀 주문 뺌). before(이번 달 1일) 앞 주문만이에요. lockOrders를 잡은 뒤에 불러요. */
 export async function unbilledMonths(
   q: Queryable,
   before: string,
@@ -292,7 +301,7 @@ export async function unbilledMonths(
     `select o.pseudonym_id as "pseudonymId", max(o.idp_subject) as subject, to_char(o.order_day, 'YYYY-MM') as month,
             coalesce(sum(o.total_won), 0)::int as "totalWon", count(*)::int as count
        from cafe_orders o
-      where o.status <> 'cancelled' and o.order_day < $1::date
+      where ${BILLED_O} and o.order_day < $1::date
         and not exists (select 1 from cafe_bills b where b.pseudonym_id = o.pseudonym_id and b.month = to_char(o.order_day, 'YYYY-MM'))
       group by o.pseudonym_id, to_char(o.order_day, 'YYYY-MM')
       order by 3, 1`,
@@ -361,7 +370,7 @@ export async function myBills(q: Queryable, pseudonymId: string): Promise<BillRo
   return rows;
 }
 
-/** 청구서의 건별 내역: 그 달 내 주문(취소 뺌, 날짜·번호 순) */
+/** 청구서의 건별 내역: 그 달 내 주문(취소·청구에서 뺀 주문 뺌, 날짜·번호 순) */
 export async function billOrders(
   q: Queryable,
   pseudonymId: string,
@@ -370,7 +379,7 @@ export async function billOrders(
   const { rows } = await q.query<{ month: string; day: string; items: OrderItem[]; totalWon: number }>(
     `select to_char(order_day, 'YYYY-MM') as month, order_day::text as day, items, total_won as "totalWon"
        from cafe_orders
-      where pseudonym_id = $1 and status <> 'cancelled' and to_char(order_day, 'YYYY-MM') = any($2::text[])
+      where pseudonym_id = $1 and ${BILLED} and to_char(order_day, 'YYYY-MM') = any($2::text[])
       order by order_day, pickup_no`,
     [pseudonymId, months],
   );
@@ -487,7 +496,7 @@ export async function decideLimitRequest(q: Queryable, id: string, status: 'appr
 // ── 매출 합계 내보내기(이름·가명 ID 없음) ─────────────
 
 /**
- * 그 달 날·메뉴별 잔 수·금액(취소 뺌). 주문 때 남긴 메뉴 이름·직원가로 세요.
+ * 그 달 날·메뉴별 잔 수·금액(취소·청구에서 뺀 주문 뺌). 주문 때 남긴 메뉴 이름·직원가로 세요. 청구서 합계와 같은 주문으로 세요.
  * 메뉴 이름 순서는 DB 언어 설정과 상관없이 글자 번호 순(collate "C")이에요. 한글은 이 순서가 가나다 순과 같아요.
  */
 export async function salesOf(q: Queryable, month: string): Promise<{ day: string; name: string; cups: number; won: number }[]> {
@@ -495,7 +504,7 @@ export async function salesOf(q: Queryable, month: string): Promise<{ day: strin
     `select o.order_day::text as day, i->>'name' as name, sum((i->>'qty')::int)::int as cups,
             sum((i->>'qty')::int * (i->>'priceWon')::int)::int as won
        from cafe_orders o cross join lateral jsonb_array_elements(o.items) as i
-      where o.status <> 'cancelled' and o.order_day >= to_date($1 || '-01', 'YYYY-MM-DD')
+      where ${BILLED_O} and o.order_day >= to_date($1 || '-01', 'YYYY-MM-DD')
         and o.order_day < (to_date($1 || '-01', 'YYYY-MM-DD') + interval '1 month')
       group by o.order_day, i->>'name'
       order by o.order_day, (i->>'name') collate "C"`,
@@ -529,4 +538,109 @@ export async function purgeLimitRequests(q: Queryable, before: number): Promise<
 /** 늘린 한도는 그 달에만 써요. 달이 끝나면 지워요. */
 export async function purgeMonthLimits(q: Queryable, thisMonth: string): Promise<void> {
   await q.query('delete from cafe_month_limits where month < $1', [thisMonth]);
+}
+
+// ── [못 받았어요](3묶음) ─────────────────────────────
+
+/**
+ * [못 받았어요]: 내 주문이고, 그날(order_day = 오늘) 나왔어요·가져감이고, 아직 신고하지 않았을 때만 신고 표시를 붙여요.
+ * 붙였으면 true예요. 사유 글 칸은 없어요.
+ */
+export async function reportMissed(q: Queryable, id: string, pseudonymId: string, day: string, now: number): Promise<boolean> {
+  const { rows } = await q.query(
+    `update cafe_orders set missed_status = 'reported', missed_at = $4
+      where id = $1::bigint and pseudonym_id = $2 and order_day = $3::date and status in ('ready', 'picked') and missed_status is null
+      returning id`,
+    [id, pseudonymId, day, iso(now)],
+  );
+  return rows.length > 0;
+}
+
+/** 내 주문의 상태·날·신고 상태(신고가 막힌 까닭을 알려 주려고). 남의 주문이면 null이에요. */
+export async function myOrderInfo(
+  q: Queryable,
+  id: string,
+  pseudonymId: string,
+): Promise<{ status: CafeOrderStatus; day: string; missed: CafeMissedStatus | null } | null> {
+  const { rows } = await q.query<{ status: CafeOrderStatus; day: string; missed: CafeMissedStatus | null }>(
+    'select status, order_day::text as day, missed_status as missed from cafe_orders where id = $1::bigint and pseudonym_id = $2',
+    [id, pseudonymId],
+  );
+  return rows[0] ?? null;
+}
+
+export interface MissedRow {
+  id: string;
+  pseudonymId: string;
+  subject: string | null;
+  day: string;
+  pickupNo: number;
+  items: OrderItem[];
+  slot: number;
+  totalWon: number;
+  status: CafeMissedStatus;
+  missedAt: number;
+}
+
+const MISSED_COLUMNS = `id::text as id, pseudonym_id as "pseudonymId", idp_subject as subject, order_day::text as day, pickup_no as "pickupNo", items,
+  (extract(epoch from pickup_slot) * 1000)::float8 as slot, total_won as "totalWon", missed_status as status,
+  (extract(epoch from missed_at) * 1000)::float8 as "missedAt"`;
+
+/** 총무 S9: 처리를 기다리는 신고 모두와 decidedSince 뒤에 처리한 것(기다리는 것 먼저, 최근 신고부터) */
+export async function missedOrders(q: Queryable, decidedSince: number): Promise<MissedRow[]> {
+  const { rows } = await q.query<MissedRow>(
+    `select ${MISSED_COLUMNS} from cafe_orders
+      where missed_status = 'reported' or (missed_status in ('removed', 'kept') and missed_decided_at >= $1)
+      order by (missed_status = 'reported') desc, missed_at desc, id desc`,
+    [iso(decidedSince)],
+  );
+  return rows;
+}
+
+export async function missedOrder(q: Queryable, id: string): Promise<MissedRow | null> {
+  const { rows } = await q.query<MissedRow>(`select ${MISSED_COLUMNS} from cafe_orders where id = $1::bigint and missed_status is not null`, [id]);
+  return rows[0] ?? null;
+}
+
+/** [청구에서 빼기]·[그대로 두기]: 신고 상태일 때만 바꿔요. 바꿨으면 true예요. */
+export async function decideMissed(q: Queryable, id: string, decision: 'removed' | 'kept', now: number): Promise<boolean> {
+  const { rows } = await q.query(
+    "update cafe_orders set missed_status = $2, missed_decided_at = $3 where id = $1::bigint and missed_status = 'reported' returning id",
+    [id, decision, iso(now)],
+  );
+  return rows.length > 0;
+}
+
+/** (사람, 주문한 달) 청구서. 없으면 null이에요. */
+export async function billOf(q: Queryable, pseudonymId: string, month: string): Promise<BillRow | null> {
+  const { rows } = await q.query<BillRow>(`select ${BILL_COLUMNS} from cafe_bills where pseudonym_id = $1 and month = $2`, [pseudonymId, month]);
+  return rows[0] ?? null;
+}
+
+/**
+ * 입금 확인 전 청구서의 합계·건수를 그 달 주문 행(청구에 드는 것)에서 다시 세요(청구에서 뺀 주문이 생겼을 때).
+ * 0원이 되면 낼 게 없어서 입금 확인으로 바꿔요(처음부터 0원인 청구서와 같아요). 이미 입금 확인한 청구서는 바꾸지 않아요.
+ * lockOrders를 잡은 뒤에 불러요.
+ */
+export async function recountBill(q: Queryable, billId: string, now: number): Promise<void> {
+  await q.query(
+    `with c as (
+       select coalesce(sum(o.total_won), 0)::int as won, count(o.id)::int as n
+         from cafe_bills b left join cafe_orders o
+           on o.pseudonym_id = b.pseudonym_id and ${BILLED_O}
+          and o.order_day >= to_date(b.month || '-01', 'YYYY-MM-DD') and o.order_day < (to_date(b.month || '-01', 'YYYY-MM-DD') + interval '1 month')
+        where b.id = $1::bigint
+     )
+     update cafe_bills set total_won = c.won, order_count = c.n,
+            status = case when c.won = 0 then 'paid' else cafe_bills.status end,
+            paid_at = case when c.won = 0 then $2::timestamptz else cafe_bills.paid_at end
+       from c
+      where cafe_bills.id = $1::bigint and cafe_bills.status = 'unpaid'`,
+    [billId, iso(now)],
+  );
+}
+
+/** 보관: 청구에서 빼고 7일 지난 주문을 지워요(어느 청구서에도 들지 않아서 취소한 주문처럼). */
+export async function purgeRemovedMissed(q: Queryable, before: number): Promise<void> {
+  await q.query("delete from cafe_orders where missed_status = 'removed' and missed_decided_at < $1", [iso(before)]);
 }

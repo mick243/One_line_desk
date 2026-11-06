@@ -23,7 +23,8 @@ import { ReadLine } from '../components/ReadLine';
 /** 답 아래에 펼칠 칸(11/5). 휴가 요청은 "내 문의" 칸에 같이 있어요. */
 export type HomePanel = 'reservations' | 'loans' | 'invites' | 'inquiries' | 'inbox' | 'pantry';
 const PANELS: readonly HomePanel[] = ['invites', 'reservations', 'loans', 'inbox', 'inquiries', 'pantry'];
-const PANEL_OF: Record<HomeKind, HomePanel> = {
+/** 내 카페 값(11/6)은 목록 항목이 아니라 카드라서 펼칠 칸이 없어요. */
+const PANEL_OF: Partial<Record<HomeKind, HomePanel>> = {
   reservations: 'reservations',
   loans: 'loans',
   invites: 'invites',
@@ -59,7 +60,7 @@ function HomeItemList({
     <ul className='home-items' aria-label={label}>
       {items.map((i) => {
         const panel = PANEL_OF[i.kind];
-        const expanded = open?.has(panel) ?? false;
+        const expanded = panel !== undefined && (open?.has(panel) ?? false);
         return (
           <li key={i.id}>
             <div className='home-item-text'>
@@ -69,7 +70,7 @@ function HomeItemList({
                 {i.detail ? ` · ${i.detail}` : ''}
               </span>
             </div>
-            {open ? (
+            {open && panel ? (
               <button type='button' className='secondary small' aria-expanded={expanded} onClick={() => onToggle(panel)}>
                 {expanded ? '접기' : PANEL_BUTTON[panel]}
               </button>
@@ -156,7 +157,7 @@ export function HomeAnswer({
         </p>
       )}
       <ReadLine read={answer.read} ai={answer.by === 'ai'} />
-      {answer.intent === 'mine' && answer.items.length === 0 && answer.links.length === 0 && emptyHint}
+      {answer.intent === 'mine' && answer.items.length === 0 && answer.links.length === 0 && answer.cards.length === 0 && emptyHint}
       {answer.team && <TeamScheduleList team={answer.team} oneDay={answer.period === 'today' || answer.period === 'tomorrow'} />}
       {answer.items.length > 0 && (
         <HomeItemList items={answer.items} onOpen={onOpen} label={answer.headline} open={panelFor ? opened : undefined} onToggle={toggle} />

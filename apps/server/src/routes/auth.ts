@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { CAFE_TEXT } from '@one-line-desk/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { EmployeeProfile, LoginEvidence } from '../adapters/types';
 import type { ServerConfig } from '../config';
@@ -10,6 +11,8 @@ import { computeRoles } from '../core/roles';
 import type { LoginAssurance } from '../core/session';
 
 const RETURN_BASE = 'http://return.invalid';
+/** 카페가 '켬'이 아닐 때 [카페 판으로 로그인]을 부르면(화면은 버튼을 숨겨요) */
+const BOARD_OFF_MESSAGE = '지금은 카페 판을 쓰지 않아요';
 /** 시연 비밀번호를 1분에 몇 번까지 틀릴 수 있는지(서버 전체) */
 export const DEMO_PASSWORD_TRIES = 10;
 
@@ -39,7 +42,10 @@ const USED_STATES_MAX = 10_000;
 const CLOCK_SKEW_MS = 60_000;
 const b64url = (n: number) => randomBytes(n).toString('base64url');
 
-/** 로그인 시작 → 돌아오기 사이에 브라우저 쿠키에 묶어 두는 값(state·nonce·검증 값·돌아갈 곳·다시 인증·시작 시각·요청한 max_age 초) */
+/**
+ * 로그인 시작 → 돌아오기 사이에 브라우저 쿠키에 묶어 두는 값(state·nonce·검증 값·돌아갈 곳·다시 인증·시작 시각·요청한 max_age 초·카페 판 전용).
+ * b(11/6 3묶음): [카페 판으로 로그인]으로 시작했는지. 서명 쿠키라 돌아올 때 바꿀 수 없어요.
+ */
 interface OidcPending {
   s: string;
   n: string;
@@ -48,6 +54,7 @@ interface OidcPending {
   a: 0 | 1;
   t: number;
   m: number;
+  b?: 0 | 1;
 }
 
 function isPending(x: unknown): x is OidcPending {
@@ -60,7 +67,8 @@ function isPending(x: unknown): x is OidcPending {
     typeof p.r === 'string' &&
     (p.a === 0 || p.a === 1) &&
     typeof p.t === 'number' &&
-    typeof p.m === 'number'
+    typeof p.m === 'number' &&
+    (p.b === undefined || p.b === 0 || p.b === 1)
   );
 }
 
@@ -77,13 +85,37 @@ function hasMfa(evidence: LoginEvidence, config: Pick<ServerConfig, 'mfaAmr' | '
   return evidence.amr.some((a) => config.mfaAmr.includes(a)) || (evidence.acr !== undefined && config.mfaAcr.includes(evidence.acr));
 }
 
+/** 카페 판 전용 로그인을 열지 못하는 이유(11/6 3묶음). 화면 로그인 이유(Login.tsx)와 같은 이름이에요. */
+type BoardRefusal = 'not-barista' | 'board-off';
+
 export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
-  /** 확인된 직원으로 세션을 열어요(모의 로그인·IdP 로그인 같이 써요). */
-  async function startSession(req: FastifyRequest, reply: FastifyReply, profile: EmployeeProfile, assurance: LoginAssurance = { mfa: false }): Promise<void> {
+  /**
+   * [카페 판으로 로그인](11/6 3묶음, ADR-20 예외·ADR-29): 카페가 '켬'이고 로그인한 사람이 바리스타(IdP 역할 그룹 cafe)일 때만 판 전용 세션을 열어요.
+   * 아니면 세션을 만들지 않아요. 역할은 IdP 그룹만 봐요(분장표 주인 계산은 필요 없어요). 막힌 일은 감사 로그에 결과 코드만 남아요.
+   */
+  async function boardRefusal(profile: EmployeeProfile): Promise<BoardRefusal | null> {
+    const refusal: BoardRefusal | null =
+      ctx.ops.get().modules.cafeteria !== 'on' ? 'board-off' : computeRoles(profile, new Set()).includes('cafe') ? null : 'not-barista';
+    if (refusal)
+      await ctx.audit.record({ pseudonymId: pseudonymize(ctx.config.pseudonymSecret, profile.idpSubject), channel: 'auth', action: 'login', result: refusal });
+    return refusal;
+  }
+
+  /**
+   * 확인된 직원으로 세션을 열어요(모의 로그인·IdP 로그인 같이 써요). board면 카페 판 전용 세션이에요(부르는 쪽이 boardRefusal을 먼저 봐요).
+   * 판 전용 로그인은 접속기록에 cafe-board.login으로 따로 남아요.
+   */
+  async function startSession(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    profile: EmployeeProfile,
+    assurance: LoginAssurance = { mfa: false },
+    board = false,
+  ): Promise<void> {
     const pseudonymId = pseudonymize(ctx.config.pseudonymSecret, profile.idpSubject);
-    const session = ctx.sessions.create(profile.idpSubject, pseudonymId, assurance);
-    await ctx.audit.record({ pseudonymId, channel: 'auth', action: 'login', result: assurance.mfa ? 'ok-mfa' : 'ok' });
-    await ctx.access.record({ pseudonymId, action: 'login', ...accessFrom(req) });
+    const session = ctx.sessions.create(profile.idpSubject, pseudonymId, assurance, { board });
+    await ctx.audit.record({ pseudonymId, channel: 'auth', action: 'login', result: `${assurance.mfa ? 'ok-mfa' : 'ok'}${board ? '-board' : ''}` });
+    await ctx.access.record({ pseudonymId, action: board ? 'cafe-board.login' : 'login', ...accessFrom(req) });
     reply.setCookie(sessionCookie(ctx), session.id, sessionCookieOptions(ctx));
     if (needsReauth(ctx, req)) clearReauth(ctx, reply);
   }
@@ -103,7 +135,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
     usedStates.set(state, now + OIDC_PENDING_MS);
   }
 
-  app.get<{ Querystring: { return?: string; reauth?: string } }>('/api/auth/oidc/start', async (req, reply) => {
+  app.get<{ Querystring: { return?: string; reauth?: string; board?: string } }>('/api/auth/oidc/start', async (req, reply) => {
     const oidc = ctx.adapters.idp.oidc;
     if (!oidc) return reply.code(404).send({ error: 'no-idp', message: '회사 계정 로그인이 꺼져 있어요' });
     const state = b64url(24);
@@ -134,7 +166,18 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
       req.log.warn({ msg: 'idp-unreachable', step: 'start' });
       return reply.redirect('/?login=idp-unreachable');
     }
-    const pending: OidcPending = { s: state, n: nonce, v: verifier, r: safeReturnPath(req.query.return), a: reauth ? 1 : 0, t: ctx.now(), m: maxAge };
+    // [카페 판으로 로그인](11/6): 판 전용 표시를 서명 쿠키에 실어 돌아올 때 그대로 봐요.
+    const board = req.query.board === '1';
+    const pending: OidcPending = {
+      s: state,
+      n: nonce,
+      v: verifier,
+      r: safeReturnPath(req.query.return),
+      a: reauth ? 1 : 0,
+      t: ctx.now(),
+      m: maxAge,
+      ...(board ? { b: 1 as const } : {}),
+    };
     reply.setCookie(pendingCookie(state), JSON.stringify(pending), { ...pendingCookieOptions, maxAge: OIDC_PENDING_MS / 1000 });
     return reply.redirect(url);
   });
@@ -168,14 +211,15 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!result) return reply.redirect('/?login=failed');
     rememberUsed(state);
     // 다시 인증을 요청하지 않고 시작한 로그인인데 그사이 쉬어서 끊겼으면, 다시 인증을 요청하며 처음부터 해요.
-    if (p.a === 0 && needsReauth(ctx, req)) return reply.redirect(`/api/auth/oidc/start?reauth=idle&return=${encodeURIComponent(p.r)}`);
+    const boardFlag = p.b === 1 ? '&board=1' : '';
+    if (p.a === 0 && needsReauth(ctx, req)) return reply.redirect(`/api/auth/oidc/start?reauth=idle&return=${encodeURIComponent(p.r)}${boardFlag}`);
     const { profile, evidence } = result;
     // IdP가 요청한 max_age 안에 실제로 인증했는지 봐요(auth_time). max_age를 요청하면 auth_time은 꼭 와야 해요(OIDC Core).
     // 오래된 인증이면 다시 인증을 요청하며 처음부터 해요. 이미 다시 인증을 요청했는데도 맞지 않거나 근거가 없으면 받지 않아요.
     const authTime = evidence.authTime;
     if (!(authTime !== undefined && authTime >= p.t - p.m * 1000 - CLOCK_SKEW_MS)) {
       if (authTime === undefined) req.log.warn({ msg: 'idp-no-auth-time' });
-      if (p.a === 0 && authTime !== undefined) return reply.redirect(`/api/auth/oidc/start?reauth=stale&return=${encodeURIComponent(p.r)}`);
+      if (p.a === 0 && authTime !== undefined) return reply.redirect(`/api/auth/oidc/start?reauth=stale&return=${encodeURIComponent(p.r)}${boardFlag}`);
       return reply.redirect('/?login=failed');
     }
     const mfa = hasMfa(evidence, ctx.config);
@@ -188,8 +232,12 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
       });
       return reply.redirect('/?login=mfa-required');
     }
-    await startSession(req, reply, profile, { mfa, ...(evidence.authTime !== undefined ? { authTime: evidence.authTime } : {}) });
-    return reply.redirect(p.r);
+    // 카페 판 전용 로그인은 바리스타만이에요. 아니면 세션을 만들지 않고 로그인 화면으로 이유를 들고 가요.
+    const refusal = p.b === 1 ? await boardRefusal(profile) : null;
+    if (refusal) return reply.redirect(`/?login=${refusal}`);
+    await startSession(req, reply, profile, { mfa, ...(evidence.authTime !== undefined ? { authTime: evidence.authTime } : {}) }, p.b === 1);
+    // 판 전용 세션은 카페 판(홈)만 열려서 돌아갈 곳을 따르지 않아요.
+    return reply.redirect(p.b === 1 ? '/' : p.r);
   });
 
   // 모의 OIDC 고르기 목록. 실제 IdP로 바꾸면 이 경로 대신 리디렉트 로그인을 써요(IdP 등록 뒤).
@@ -212,7 +260,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
   const demoPassword = ctx.config.demoPassword;
   const digest = (s: string) => createHash('sha256').update(s).digest();
   let wrongTries: number[] = [];
-  app.post<{ Body: { idpSubject: string; password?: string } }>(
+  app.post<{ Body: { idpSubject: string; password?: string; board?: boolean } }>(
     '/api/auth/login',
     {
       schema: {
@@ -220,7 +268,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
           type: 'object',
           required: ['idpSubject'],
           additionalProperties: false,
-          properties: { idpSubject: { type: 'string', maxLength: 100 }, password: { type: 'string', maxLength: 200 } },
+          properties: { idpSubject: { type: 'string', maxLength: 100 }, password: { type: 'string', maxLength: 200 }, board: { type: 'boolean' } },
         },
       },
     },
@@ -238,7 +286,13 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
       }
       const profile = await ctx.adapters.idp.authenticate(req.body.idpSubject);
       if (!profile) return reply.code(401).send({ error: 'login-failed', message: '로그인하지 못했어요' });
-      await startSession(req, reply, profile);
+      // [카페 판으로 로그인](11/6): 카페가 켜져 있고 바리스타일 때만 판 전용 세션을 열어요. 아니면 세션을 만들지 않아요.
+      if (req.body.board) {
+        const refusal = await boardRefusal(profile);
+        if (refusal === 'board-off') return reply.code(409).send({ error: 'feature-off', message: BOARD_OFF_MESSAGE });
+        if (refusal) return reply.code(403).send({ error: 'not-barista', message: CAFE_TEXT.notBarista });
+      }
+      await startSession(req, reply, profile, { mfa: false }, req.body.board === true);
       return { ok: true };
     },
   );
@@ -246,6 +300,17 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/me', { preHandler: ctx.guards.user }, async (req) => {
     const user = req.deskUser!;
     const session = ctx.sessions.get(user.sessionId)!;
+    // 카페 판 전용 세션(11/6)은 화면에 꼭 필요한 것만 줘요: 판 세션이라는 것·끝날 때까지 남은 시간·CSRF 토큰. 이름·부서는 카운터 화면에 두지 않아요.
+    if (session.board) {
+      return {
+        displayName: '',
+        department: '',
+        floor: '',
+        roles: user.roles,
+        csrfToken: session.csrfToken,
+        board: { leftMs: Math.max(0, ctx.sessions.endsAt(session) - ctx.now()) },
+      };
+    }
     return {
       displayName: user.displayName,
       department: user.department,
@@ -257,9 +322,11 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.post('/api/auth/logout', { preHandler: ctx.guards.user }, async (req, reply) => {
     const user = req.deskUser!;
+    const board = ctx.sessions.get(user.sessionId)?.board === true;
     ctx.sessions.destroy(user.sessionId);
-    await ctx.audit.record({ pseudonymId: user.pseudonymId, channel: 'auth', action: 'logout', result: 'ok' });
-    await ctx.access.record({ pseudonymId: user.pseudonymId, action: 'logout', ...accessFrom(req) });
+    await ctx.audit.record({ pseudonymId: user.pseudonymId, channel: 'auth', action: 'logout', result: board ? 'ok-board' : 'ok' });
+    // 카페 판 전용 세션의 로그아웃은 보통 로그아웃과 구분해서 남겨요(11/6).
+    await ctx.access.record({ pseudonymId: user.pseudonymId, action: board ? 'cafe-board.logout' : 'logout', ...accessFrom(req) });
     reply.clearCookie(sessionCookie(ctx), sessionCookieOptions(ctx));
     // 로그아웃해도 회사 SSO는 살아 있어요. 다음 회사 로그인은 지금 다시 인증하게 해요(공용 PC, 10/29 배포 준비 회의 B2).
     markReauth(ctx, reply, 'logout');

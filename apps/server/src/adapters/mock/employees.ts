@@ -138,4 +138,10 @@ export class MockEmployees implements IdpAdapter, DirectoryAdapter {
     const e = this.people.find((x) => x.idpSubject === idpSubject);
     if (e) e.active = active;
   }
+
+  /** 시험에서 IdP 역할 그룹이 바뀐 것을 흉내 내려고 써요(예: 바리스타 역할 cafe가 빠짐, 11/6). */
+  setGroups(idpSubject: string, groups: string[]): void {
+    const e = this.people.find((x) => x.idpSubject === idpSubject);
+    if (e) e.groups = [...groups];
+  }
 }

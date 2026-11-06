@@ -62,6 +62,11 @@ export interface OpsSettings {
     cafeMonthlyLimitWon: number;
     /** 사내 카페 납부 기한(청구일부터 며칠, 기본 7일). 다음 날부터 미납자의 새 주문을 막아요(ADR-29). */
     cafeDueDays: number;
+    /**
+     * 카운터 기기의 카페 판 전용 세션 길이(시간, 11/6 3묶음, ADR-20 예외·ADR-29). 쉬는 시간으로 끊지 않고 로그인부터 이만큼 뒤 끊어요(1~13, 기본 13).
+     * 서버는 요청마다 지금 값으로 봐서, 줄이면 이미 열린 판 세션도 더 일찍 끊겨요.
+     */
+    cafeBoardSessionHours: number;
   };
 }
 
@@ -100,6 +105,7 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     cafeSlotCapacity: 10,
     cafeMonthlyLimitWon: 500_000,
     cafeDueDays: 7,
+    cafeBoardSessionHours: 13,
   },
 };
 

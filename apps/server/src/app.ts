@@ -107,7 +107,8 @@ export async function buildApp(opts: BuildOptions) {
     db,
     adapters,
     dataAdapters: () => adapters.all(),
-    sessions: new SessionStore(now),
+    // 카페 판 전용 세션(11/6, ADR-20 예외)은 로그인부터 운영 값 cafeBoardSessionHours(기본 13시간) 뒤 끊겨요. 요청마다 지금 값으로 봐요.
+    sessions: new SessionStore(now, () => settings().values.cafeBoardSessionHours * 60 * 60_000),
     audit,
     access: new AccessRecorder(db, now),
     ops,

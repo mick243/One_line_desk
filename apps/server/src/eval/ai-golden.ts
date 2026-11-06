@@ -2,7 +2,8 @@
 // 개발자가 지은 가상 문장이에요. 직원이 쓴 글·사람 자료는 없어요.
 // 정답은 "제대로 된 데스크라면 이렇게 나눠야 한다"예요. 지금 규칙이 하는 대로 적지 않아요(그래야 규칙의 빈틈이 보여요).
 // 정답 꼴:
-// - home(홈 채팅): 'mine' | 'team-schedule' | 'unknown' | 'move:<rooms|navi|notices|board|away>'
+// - home(홈 채팅): 'mine' | 'team-schedule' | 'unknown' | 'move:<rooms|navi|notices|board|away|cafe>'
+//   홈 채팅은 사내 카페가 켜진 회사로 재요(11/6 3묶음). 카페가 꺼져 있으면 카페 문장 해석이 없고, 나머지 문장은 같아요(modules/cafe/chat.test.ts).
 // - room-chat(회의실 채팅): '<intent>' 또는 장비가 나오면 '<intent>:<장비·장비>'(LOAN_KINDS 순서)
 // - router(기능 나누기): 'navi' | 'notices' | 'rooms' | 'pantry' | 'unknown'
 // 되돌릴 기준: #30 머지 상태(이 파일째 지워요).
@@ -45,6 +46,11 @@ export const GOLDEN: readonly GoldenCase[] = [
   { task: 'home', text: '프린터에서 종이가 계속 걸려요', expect: 'move:navi', why: '고장 신고예요' },
   { task: 'home', text: '사무실 에어컨이 안 나와요', expect: 'move:navi', why: '시설 고장 신고예요' },
   { task: 'home', text: '모니터 케이블이 하나 더 필요해요', expect: 'move:navi', why: '사무 비품 요청이에요' },
+  // 11/6 사내 카페 3묶음(ADR-29): 주문 문장은 카페 카드, 커피값은 내 일, 탕비실 채우기는 그대로 같이 채워요
+  { task: 'home', text: '2시에 아아 하나 연하게', expect: 'move:cafe' },
+  { task: 'home', text: '라떼 두 잔 30분 뒤에 받을게', expect: 'move:cafe' },
+  { task: 'home', text: '이번 달 커피값 얼마야?', expect: 'mine', why: '내 카페 값을 묻는 말이에요. 숫자는 서버가 계산해요' },
+  { task: 'home', text: '탕비실에 믹스커피 좀 채워 줘', expect: 'move:board', why: '카페 주문이 아니라 탕비실 요청이에요' },
 
   // ── 회의실 채팅 ──
   { task: 'room-chat', text: '내일 3시 6명 회의실 잡아 줘', expect: 'reserve' },

@@ -204,10 +204,28 @@ interface McpService {
   canEnable(): Promise<boolean>;
 }
 
+/**
+ * 사내 카페(11/6 3묶음, ADR-29)가 홈 채팅에 주는 기능. cafe 모듈이 채워요. 모두 읽기만 하고 아무것도 쓰지 않아요.
+ * 홈은 카페 표를 직접 읽지 않고 이것만 불러요.
+ */
+export interface CafeService {
+  /** 홈 낱말 규칙이 카페 주문 문장을 알아보는 낱말: 파는 메뉴 이름과 그 메뉴의 별칭(띄어쓰기 없앰). 값은 없어요. */
+  menuWords(): Promise<string[]>;
+  /**
+   * 홈 채팅 주문 문장 → 카드. 받을 수 있으면 [확인하고 주문하기](제안 토큰, 누르면 확인 시트)가 붙은 제안 카드,
+   * 아니면(영업 안 함·미납·한도·품절·칸 꽉 참·메뉴를 못 알아들음) 안내 카드예요. 주문은 쓰지 않아요(자동 실행 없음).
+   * 글은 이 요청 메모리에서만 쓰고, 모델에는 질문 글과 메뉴 이름·옵션 이름만 가요(금액·청구·내 주문 없음).
+   */
+  orderCards(user: DeskUser, text: string): Promise<Card[]>;
+  /** "이번 달 커피값 얼마야?": 본인 이번 달 지금까지·남은 한도·미납 청구서를 서버가 계산한 카드(본인만, 저장 안 함) */
+  spendCard(user: DeskUser): Promise<Card>;
+}
+
 export interface Services {
   rooms?: RoomsService;
   notices?: NoticesService;
   navi?: NaviService;
   pantry?: PantryService;
   mcp?: McpService;
+  cafe?: CafeService;
 }

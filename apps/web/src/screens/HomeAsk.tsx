@@ -42,6 +42,11 @@ const TRY_EXAMPLES: { text: string; module: ModuleKind }[] = [
 ];
 /** 같은 팀 일정이 켜져 있을 때만 더해요(11/3). 자리비움 알리기도 그때만 열려요(11/5 홈으로 옮김). */
 const TEAM_EXAMPLES = ['오늘 우리 팀 누가 없어?', '내일 오후 외근이에요'];
+/**
+ * 사내 카페가 켜져 있을 때만 더해요(11/6 3묶음, ADR-29). 주문 문장이면 [확인하고 주문하기] 카드가 오고, 누르면 확인 시트예요(바로 주문하지 않아요).
+ * 커피값은 서버가 계산한 내 카드예요(AI에는 질문 글만 가요).
+ */
+const CAFE_EXAMPLES = ['2시에 아아 하나 연하게', '이번 달 커피값 얼마야?'];
 
 /** 답 아래에 펼칠 칸: 마이 페이지에 있던 그 모듈 부품을 그대로 써요(11/5). */
 function panel(p: HomePanel) {
@@ -90,7 +95,13 @@ export function HomeAsk({
   const [inquiry, setInquiry] = useState<{ action: Extract<CardAction, { type: 'inquire' }>; question: string } | null>(null);
   const [leaveRequest, setLeaveRequest] = useState<Extract<CardAction, { type: 'leave-request' }> | null>(null);
   const tries = TRY_EXAMPLES.filter((t) => !modules || modules[t.module] !== 'off').map((t) => t.text);
-  const examples = ['이번 주 내 일정 뭐 있어?', ...tries, ...MINE_EXAMPLES, ...(teamSchedule ? TEAM_EXAMPLES : [])];
+  const examples = [
+    '이번 주 내 일정 뭐 있어?',
+    ...tries,
+    ...(modules?.cafeteria === 'on' ? CAFE_EXAMPLES : []),
+    ...MINE_EXAMPLES,
+    ...(teamSchedule ? TEAM_EXAMPLES : []),
+  ];
   const [turns, setTurns] = useState<HomeTurn[]>([]);
   const [loading, setLoading] = useState(false);
   const slow = useSlow(loading);

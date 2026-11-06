@@ -74,7 +74,8 @@ describe('정답률 표(11/5 시험)', () => {
       ['router', null],
     ]);
     // 11/5 처음 48문장: 16·12·10. 같은 날 홈 처음 보는 문장 3개·회의실 "빔프로젝터 남았어?"를 더해 16·13·10이에요.
-    const floor = { home: 16, 'room-chat': 13, router: 10 };
+    // 11/6 사내 카페 홈 문장 4개(주문 둘·커피값·탕비실 채우기)를 더했고 규칙이 넷 다 맞혀서 홈 바닥값을 20으로 올려요.
+    const floor = { home: 20, 'room-chat': 13, router: 10 };
     for (const s of scores) expect(s.rule, s.task).toBeGreaterThanOrEqual(floor[s.task]);
   });
 
@@ -84,7 +85,7 @@ describe('정답률 표(11/5 시험)', () => {
     for (const s of scores) expect(s.ai, s.task).toBe(s.total);
     expect(scores.reduce((a, s) => a + s.aiOnly, 0)).toBe(scores.reduce((a, s) => a + s.total - s.rule, 0));
     const report = renderReport(results, { model: 'claude-test', date: '2026-11-05' });
-    expect(report).toContain('| 홈 채팅(무엇을 하려는지) | 25 |');
+    expect(report).toContain('| 홈 채팅(무엇을 하려는지) | 29 |');
     expect(report).toContain('회의실 TV가 안 켜져요');
     expect(report).toContain('모델: claude-test');
   });
