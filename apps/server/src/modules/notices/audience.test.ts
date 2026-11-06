@@ -322,8 +322,9 @@ describe('총무 확인과 보내기', () => {
 });
 
 describe('자동 보내기 스위치(운영, 기본 끔)', () => {
-  it('기본은 끔이라 확인을 기다리고, 켜면 확인 없이 제안대로 보내요', async () => {
-    const t = await setup();
+  it('기본은 끔이라 확인을 기다리고, 켜면 모델이 고른 제안만 확인 없이 보내요', async () => {
+    const provider = new RecordingProvider({ everyone: false, departments: [], floors: ['3층'], roles: [], evidence: ['3층 화장실'] });
+    const t = await setup({ provider });
     expect(t.ctx.ops.get().noticeAutoSend).toBe(false);
     expect(await t.ctx.services.notices!.ingest!(DEV_CHECK())).toEqual({ copied: true, audience: 'pending' });
     expect((await targetNotifications(t)).size).toBe(0);
@@ -345,6 +346,19 @@ describe('자동 보내기 스위치(운영, 기본 끔)', () => {
       copied: true,
       audience: 'pending',
     });
+  });
+
+  it('켜져 있어도 낱말 규칙 제안(계약 전·모델 실패)은 보내지 않고 총무 확인으로 돌려요', async () => {
+    // 공급자가 없으면 계약 전이라 규칙 제안이에요. 규칙은 정답률 표에서 사람을 놓쳐서 자동으로 보내지 않아요(11/6).
+    const t = await setup();
+    const op = await t.loginAs(MOCK.operator);
+    expect((await op.call('PUT', '/api/ops/flag', { flag: 'noticeAutoSend', value: true })).status).toBe(200);
+    const roof = notice('3층 화장실 공사 안내', '3층 화장실은 11월 9일 하루 쓸 수 없어요. 문의는 총무팀으로 해 주세요.');
+    expect(await t.ctx.services.notices!.ingest!(roof)).toEqual({ copied: true, audience: 'pending' });
+    expect((await targetNotifications(t)).size).toBe(0);
+    const item = (await list(await t.loginAs(MOCK.facilities))).items.find((i) => i.notice.id === roof.id)!;
+    expect(item).toMatchObject({ state: 'pending', auto: false, byModel: false });
+    expect((await t.db.query("select 1 from audit_log where action = 'notice-audience-auto'")).rows).toHaveLength(0);
   });
 
   it('같은 공지가 다시 들어오면 새로 제안하지 않아요. 공지 기능이 꺼져 있으면 제안하지 않아요', async () => {

@@ -2,6 +2,7 @@ import type { AiEvalResponse } from '@one-line-desk/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AiGateway, type LlmProvider, type ProviderResult, type StructuredRequest } from '../core/ai/gateway';
 import { GOLDEN } from '../eval/ai-golden';
+import { NOTICE_GOLDEN } from '../eval/notice-golden';
 import { createTestApp, MOCK } from '../testing';
 
 // 관리자 화면 AI 정답률(11/5 시험, R7 예외). 운영자만 보고, AI 재기는 뒤에서 한 번에 하나·1시간에 한 번이에요.
@@ -60,6 +61,14 @@ describe('관리자 AI 정답률(11/5 시험)', () => {
       ['기능 나누기(/ask)', 13, null],
     ]);
     expect(res.misses.find((m) => m.text === '회의실 TV가 안 켜져요')).toMatchObject({ expect: '문의함으로 옮기기', ruleOk: false, ai: null });
+    // 공지 알림 대상(11/6): 가상 직원 17명으로 센 놓친 사람·더 받은 사람이에요. 이름은 없어요.
+    expect(res.notices).toMatchObject({ total: NOTICE_GOLDEN.length, people: 17, ai: null });
+    expect(res.notices.misses.find((m) => m.title === '택배 보관함 이전')).toMatchObject({
+      expect: '모두',
+      rule: { label: '1층', ok: false, missed: 16, extra: 0 },
+      ai: null,
+    });
+    expect(JSON.stringify(res.notices)).not.toMatch(/가상 (직원|총무|인사|운영자)|mock\||@corp\.example/);
     expect(res).toMatchObject({ measured: null, run: { running: false, allowed: false, reason: 'AI 공급자가 연결되지 않아 낱말 규칙만 재요' } });
     expect((await op.call('POST', '/api/ops/ai-eval/run')).status).toBe(409);
   });
@@ -80,9 +89,11 @@ describe('관리자 AI 정답률(11/5 시험)', () => {
     const started = (await op.call('POST', '/api/ops/ai-eval/run')).body as AiEvalResponse;
     expect(started.run).toMatchObject({ running: true, allowed: false, reason: '지금 재는 중이에요' });
     const done = await untilDone(op);
-    expect(provider.calls).toHaveLength(GOLDEN.length);
+    // 문장 다음 공지까지 같은 게이트웨이로 재요. 흉내 모델은 규칙 답을 돌려줘서 AI 칸이 규칙 칸과 같아요.
+    expect(provider.calls).toHaveLength(GOLDEN.length + NOTICE_GOLDEN.length);
     expect(done.measured).toMatchObject({ model: t.ctx.config.aiModel });
     for (const s of done.scores) expect(s.ai, s.label).toBe(s.rule);
+    expect(done.notices.ai).toEqual(done.notices.rule);
     expect(done.run).toMatchObject({ allowed: false, reason: '10:00부터 다시 잴 수 있어요' });
     expect((await op.call('POST', '/api/ops/ai-eval/run')).status).toBe(409);
     t.advance(59 * 60_000);
@@ -91,7 +102,11 @@ describe('관리자 AI 정답률(11/5 시험)', () => {
     expect(((await op.call('GET', '/api/ops/ai-eval')).body as AiEvalResponse).run).toMatchObject({ allowed: true, reason: null });
 
     const audit = (await t.ctx.audit.recent(5)).find((a) => a.action === 'ai-eval.run');
-    expect(audit).toMatchObject({ channel: 'ops', result: `ai:${done.scores.reduce((n, s) => n + (s.ai ?? 0), 0)}/${GOLDEN.length}` });
+    expect(audit).toMatchObject({
+      channel: 'ops',
+      result: `ai:${done.scores.reduce((n, s) => n + (s.ai ?? 0), 0)}/${GOLDEN.length},notice:${done.notices.ai!.exact}/${NOTICE_GOLDEN.length}`,
+    });
     expect(JSON.stringify(await t.ctx.audit.recent(20))).not.toContain('회의실 TV');
+    expect(JSON.stringify(await t.ctx.audit.recent(20))).not.toContain('택배');
   });
 });

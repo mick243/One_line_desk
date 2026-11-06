@@ -7,8 +7,10 @@ import { AiGateway, type LlmProvider } from '../src/core/ai/gateway';
 import { GeminiProvider } from '../src/core/ai/gemini-provider';
 import type { Queryable } from '../src/core/db';
 import { renderReport, runGolden, score, TASK_LABEL } from '../src/eval/ai-eval';
+import { evalRoster, runNoticeGolden, scoreNotices } from '../src/eval/notice-eval';
 
 // 정답률 표(11/5 시험, AI 보완 1번). 정답 단 가상 문장(src/eval/ai-golden.ts)을 낱말 규칙과 AI로 각각 나눠 보고 표로 보여 줘요.
+// 11/6부터 가상 공지(src/eval/notice-golden.ts)의 알림 대상 제안도 같이 재요(놓친 사람·더 받은 사람, ADR-09).
 //
 //   npm run eval:ai                 표를 화면에 보여 줘요
 //   npm run eval:ai -- --write      docs/AI정답률.md를 고쳐 써요
@@ -47,7 +49,14 @@ async function main() {
     const ai = s.ai === null ? '안 잼' : `${s.ai}/${s.total}`;
     console.error(`${TASK_LABEL[s.task]}: 낱말 규칙 ${s.rule}/${s.total} · AI ${ai}`);
   }
-  const report = renderReport(results, { model: gateway ? picked!.model : null, date: kstDate(Date.now()) });
+  // 공지 알림 대상(11/6): 가상 공지로 대상 제안을 재요. 사람 수는 앱에 든 가상 직원으로 세요.
+  const notices = await runNoticeGolden(gateway);
+  const n = scoreNotices(notices);
+  const side = (x: typeof n.rule) =>
+    `정확히 맞힘 ${x.exact}/${n.total} · 놓친 사람 0 ${x.missedNone}/${n.total} · 놓친 사람 ${x.missed} · 더 받은 사람 ${x.extra}`;
+  console.error(`공지 알림 대상: 낱말 규칙 ${side(n.rule)} · AI ${n.ai === null ? '안 잼' : side(n.ai)}`);
+  const people = (await evalRoster()).length;
+  const report = renderReport(results, { model: gateway ? picked!.model : null, date: kstDate(Date.now()), notices: { results: notices, people } });
   if (write) {
     const path = resolve(process.cwd(), 'docs', 'AI정답률.md');
     writeFileSync(path, report, 'utf8');

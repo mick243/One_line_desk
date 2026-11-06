@@ -12,8 +12,9 @@ export const DEFAULT_WEB_DIST = fileURLToPath(new URL('../../web/dist', import.m
 /**
  * 시연 배포에서 처음부터 켜 둘 수 있는 운영 스위치(DESK_DEMO_SWITCHES, 11/4). 회의실 쓰기·채팅 자동 실행·같은 팀 일정만이에요.
  * cafeteria(11/6, ADR-29)는 깃발이 아니라 모듈 스위치예요. 넣으면 사내 카페 모듈이 '켬'으로 시작해요(출시 기본은 끔).
+ * noticeAutoSend(11/6 사용자 결정, ADR-09 개정): 새 공지 알림을 총무 확인 없이 제안대로 보내요. 시연에서만 켜고 출시 기본은 끔이에요.
  */
-export const DEMO_SWITCHES = ['roomsWrite', 'autoActions', 'teamSchedule', 'cafeteria'] as const;
+export const DEMO_SWITCHES = ['roomsWrite', 'autoActions', 'teamSchedule', 'cafeteria', 'noticeAutoSend'] as const;
 export type DemoSwitch = (typeof DEMO_SWITCHES)[number];
 
 export interface ServerConfig {

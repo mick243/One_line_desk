@@ -87,8 +87,9 @@ export function createAudienceService(ctx: AppContext) {
       const people = await roster().catch(() => [] as EmployeeProfile[]);
       const proposal = await proposeAudience(ctx.gateway, notice, optionsOf(people));
       const ids = recipients(people, proposal.audience);
-      // 자동 보내기는 맞는 사람이 있을 때만이에요. 없으면(명단을 못 읽음 등) 총무 확인으로 돌려요.
-      const auto = ctx.ops.get().noticeAutoSend && ids.length > 0;
+      // 자동 보내기는 모델이 실제로 고른 제안이고 맞는 사람이 있을 때만이에요(11/6). 낱말 규칙 제안(계약 전·모델 실패)이나
+      // 맞는 사람이 없을 때(명단을 못 읽음 등)는 총무 확인으로 돌려요. 규칙은 정답률 표에서 사람을 놓쳐서예요(놓친 사람 0인 공지 29/40).
+      const auto = ctx.ops.get().noticeAutoSend && proposal.byModel && ids.length > 0;
       const at = ctx.now();
       return ctx.db.tx(async (q) => {
         const id = await repo.insertAudience(q, {
