@@ -52,6 +52,8 @@ export const OPS_VALUE_RANGE: Record<keyof OpsValues, readonly [number, number]>
   // 사내 카페 한 사람의 한 달 한도(원)와 납부 기한(청구일부터 며칠). 기한 다음 날부터 미납자의 새 주문을 막아요(11/6 2묶음, ADR-29).
   cafeMonthlyLimitWon: [CAFE_BILLING_LIMITS.minLimitWon, CAFE_BILLING_LIMITS.maxLimitWon],
   cafeDueDays: [1, 28],
+  // 카페 판 전용 세션 길이(시간, 11/6 3묶음, ADR-20 예외). 정규 업무시간 앞뒤 1~2시간을 덮는 13시간까지만 받아요.
+  cafeBoardSessionHours: [1, 13],
 };
 
 export const NAVI_OFF_ONLY_STANDALONE = '문의함은 공지·회의실이 모두 꺼진 같이 채워요 단독 모드에서만 끌 수 있어요';

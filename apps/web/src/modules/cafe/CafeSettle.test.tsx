@@ -25,8 +25,18 @@ const settle: CafeSettleResponse = {
     { month: '2026-10', label: '10월' },
   ],
   bills: [
-    { id: '2', name: '가상 직원 도윤', totalWon: 2000, count: 1, code: 'K7Q4X', dueLabel: '11월 7일(토)', status: 'overdue', paidLabel: null },
-    { id: '1', name: '가상 직원 하늘', totalWon: 8000, count: 2, code: 'M3P9A', dueLabel: '11월 7일(토)', status: 'paid', paidLabel: '11월 3일(화) 10:00' },
+    { id: '2', name: '가상 직원 도윤', totalWon: 2000, count: 1, code: 'K7Q4X', dueLabel: '11월 7일(토)', status: 'overdue', paidLabel: null, active: true },
+    {
+      id: '1',
+      name: '가상 직원 하늘',
+      totalWon: 8000,
+      count: 2,
+      code: 'M3P9A',
+      dueLabel: '11월 7일(토)',
+      status: 'paid',
+      paidLabel: '11월 3일(화) 10:00',
+      active: true,
+    },
   ],
   summary: { count: 2, totalWon: 10_000, paidWon: 8000, overdue: 1 },
   requests: [
@@ -51,6 +61,7 @@ const settle: CafeSettleResponse = {
       current: false,
     },
   ],
+  missed: [],
   menu: [{ id: 'latte', name: '카페라테', priceWon: 2500, options: ['아이스', '핫'], soldOut: false, active: true }],
   salesMonth: '2026-10',
   salesMonthLabel: '10월',

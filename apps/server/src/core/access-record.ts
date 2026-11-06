@@ -14,6 +14,8 @@ import type { Queryable } from './db';
  * cafe.*: 사내 카페 총무 정산(11/6, ADR-29 등급 2 예외). 총무가 남의 이름·청구액·입금 코드·납부 상태를 본 일(cafe.settle),
  *   [입금 확인]·[늘려 주기]·[안 돼요]로 남의 청구·한도를 바꾼 일(cafe.update), 이름 없는 매출 합계를 내려받은 일(cafe.sales)이에요.
  *   처리한 정보주체는 가명 ID(person:p_…)만 남기고 금액·이름·입금 코드는 넣지 않아요.
+ *   3묶음(11/6): [못 받았어요] 확인 화면 보기·[청구에서 빼기]·[그대로 두기]도 cafe.settle·cafe.update로 남겨요.
+ * cafe-board.login·cafe-board.logout: 카운터 기기의 카페 판 전용 세션 로그인·로그아웃(11/6 3묶음, ADR-20 예외). 보통 로그인과 구분해요.
  */
 const ACCESS_ACTIONS = [
   'login',
@@ -29,6 +31,8 @@ const ACCESS_ACTIONS = [
   'cafe.settle',
   'cafe.update',
   'cafe.sales',
+  'cafe-board.login',
+  'cafe-board.logout',
 ] as const;
 export type AccessAction = (typeof ACCESS_ACTIONS)[number];
 

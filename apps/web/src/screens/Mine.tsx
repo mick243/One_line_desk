@@ -1,5 +1,5 @@
 // S6 마이 페이지
-import { MINE_MOVED_ASKS, mineMovedNote, type ModuleKind, type ModuleSwitch, RECORD_KEEP_DAYS, ROLE_LABEL } from '@one-line-desk/shared';
+import { CAFE_TEXT, MINE_MOVED_ASKS, mineMovedNote, type ModuleKind, type ModuleSwitch, RECORD_KEEP_DAYS, ROLE_LABEL } from '@one-line-desk/shared';
 import { useState } from 'react';
 import { api, type Me } from '../api';
 import { ConfirmSheet } from '../components/ActionHost';
@@ -22,6 +22,8 @@ function retentionLines(s: { modules: Record<ModuleKind, ModuleSwitch>; roomsWri
       `회의 초대에 못 간다고 적은 사유와 대신 부탁한 사유. 부른 사람(과 부탁받은 사람)에게만 보이고, 알림에는 넣지 않아요. 회의가 끝나고 ${RECORD_KEEP_DAYS}일 뒤 지워져요.`,
     s.modules.pantry !== 'off' &&
       `내가 올린 품목 이름과 표. 올린 지 ${RECORD_KEEP_DAYS}일(주문에 들어갔으면 주문하고 ${RECORD_KEEP_DAYS}일) 뒤 지워져요. 누가 표를 줬는지는 화면 어디에도 안 보여요.`,
+    // 사내 카페(11/6 3묶음, ADR-29 보관 예외): 카페가 켜져 있을 때만이에요.
+    s.modules.cafeteria === 'on' && CAFE_TEXT.retention,
     s.modules.navi === 'on' && s.teamSchedule && `내가 알린 자리비움(종류·시간). 같은 팀 사람에게만 보이고, ${RECORD_KEEP_DAYS}일 뒤 지워져요.`,
     s.modules.navi === 'on' && `문의할 때 받는 곳을 바꿔 보낸 사실(고른 업무·바꾼 업무·날짜). 글과 보낸 사람은 남지 않고, ${RECORD_KEEP_DAYS}일 뒤 지워져요.`,
     s.mcp && '연결한 AI 앱(앱 이름·연결한 날·기기마다 하나). 끊으면 지워져요.',

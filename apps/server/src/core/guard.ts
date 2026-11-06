@@ -1,6 +1,7 @@
 import type { Role } from '@one-line-desk/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AppContext, PreHandler } from '../context';
+import { BOARD_ONLY, boardAllows } from './board-session';
 import { computeRoles } from './roles';
 import type { DeskSession } from './session';
 import type { DeskUser } from './user';
@@ -99,6 +100,8 @@ function signedOutBody(ctx: GuardCtx, req: FastifyRequest) {
  * 배경 요청만 오는 동안에도 시간은 흘러요.
  */
 export async function endIfIdle(ctx: GuardCtx, session: DeskSession, reply: FastifyReply): Promise<boolean> {
+  // 카페 판 전용 세션은 쉬는 시간으로 끊지 않아요(ADR-20 예외). 로그인부터 운영 값 시간이 지나면 세션 저장소가 끊어요.
+  if (session.board) return false;
   if (ctx.now() - session.lastActiveAt <= ctx.ops.get().values.idleTimeoutMinutes * 60_000) return false;
   ctx.sessions.destroy(session.id);
   await ctx.audit.record({ pseudonymId: session.pseudonymId, channel: 'auth', action: 'idle', result: 'ended' });
@@ -106,12 +109,17 @@ export async function endIfIdle(ctx: GuardCtx, session: DeskSession, reply: Fast
   return true;
 }
 
-/** 세션 확인 → 쉬는 시간 확인 → 재직 재확인(간격이 지났을 때) → 쓰기 요청이면 CSRF 토큰 확인 → 역할 계산(ADR-13·20, R17). */
+/**
+ * 세션 확인 → (판 전용 세션이면 허용 목록 확인) → 쉬는 시간 확인 → 재직 재확인(간격이 지났을 때) → 쓰기 요청이면 CSRF 토큰 확인 → 역할 계산(ADR-13·20, R17).
+ * 판 전용 세션(11/6, ADR-20 예외)은 요청마다 바리스타 역할(cafe)을 다시 보고, 빠졌으면 그 세션을 끊어요. 역할은 cafe만 실어요.
+ */
 export function createGuards(ctx: GuardCtx): AppContext['guards'] {
   const user: PreHandler = async (req: FastifyRequest, reply: FastifyReply) => {
     const session = sessionOf(ctx, req);
     // 새로 고쳐서 화면이 이유를 잊어도, 쉬어서 끊겼거나 서버가 다시 떠서 끊긴 브라우저면 같은 이유를 다시 알려 줘요.
     if (!session) return reply.code(401).send(signedOutBody(ctx, req));
+    // 판 전용 세션은 허용 목록의 카페 판 경로만 열려요. 새 경로도 목록에 없으면 막혀요(기본 거부).
+    if (session.board && !boardAllows(req.method, req.routeOptions.url)) return reply.code(403).send(BOARD_ONLY);
     if (await endIfIdle(ctx, session, reply)) return reply.code(401).send(IDLE_ENDED);
 
     const recheckMs = ctx.ops.get().values.employmentRecheckSeconds * 1000;
@@ -130,6 +138,17 @@ export function createGuards(ctx: GuardCtx): AppContext['guards'] {
 
     const resolved = await resolveUser(ctx, session);
     if (!resolved) return reply.code(401).send(LOGIN_REQUIRED);
+    if (session.board) {
+      // 바리스타 역할이 빠졌으면 다음 요청에서 판 세션을 끊어요(ADR-13 재확인 그대로). 같은 사람의 보통 세션은 그대로 둬요.
+      if (!resolved.roles.includes('cafe')) {
+        ctx.sessions.destroy(session.id);
+        await ctx.audit.record({ pseudonymId: session.pseudonymId, channel: 'auth', action: 'board.recheck', result: 'ended' });
+        return reply.code(401).send(LOGIN_REQUIRED);
+      }
+      // 판 세션에는 카페 판 권한만 실어요. 총무·운영자 같은 다른 역할이 있어도 이 세션으로는 쓰지 않아요.
+      req.deskUser = { ...resolved, roles: ['cafe'] };
+      return undefined;
+    }
     // 배경 요청은 경로 설정(background) 또는 웹이 붙인 머리로 알아요. 머리를 붙이면 자기 세션만 빨리 끊겨서 속일 까닭이 없어요.
     if (!req.routeOptions.config.background && req.headers['x-desk-background'] !== '1') session.lastActiveAt = ctx.now();
     req.deskUser = resolved;

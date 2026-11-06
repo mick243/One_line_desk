@@ -37,6 +37,11 @@ export interface Me {
   floor: string;
   roles: Role[];
   csrfToken: string;
+  /**
+   * 카운터 기기의 카페 판 전용 세션(11/6 3묶음, ADR-20 예외)일 때만 와요. 그때 이름·부서는 비어 있고, 화면은 카페 판만 그려요.
+   * leftMs는 서버가 본 "로그인이 끝날 때까지 남은 시간"이에요(브라우저 시계와 서버 시계가 달라도 남은 시간으로 셈해요).
+   */
+  board?: { leftMs: number };
 }
 
 export interface MockUser {
@@ -181,9 +186,13 @@ export const api = {
     const { status, data } = await raw<MockUser[]>('GET', '/api/auth/mock-users');
     return status === 200 ? data : [];
   },
-  /** 모의 로그인. 실패하면 서버 문구(시연 비밀번호 틀림·잠시 막힘 등)를 돌려줘요. */
-  async login(idpSubject: string, password?: string): Promise<{ ok: true } | { ok: false; message?: string }> {
-    const { status, data } = await raw<{ message?: string }>('POST', '/api/auth/login', password === undefined ? { idpSubject } : { idpSubject, password });
+  /**
+   * 모의 로그인. 실패하면 서버 문구(시연 비밀번호 틀림·잠시 막힘·바리스타만 등)를 돌려줘요.
+   * board면 카운터 기기의 카페 판 전용 로그인이에요(11/6). 바리스타가 아니면 서버가 세션을 만들지 않아요.
+   */
+  async login(idpSubject: string, password?: string, board = false): Promise<{ ok: true } | { ok: false; message?: string }> {
+    const body = { idpSubject, ...(password === undefined ? {} : { password }), ...(board ? { board: true } : {}) };
+    const { status, data } = await raw<{ message?: string }>('POST', '/api/auth/login', body);
     return status === 200 ? { ok: true } : { ok: false, message: data?.message };
   },
   async logout(all: boolean): Promise<void> {

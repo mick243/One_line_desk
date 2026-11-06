@@ -2,6 +2,7 @@ import {
   CAFE_BILL_STATUS_LABEL,
   CAFE_BILLING_LIMITS,
   CAFE_LIMITS,
+  CAFE_MISSED_LABEL,
   CAFE_STATUS_LABEL,
   CAFE_TEXT,
   type CafeBill,
@@ -467,8 +468,18 @@ function CafeHead({ lead }: { lead?: string }) {
   );
 }
 
-/** 오늘 내 주문(픽업 번호·상태). 접수 대기면 [취소](확인 시트 뒤)예요. */
-function MyOrders({ orders }: { orders: CafeMyOrder[] }) {
+/** [못 받았어요] 확인 시트 문구(화면설계 "보안이 보이는 문구" S7 줄, 11/6 3묶음) */
+export const MISSED_SHEET = {
+  title: '음료를 못 받았나요?',
+  confirmLabel: '못 받았어요',
+  note: '총무가 확인해서 청구에서 빼거나 그대로 둬요. 사유는 적지 않아요. 결과는 알림으로 알려 드려요',
+};
+
+/**
+ * 오늘 내 주문(픽업 번호·상태). 접수 대기면 [취소](확인 시트 뒤)예요.
+ * 나왔어요·가져감인데 음료를 받지 못했으면 [못 받았어요](확인 시트 뒤, 3묶음)를 눌러요. 그날에만 돼요.
+ */
+export function MyOrders({ orders }: { orders: CafeMyOrder[] }) {
   const actions = useActions();
   return (
     <section className='card' aria-label='오늘 내 주문'>
@@ -507,6 +518,29 @@ function MyOrders({ orders }: { orders: CafeMyOrder[] }) {
                 }
               >
                 취소
+              </button>
+            )}
+            {o.missed && <span className='chip'>{CAFE_MISSED_LABEL[o.missed]}</span>}
+            {o.canReportMissed && (
+              <button
+                type='button'
+                className='neutral small'
+                onClick={() =>
+                  void actions.run({
+                    type: 'fixed',
+                    text: '못 받았어요',
+                    method: 'POST',
+                    path: `/api/cafe/orders/${o.id}/missed`,
+                    confirm: {
+                      title: MISSED_SHEET.title,
+                      lines: [`픽업 번호 ${o.pickupNo}`, o.lines.map(lineText).join(' · ')],
+                      confirmLabel: MISSED_SHEET.confirmLabel,
+                      note: MISSED_SHEET.note,
+                    },
+                  })
+                }
+              >
+                못 받았어요
               </button>
             )}
           </li>

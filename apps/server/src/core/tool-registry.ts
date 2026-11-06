@@ -183,6 +183,16 @@ export const TOOLS: ToolDef[] = [
       minutes: { type: 'integer', description: '빌릴 시간(분). 비우면 운영 설정 기본 회의 길이', optional: true },
     },
   },
+  // 11/6 사내 카페 3묶음(ADR-29): 홈 채팅 주문 문장을 나눌 때 모델에 주는 자료(modules/cafe/chat.ts). MCP에는 내보내지 않아요.
+  // 파는 메뉴 이름·옵션 이름뿐이에요. 값(직원가)·청구·내 주문은 넣지 않고, 금액은 서버가 메뉴 직원가로 계산해요.
+  {
+    name: 'cafeteria_read_menu',
+    module: 'cafeteria',
+    access: 'read',
+    mcpExposed: false,
+    description: '사내 카페에서 파는 메뉴 이름과 옵션 이름만 줘요. 값(직원가)·청구·내 주문은 없어요. 모델은 주문 문장을 이 이름들로 나누기만 해요.',
+    input: { text: { type: 'string', description: '공통 검사를 지난 주문 문장', maxLength: 1000 } },
+  },
 ];
 
 export type McpToolDef = ToolDef & { mcp: McpToolMeta };

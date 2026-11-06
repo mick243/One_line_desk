@@ -1,4 +1,4 @@
-import { type Role, ROLE_LABEL } from '@one-line-desk/shared';
+import { CAFE_TEXT, type Role, ROLE_LABEL } from '@one-line-desk/shared';
 import { useEffect, useState } from 'react';
 import { api, type MockUser, type PublicConfig } from '../api';
 import { Icon } from '../components/Icon';
@@ -10,6 +10,8 @@ const ROLE_HINT: Partial<Record<Role, string>> = {
   operator: '운영 설정',
   // 11/5: 빠져 있어서 "팀장 — 도 볼 수 있어요"처럼 글자가 비었어요(처음 쓰는 직원 점검).
   'team-lead': '여러 팀 회의 참석자 고르기·팀 회의 담당자',
+  // 11/6: 바리스타는 홈이 카페 판이에요(카페가 켜져 있을 때).
+  cafe: '카페 판',
 };
 
 export function roleLine(roles: Role[] = []): string {
@@ -32,7 +34,14 @@ const LOGIN_FAILED: Record<string, string> = {
   denied: '로그인을 취소했거나 회사 로그인이 허락하지 않았어요. 다시 하려면 아래 버튼을 눌러 주세요.',
   'mfa-required': '추가 인증(MFA)을 마쳐야 들어올 수 있어요. 회사 로그인에서 추가 인증을 한 뒤 다시 해 주세요.',
   'idp-unreachable': '지금 회사 로그인에 닿지 못했어요. 잠시 뒤에 다시 해 주세요. 계속 안 되면 IT 창구에 알려 주세요.',
+  // [카페 판으로 로그인](11/6 3묶음): 바리스타가 아니면 세션을 만들지 않아요.
+  'not-barista': `${CAFE_TEXT.notBarista}.`,
+  'board-off': '지금은 카페 판을 쓰지 않아요.',
 };
+
+/** 카운터 기기 안내(11/6 3묶음, ADR-20 예외) */
+export const BOARD_LOGIN_HINT =
+  '카운터 기기에서 카페 판만 여는 로그인이에요. 바리스타만 들어올 수 있고, 쉬어도 끊기지 않다가 로그인부터 정해진 시간(기본 13시간) 뒤 끊겨요.';
 
 // 1일 차 끝 기준이 "로그인 화면"이에요. 지금은 모의 OIDC로 가상 직원을 골라요.
 // reauth: 쉬는 시간이 지나 끊겼으면 회사 로그인에 다시 인증을 요청해요(ADR-20).
@@ -41,11 +50,14 @@ export function Login({
   login,
   notice,
   reauth = false,
+  cafeBoard = false,
 }: {
   onLoggedIn: () => void;
   login: PublicConfig['login'];
   notice?: string;
   reauth?: boolean;
+  /** 사내 카페가 '켬'이면 [카페 판으로 로그인]을 보여요(11/6 3묶음). */
+  cafeBoard?: boolean;
 }) {
   const [users, setUsers] = useState<MockUser[]>([]);
   // 공개 주소에 올린 시연은 비밀번호를 받아요(10/30). 입력 값은 이 화면 상태에만 두고 저장하지 않아요.
@@ -68,13 +80,18 @@ export function Login({
     window.location.assign(`/api/auth/oidc/start?return=${encodeURIComponent(back)}${reauth ? '&reauth=idle' : ''}`);
   }
 
-  async function choose(idpSubject: string) {
+  /** [카페 판으로 로그인](IdP): 판 전용 표시를 실어 회사 로그인으로 가요. 돌아오면 서버가 바리스타인지 봐요. */
+  function startBoardIdpLogin() {
+    window.location.assign(`/api/auth/oidc/start?board=1&return=%2F${reauth ? '&reauth=idle' : ''}`);
+  }
+
+  async function choose(idpSubject: string, board = false) {
     setError('');
     if (needsPassword && !password) {
       setError('시연 비밀번호를 먼저 넣어 주세요.');
       return;
     }
-    const result = await api.login(idpSubject, needsPassword ? password : undefined);
+    const result = await api.login(idpSubject, needsPassword ? password : undefined, board);
     if (result.ok) onLoggedIn();
     else setError(result.message ?? '로그인하지 못했어요. 한 번 더 골라 주세요.');
   }
@@ -153,6 +170,67 @@ export function Login({
           {error && <p className='lock-line'>{error}</p>}
         </section>
       )}
+      {cafeBoard && (
+        <BoardLogin
+          kind={login.kind}
+          baristas={users.filter((u) => u.roles?.includes('cafe'))}
+          onIdp={startBoardIdpLogin}
+          onChoose={(subject) => void choose(subject, true)}
+        />
+      )}
     </main>
+  );
+}
+
+/**
+ * [카페 판으로 로그인](S8, 11/6 3묶음). 카운터 기기가 카페 판만 여는 세션으로 들어와요.
+ * 회사 로그인은 판 전용 표시를 실어 IdP로 가고, 시연(모의)은 바리스타 가상 직원을 골라요. 바리스타가 아니면 서버가 세션을 만들지 않아요.
+ */
+export function BoardLogin({
+  kind,
+  baristas,
+  onIdp,
+  onChoose,
+}: {
+  kind: PublicConfig['login']['kind'];
+  baristas: MockUser[];
+  onIdp: () => void;
+  onChoose: (idpSubject: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className='card login-board' aria-label='카페 판으로 로그인'>
+      <h2>카운터 기기</h2>
+      <p className='hint'>{BOARD_LOGIN_HINT}</p>
+      <button
+        type='button'
+        className='secondary'
+        aria-expanded={kind === 'mock' ? open : undefined}
+        onClick={kind === 'oidc' ? onIdp : () => setOpen((v) => !v)}
+      >
+        카페 판으로 로그인
+      </button>
+      {kind === 'mock' && open && (
+        <ul className='choices'>
+          {baristas.length === 0 && <li className='hint'>바리스타로 등록된 가상 직원이 없어요</li>}
+          {baristas.map((u) => (
+            <li key={u.idpSubject}>
+              <button type='button' onClick={() => onChoose(u.idpSubject)}>
+                <span className='avatar' aria-hidden='true'>
+                  {initial(u.displayName)}
+                </span>
+                <span className='choice-text'>
+                  <strong>{u.displayName}</strong>
+                  <span>카페 판으로 들어가기</span>
+                </span>
+                <span className='chevron'>
+                  <Icon name='chevron' size={20} />
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

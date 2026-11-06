@@ -4,7 +4,7 @@ import { formatWon } from './pantry-order';
 // 사내 카페 주문(F4, ADR-29, 11/6 1묶음: 주문 → 카페 판 → 건네기, 2묶음: 청구·입금 확인·한도·미납 막기·총무 정산). 출시 기본 끔이에요.
 // 금액은 서버가 메뉴 직원가 × 수량으로 계산해요. 카페 판(바리스타)에는 이름·가명 ID·금액이 없어요.
 // 사람별 청구액은 본인 화면이 원칙이고, 총무(facilities)만 정산 화면(S9)에서 이름·청구액·입금 코드·납부 상태를 봐요(등급 2 예외, 접속기록).
-// [못 받았어요]·판 전용 세션·AI 채팅 주문은 3묶음이에요.
+// 3묶음(11/6): 카운터 기기의 판 전용 세션(13시간, ADR-20 예외)·[못 받았어요]·홈 채팅 주문·"이번 달 커피값" 묻기.
 
 export const CAFE_ORDER_STATUSES = ['waiting', 'making', 'ready', 'picked', 'cancelled'] as const;
 export type CafeOrderStatus = (typeof CAFE_ORDER_STATUSES)[number];
@@ -42,6 +42,8 @@ export const CAFE_LIMITS = {
   boardSeenMs: 2 * 60_000,
   /** 카페 판 새로 읽기 간격 */
   boardPollMs: 3_000,
+  /** 판 전용 세션이 끝나기 이만큼 전부터 판에 "곧 로그인이 끝나요" 띠를 띄워요(ADR-20 예외) */
+  boardWarnMs: 10 * 60_000,
 } as const;
 
 /** 화면 문구(docs/화면설계.md "보안이 보이는 문구" S7·S8 줄) */
@@ -70,7 +72,34 @@ export const CAFE_TEXT = {
   notifyLimitRequest: '카페 한도 요청이 왔어요',
   notifyLimitApproved: '카페 한도를 늘렸어요',
   notifyLimitRejected: '카페 한도 요청이 반려됐어요',
+  /** S8 판 전용 로그인 끝 알림(끝나기 10분 전, 3묶음) */
+  boardEnding: '곧 로그인이 끝나요. 다시 로그인해 주세요',
+  /** 판 전용 세션으로 허용 목록 밖 경로를 부르면(403) */
+  boardOnly: '카페 판 로그인으로는 이 기능을 쓸 수 없어요',
+  /** 바리스타(역할 cafe)가 아닌 사람이 [카페 판으로 로그인]을 하면 세션을 만들지 않아요 */
+  notBarista: '바리스타만 카페 판으로 로그인할 수 있어요',
+  /** [못 받았어요](3묶음): 총무 역할에게. 이름·메뉴·금액은 넣지 않아요. */
+  notifyMissed: '카페 못 받은 주문 확인 요청이 왔어요',
+  /** 총무가 확인한 결과(본인에게, 종류만) */
+  notifyMissedRemoved: '못 받은 카페 주문을 청구에서 뺐어요',
+  notifyMissedKept: '못 받은 카페 주문은 청구에 그대로 있어요',
+  /** S7 입력 경고(홈 채팅 주문 카드 꼬리) */
+  chatInput: '주문 문장은 메뉴를 고르는 데만 쓰고 저장하지 않아요',
+  /** "이번 달 커피값" 카드 꼬리(ADR-18과 같은 길) */
+  spendTail: '나에게만 보여요. 카페 값은 서버가 주문 기록으로 계산하고 AI로 보내지 않아요',
+  /** 마이 페이지 "무엇을 남기나요" 카페 줄(카페가 켜졌을 때) */
+  retention:
+    '카페 주문·청구: 취소한 주문과 못 받아 청구에서 뺀 주문은 7일, 나머지는 입금 확인 7일 뒤 지워요. 내 카페 값은 나만 보고, 총무는 입금을 확인할 때만 봐요.',
 } as const;
+
+/** [못 받았어요] 신고 상태(3묶음): 신고함 → 총무가 [청구에서 빼기](removed) 또는 [그대로 두기](kept) */
+export type CafeMissedStatus = 'reported' | 'removed' | 'kept';
+
+export const CAFE_MISSED_LABEL: Record<CafeMissedStatus, string> = {
+  reported: '못 받음 신고함',
+  removed: '청구에서 뺐어요',
+  kept: '청구에 그대로 있어요',
+};
 
 /** S7 한도 막힘 "이번 달 한도(500,000원)를 넘어서 주문할 수 없어요. 필요하면 한도를 늘려 달라고 할 수 있어요" */
 export function cafeLimitText(limitWon: number): string {
@@ -133,6 +162,10 @@ export interface CafeMyOrder {
   totalWon: number;
   /** 카페가 받기 전(접수 대기)에만 취소할 수 있어요. */
   cancellable: boolean;
+  /** [못 받았어요] 신고 상태(3묶음). 신고하지 않았으면 null이에요. */
+  missed: CafeMissedStatus | null;
+  /** 나왔어요·가져감인 그날 주문이고 아직 신고하지 않았으면 [못 받았어요]를 누를 수 있어요. */
+  canReportMissed: boolean;
 }
 
 /** GET /api/cafe. 링크만이면 카페 안내 링크 카드예요. */
@@ -276,6 +309,26 @@ export interface CafeSettleBill {
   status: CafeBillStatus;
   /** 입금 확인한 때 "11월 3일(월) 10:20" */
   paidLabel: string | null;
+  /**
+   * 재직 확인(회사 IdP)에 아직 있는지(3묶음, PRD F4-14). 거짓이면 퇴사 등으로 빠진 사람이라 총무가 직접 연락해요.
+   * 앱은 미납을 급여·퇴직금에서 빼지 않아요(근로기준법 제43조).
+   */
+  active: boolean;
+}
+
+/** S9 "못 받았어요 확인" 한 줄(3묶음). 이름은 디렉터리에서 그때 붙였어요(저장하지 않아요). */
+export interface CafeSettleMissed {
+  id: string;
+  /** 주문한 날 "11월 6일(금)" */
+  dayLabel: string;
+  pickupNo: number;
+  lines: CafeLine[];
+  pickupLabel: string;
+  name: string;
+  totalWon: number;
+  status: CafeMissedStatus;
+  /** 신고한 때 "11월 6일(금) 14:20" */
+  reportedLabel: string;
 }
 
 /** 총무 정산 화면(S9)의 한도 요청 한 줄 */
@@ -311,6 +364,8 @@ export interface CafeSettleResponse {
   /** 고른 달 합계: 청구액 합계와 입금 확인한 금액 */
   summary: { count: number; totalWon: number; paidWon: number; overdue: number };
   requests: CafeSettleLimitRequest[];
+  /** [못 받았어요] 확인(3묶음): 처리를 기다리는 신고 먼저, 처리한 것은 7일 동안 보여요. */
+  missed: CafeSettleMissed[];
   menu: CafeAdminMenuItem[];
   /** [지난달 매출 합계 내려받기]가 받을 달 'YYYY-MM' */
   salesMonth: string;
