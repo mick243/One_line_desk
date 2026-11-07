@@ -1,4 +1,13 @@
-import { type Card, NOTICE_QUERY_MAX_LENGTH, NOTICE_SEARCH_MAX_HITS, NOTICE_TITLE_MAX_LENGTH, type NoticeHit } from '@one-line-desk/shared';
+import {
+  type Card,
+  DEMO_BOARD_ID_PREFIX,
+  kstDate,
+  NOTICE_QUERY_MAX_LENGTH,
+  NOTICE_SEARCH_MAX_HITS,
+  NOTICE_TITLE_MAX_LENGTH,
+  type NoticeHit,
+  recordCutoff,
+} from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
 import { makeCard } from '../../core/cards';
 import type { AskInput, AskOutcome } from '../../core/module';
@@ -151,6 +160,15 @@ export function createNoticesService(ctx: AppContext) {
       // 새로 들어온 공지 본문은 상한만큼만 메모리에 둬요(오래된 것부터 빼요. 색인·제목·링크는 그대로예요).
       while (ingested.length > INGESTED_BODIES_MAX) bodies.delete(ingested.shift()!);
       return true;
+    },
+
+    /** 시연 가상 게시판에서 들어온 공지 사본을 게시일 7일 뒤 지워요(11/7, 모듈 retention). 메모리 본문도 같이 빼요. */
+    async purgeDemoBoardCopies(): Promise<void> {
+      const before = kstDate(recordCutoff(ctx.now()));
+      const gone = new Set(await repo.purgeDemoBoardCopies(ctx.db, DEMO_BOARD_ID_PREFIX, before));
+      if (!gone.size) return;
+      for (const id of gone) bodies.delete(id);
+      ingested = ingested.filter((id) => !gone.has(id));
     },
 
     /** 비어 있을 때만 허용 게시판 사본을 색인해요. 여러 번 불러도 한 번만 들어가요. */

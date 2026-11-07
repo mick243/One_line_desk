@@ -31,6 +31,10 @@ export function createNoticesModule(ctx: AppContext): DeskModule {
     register: (app) => registerNoticeRoutes(app, ctx, audience),
     seed: () => notices.seed(),
     adapters: () => [{ name: 'mock-notices', label: '공지 게시판 사본(가상 공지)', mock: true }],
-    retention: () => audience.purge(),
+    // 알림 대상 줄 7일 + 시연 가상 게시판에서 들어온 공지 사본 7일(11/7, 방문자 글이라 기록 7일 원칙)
+    retention: async () => {
+      await audience.purge();
+      await notices.purgeDemoBoardCopies();
+    },
   };
 }

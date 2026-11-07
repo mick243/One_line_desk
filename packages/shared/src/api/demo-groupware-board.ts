@@ -6,6 +6,8 @@
 
 /** 가상 게시판 글이 들어가는 게시판. 한 줄 데스크가 사본을 가져오는 허용 게시판이에요. */
 export const DEMO_BOARD_NAME = '전사 공지';
+/** 가상 게시판 글 ID 앞머리. 공지 사본에서 방문자가 올린 글을 가려 7일 뒤 지우는 데 써요(11/7). */
+export const DEMO_BOARD_ID_PREFIX = 'GB-';
 export const DEMO_BOARD_TITLE_MAX = 100;
 export const DEMO_BOARD_BODY_MAX = 2000;
 

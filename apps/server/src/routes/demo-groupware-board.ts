@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import {
   checkInput,
   DEMO_BOARD_BODY_MAX,
+  DEMO_BOARD_ID_PREFIX,
   DEMO_BOARD_NAME,
   DEMO_BOARD_TITLE_MAX,
   type DemoBoardPost,
@@ -116,6 +117,8 @@ export function registerDemoBoardRoutes(app: FastifyInstance, ctx: AppContext): 
     },
     async (req): Promise<DemoBoardPostResponse> => {
       const user = req.deskUser!;
+      // 넓게 연 시연(DESK_DEMO_WIDE)에서는 올리지 않아요(11/7 보안 점검): 방문자 글이 모두의 공지 목록에 오르고, 글마다 AI를 부르고, 알림이 가요.
+      if (ctx.config.demoWide) throw new DeskError('demo-locked', 409, '넓게 연 시연에서는 게시판에 올리지 않아요');
       if (!ctx.rateLimiter.hit(user.pseudonymId, 'demo-groupware')) throw new DeskError('rate-limited', 429, '요청이 많아요. 잠시 뒤에 다시 해 주세요');
       const requestKey = `${user.idpSubject}|${req.body.requestId}`;
       const again = store.byRequest(requestKey);
@@ -123,7 +126,7 @@ export function registerDemoBoardRoutes(app: FastifyInstance, ctx: AppContext): 
       const title = checked(req.body.title, '제목', DEMO_BOARD_TITLE_MAX);
       const body = checked(req.body.body, '본문', DEMO_BOARD_BODY_MAX);
       const at = ctx.now();
-      const id = `GB-${randomBytes(4).toString('hex')}`;
+      const id = `${DEMO_BOARD_ID_PREFIX}${randomBytes(4).toString('hex')}`;
       const post: Post = {
         id,
         title,

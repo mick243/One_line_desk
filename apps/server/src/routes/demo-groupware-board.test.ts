@@ -94,6 +94,34 @@ describe('가상 그룹웨어 게시판 → 공지 사본 → 대상 제안 → 
     expect(((await doyun.call('GET', '/api/notifications')).body as NotificationsResponse).items).toEqual([]);
   });
 
+  it('방문자가 올린 공지 사본은 게시일 7일 뒤 지워지고(알림 대상 줄도), 회사 게시판 사본은 남아요. 넓게 연 시연에서는 올리지 않아요', async () => {
+    const t = await setup();
+    const haneul = await t.loginAs(MOCK.staff);
+    const posted = (await haneul.call('POST', '/api/demo/groupware/board/posts', { title: '3층 화장실 공사 안내', body: BODY, requestId: requestId() }))
+      .body as DemoBoardPostResponse;
+    const count = async (sql: string) => Number((await t.db.query<{ n: number }>(sql)).rows[0]!.n);
+    const seeded = await count("select count(*)::int as n from notices where not starts_with(id, 'GB-')");
+    expect(seeded).toBeGreaterThan(0);
+
+    t.advance(6 * 24 * 3600_000);
+    await t.runRetention();
+    expect(await count(`select count(*)::int as n from notices where id = '${posted.post.id}'`)).toBe(1);
+
+    t.advance(2 * 24 * 3600_000);
+    await t.runRetention();
+    expect(await count(`select count(*)::int as n from notices where id = '${posted.post.id}'`)).toBe(0);
+    expect(await count('select count(*)::int as n from notice_audience')).toBe(0);
+    expect(await count("select count(*)::int as n from notices where not starts_with(id, 'GB-')")).toBe(seeded);
+    expect((await t.ctx.services.notices!.search('화장실 공사', 3)).hits).toEqual([]);
+
+    t.ctx.config.demoWide = true;
+    // 8일이 지나 세션이 끊겼어요. 다시 들어와요.
+    const again = await t.loginAs(MOCK.staff);
+    const locked = await again.call('POST', '/api/demo/groupware/board/posts', { title: '공지', body: '내용이에요', requestId: requestId() });
+    expect(locked.status).toBe(409);
+    expect(locked.body).toMatchObject({ error: 'demo-locked' });
+  });
+
   it('같은 요청 번호로 두 번 올려도 한 번만 올라가요. 잠기는 글자가 있으면 올리지 않고 사본에도 들어가지 않아요', async () => {
     const t = await setup();
     const haneul = await t.loginAs(MOCK.staff);
