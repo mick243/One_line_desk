@@ -1,4 +1,13 @@
-import { type Card, NOTICE_QUERY_MAX_LENGTH, NOTICE_SEARCH_MAX_HITS, NOTICE_TITLE_MAX_LENGTH, type NoticeHit } from '@one-line-desk/shared';
+import {
+  type Card,
+  DEMO_BOARD_ID_PREFIX,
+  kstDate,
+  NOTICE_QUERY_MAX_LENGTH,
+  NOTICE_SEARCH_MAX_HITS,
+  NOTICE_TITLE_MAX_LENGTH,
+  type NoticeHit,
+  recordCutoff,
+} from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
 import { makeCard } from '../../core/cards';
 import type { AskInput, AskOutcome } from '../../core/module';
@@ -22,6 +31,8 @@ const URL_OK = /^https?:\/\/[^\s"'<>]+$/;
 const DATE_OK = /^\d{4}-\d{2}-\d{2}$/;
 // 제어 문자는 내보내지 않아요(ADR-14).
 const CONTROL = /[\u0000-\u001F\u007F]/g;
+/** 사본 갱신으로 들어온 공지 본문을 메모리에 두는 수 */
+const INGESTED_BODIES_MAX = 200;
 
 function isAllowedBoard(board: string): boolean {
   return (ALLOWED_BOARDS as readonly string[]).includes(board);
@@ -76,6 +87,8 @@ function notFoundCard(): Card {
 export function createNoticesService(ctx: AppContext) {
   // 게시판 사본(지금은 가상 공지) 본문. DB에는 넣지 않고, 원문 한 줄을 고를 때만 이 공지 본문을 읽어요.
   let bodies = new Map(MOCK_BOARD.filter((n) => isAllowedBoard(n.board)).map((n) => [n.id, n.body]));
+  // 게시판 사본 갱신(ingest)으로 들어온 공지 ID(들어온 순서). 본문 메모리 상한에 써요.
+  let ingested: string[] = [];
 
   /** 허용 게시판에서 제목·게시일·원문 링크만 찾아요. MCP notices_search도 이걸 불러요(LLM 없음, DB 읽기만). */
   async function search(query: string, limit: number): Promise<{ mock: boolean; hits: NoticeHit[] }> {
@@ -133,9 +146,35 @@ export function createNoticesService(ctx: AppContext) {
       return null;
     },
 
+    /**
+     * 게시판 사본 갱신(11/6 새 공지 알림 대상). 새 공지 한 건을 색인에 넣어요. 허용 밖 게시판·양식이 틀린 공지·이미 있는 공지면 false예요.
+     * 본문은 DB에 두지 않고 이 서버 메모리(원문 한 줄·알림 대상 제안용)에만 둬요. 시연 가상 게시판이 부르고, 실제 게시판 어댑터도 같은 길을 써요.
+     */
+    async ingest(n: BoardNotice): Promise<boolean> {
+      const indexed = indexNotice(n);
+      if (!indexed) return false;
+      const added = await ctx.db.tx(async (q) => repo.insertNoticeIfAbsent(q, indexed));
+      if (!added) return false;
+      bodies.set(n.id, n.body);
+      ingested.push(n.id);
+      // 새로 들어온 공지 본문은 상한만큼만 메모리에 둬요(오래된 것부터 빼요. 색인·제목·링크는 그대로예요).
+      while (ingested.length > INGESTED_BODIES_MAX) bodies.delete(ingested.shift()!);
+      return true;
+    },
+
+    /** 시연 가상 게시판에서 들어온 공지 사본을 게시일 7일 뒤 지워요(11/7, 모듈 retention). 메모리 본문도 같이 빼요. */
+    async purgeDemoBoardCopies(): Promise<void> {
+      const before = kstDate(recordCutoff(ctx.now()));
+      const gone = new Set(await repo.purgeDemoBoardCopies(ctx.db, DEMO_BOARD_ID_PREFIX, before));
+      if (!gone.size) return;
+      for (const id of gone) bodies.delete(id);
+      ingested = ingested.filter((id) => !gone.has(id));
+    },
+
     /** 비어 있을 때만 허용 게시판 사본을 색인해요. 여러 번 불러도 한 번만 들어가요. */
     async seed(source: BoardNotice[] = MOCK_BOARD): Promise<void> {
       bodies = new Map(source.filter((n) => isAllowedBoard(n.board)).map((n) => [n.id, n.body]));
+      ingested = [];
       if ((await repo.countNotices(ctx.db)) > 0) return;
       await ctx.db.tx(async (q) => {
         for (const n of source) {

@@ -117,7 +117,8 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
           type: 'object',
           required: ['flag', 'value'],
           additionalProperties: false,
-          properties: { flag: { enum: ['roomsWrite', 'mcp', 'autoActions', 'homeAsk', 'teamSchedule'] }, value: { type: 'boolean' } },
+          // noticeAutoSend(11/6): 새 공지 알림을 총무 확인 없이 AI 제안대로 보내요. 기본 끔이에요(ADR-09 개정).
+          properties: { flag: { enum: ['roomsWrite', 'mcp', 'autoActions', 'homeAsk', 'teamSchedule', 'noticeAutoSend'] }, value: { type: 'boolean' } },
         },
       },
     },

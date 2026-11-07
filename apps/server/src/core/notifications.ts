@@ -38,6 +38,23 @@ export class Notifier {
     ]);
   }
 
+  /**
+   * 여러 사람에게 한 사람씩 같은 알림을 보내요(11/6 새 공지 알림 대상). 사람마다 한 줄이라 읽음도 사람마다예요.
+   * 같은 가명 ID가 두 번 와도 한 줄만 넣어요. 쓰기 트랜잭션 안에서 같이 넣어요.
+   */
+  async toUsers(q: Queryable, pseudonymIds: readonly string[], n: NotifyInput): Promise<number> {
+    const ids = [...new Set(pseudonymIds)];
+    if (!ids.length) return 0;
+    await q.query('insert into notifications (audience_pseudonym, module, title, page, created_at) select unnest($1::text[]), $2, $3, $4, $5', [
+      ids,
+      n.module,
+      n.title.slice(0, 120),
+      n.page,
+      new Date(this.now()).toISOString(),
+    ]);
+    return ids.length;
+  }
+
   /** 부서 전체에 보내요. 보낸 사람이 같은 부서면 그 사람은 빼요. */
   async toDepartment(q: Queryable, department: string, n: NotifyInput, excludePseudonym?: string): Promise<void> {
     await q.query('insert into notifications (audience_department, exclude_pseudonym, module, title, page, created_at) values ($1, $2, $3, $4, $5, $6)', [

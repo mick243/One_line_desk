@@ -39,10 +39,10 @@ export const HTML_CACHE = 'no-store';
 /** index.html로 대신 답하는 화면 주소예요. 그 밖의 주소는 404라서 /api·/assets에 HTML이 오지 않아요. */
 export const SCREEN_PATHS = ['/', '/oauth/consent', '/r/:token'] as const;
 /**
- * 시연 전용 가상 그룹웨어 화면(11/6 휴가 A안). 시연일 때만 index.html로 답하고, 운영에는 이 주소가 없어요(404).
+ * 시연 전용 가상 그룹웨어 화면(11/6 휴가 A안 전자결재, 11/6 새 공지 알림 대상 게시판). 시연일 때만 index.html로 답하고, 운영에는 이 주소가 없어요(404).
  * 웹만 Vercel에 올린 시연(vercel.json)도 같은 주소를 넘겨요.
  */
-export const DEMO_SCREEN_PATHS = ['/demo/groupware/leave', '/demo/groupware/inbox'] as const;
+export const DEMO_SCREEN_PATHS = ['/demo/groupware/leave', '/demo/groupware/inbox', '/demo/groupware/board'] as const;
 
 interface WebFile {
   body: Buffer;

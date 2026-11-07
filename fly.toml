@@ -32,7 +32,9 @@ kill_timeout = 60
   NO_RETENTION_CONTRACT_CONFIRMED = "true"
   # 시연에서 처음부터 켜 둘 운영 스위치(11/4 사용자 결정). 디스크가 배포마다 비워져 운영자가 켠 값이 사라져서 여기서 켜요.
   # 회의실 예약·여러 팀 회의(roomsWrite), 채팅 "잡아 줘" 바로 예약(autoActions), 같은 팀 일정·휴가 반영 인원(teamSchedule), 사내 카페 모듈(cafeteria, 11/6 사용자 결정 — 가상 바리스타 하준으로 [영업 시작]). MCP는 넣지 않아요.
-  DESK_DEMO_SWITCHES = "roomsWrite,autoActions,teamSchedule,cafeteria"
+  # 새 공지 알림 자동 보내기(noticeAutoSend, 11/6 사용자 결정, ADR-09): 가상 게시판에 올리면 총무 확인 없이 제안대로 알림이 가요.
+  # 총무 확인 흐름을 보이려면 운영자가 PUT /api/ops/flag로 끄면 돼요. 운영(출시)은 정답률 표를 본 뒤에만 켜요(기본 끔).
+  DESK_DEMO_SWITCHES = "roomsWrite,autoActions,teamSchedule,cafeteria,noticeAutoSend"
 
 [http_service]
   internal_port = 3190

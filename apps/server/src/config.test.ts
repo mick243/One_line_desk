@@ -1,3 +1,4 @@
+import { DEFAULT_OPS_SETTINGS, LAUNCH_OPS_SETTINGS } from '@one-line-desk/shared';
 import { describe, expect, it } from 'vitest';
 import { createMockAdapters, type Adapters } from './adapters';
 import { buildApp } from './app';
@@ -84,14 +85,14 @@ describe('운영 설정이 실수하면 닫혀요(L-15)', () => {
       'teamSchedule',
     ]);
     expect(problemsOf({ ...demo, DESK_DEMO_SWITCHES: 'roomsWrite,mcp' })).toContain(
-      'DESK_DEMO_SWITCHES에는 roomsWrite·autoActions·teamSchedule·cafeteria만 넣을 수 있어요(mcp)',
+      'DESK_DEMO_SWITCHES에는 roomsWrite·autoActions·teamSchedule·cafeteria·noticeAutoSend만 넣을 수 있어요(mcp)',
     );
     expect(loadConfig({ ...PROD, DESK_DEMO_SWITCHES: 'roomsWrite' }).demoSwitches).toEqual([]);
 
     const db = await createTestDb();
     try {
       const built = await buildApp({ config: loadConfig({ ...demo, DESK_DEMO_SWITCHES: 'roomsWrite,teamSchedule' }), db, seed: true });
-      expect(built.ctx.ops.get()).toMatchObject({ roomsWrite: true, teamSchedule: true, autoActions: false, mcp: false });
+      expect(built.ctx.ops.get()).toMatchObject({ roomsWrite: true, teamSchedule: true, autoActions: false, mcp: false, noticeAutoSend: false });
       // 사내 카페(출시 기본 끔)는 넣지 않으면 끔 그대로예요.
       expect(built.ctx.ops.get().modules.cafeteria).toBe('off');
       await built.app.close();
@@ -113,6 +114,22 @@ describe('운영 설정이 실수하면 닫혀요(L-15)', () => {
       expect(s).toMatchObject({ roomsWrite: true, autoActions: false, mcp: false });
       // 깃발 이름으로 새는 값(cafeteria: true)은 없어요.
       expect('cafeteria' in s).toBe(false);
+      await built.app.close();
+    } finally {
+      await db.close();
+    }
+  });
+
+  it('[ADR-09] 시연 배포에 DESK_DEMO_SWITCHES=noticeAutoSend를 넣으면 새 공지 알림 자동 보내기가 켬으로 시작해요. 운영·개발 기본은 끔이에요(11/6)', async () => {
+    const demo = { NODE_ENV: 'production', DESK_MOCK_LOGIN: 'true', PUBLIC_BASE_URL: 'https://demo.example.com', ...SECRETS };
+    expect(problemsOf({ ...demo, DESK_DEMO_SWITCHES: 'noticeAutoSend' })).not.toContain('DESK_DEMO_SWITCHES');
+    expect(loadConfig({ ...PROD, DESK_DEMO_SWITCHES: 'noticeAutoSend' }).demoSwitches).toEqual([]);
+    expect(LAUNCH_OPS_SETTINGS.noticeAutoSend).toBe(false);
+    expect(DEFAULT_OPS_SETTINGS.noticeAutoSend).toBe(false);
+    const db = await createTestDb();
+    try {
+      const built = await buildApp({ config: loadConfig({ ...demo, DESK_DEMO_SWITCHES: 'roomsWrite,noticeAutoSend' }), db, seed: true });
+      expect(built.ctx.ops.get()).toMatchObject({ roomsWrite: true, noticeAutoSend: true, autoActions: false, mcp: false });
       await built.app.close();
     } finally {
       await db.close();

@@ -7,6 +7,7 @@ import { menuWords } from '../modules/cafe/chat';
 import { CAFE_MENU_FIXTURES } from '../modules/cafe/fixtures';
 import { chatReadLabel, interpretByRules as chatByRules, interpretChatText } from '../modules/rooms/chat';
 import { type EvalTask, GOLDEN, type GoldenCase } from './ai-golden';
+import { type NoticeCaseResult, renderNoticeSection } from './notice-eval';
 
 // 정답률 표(11/5 시험, AI 보완 1번). 같은 정답 단 문장을 "낱말 규칙"과 "AI"로 각각 나눠 보고 맞힌 수를 세요.
 // 서버가 쓰는 해석 함수를 그대로 불러요(interpretHomeText·interpretChatText·classifyText). DB·감사·저장은 없어요.
@@ -146,8 +147,14 @@ export function evalView(results: readonly CaseResult[]): Pick<AiEvalResponse, '
 
 const pct = (n: number, total: number) => `${n}/${total} (${Math.round((n / total) * 100)}%)`;
 
-/** 마크다운 표. model은 표에 적는 모델 이름이에요(없으면 AI 칸이 "안 잼"). */
-export function renderReport(results: readonly CaseResult[], o: { model: string | null; date: string }): string {
+/**
+ * 마크다운 표. model은 표에 적는 모델 이름이에요(없으면 AI 칸이 "안 잼").
+ * notices를 주면 아래에 "공지 알림 대상" 칸을 붙여요(11/6, notice-eval.ts).
+ */
+export function renderReport(
+  results: readonly CaseResult[],
+  o: { model: string | null; date: string; notices?: { results: readonly NoticeCaseResult[]; people: number } },
+): string {
   const scores = score(results);
   const lines = [
     '# AI 정답률 표',
@@ -156,6 +163,7 @@ export function renderReport(results: readonly CaseResult[], o: { model: string 
     '',
     '같은 정답 단 문장을 **낱말 규칙**(모델 없이 도는 해석기)과 **AI**(서버가 쓰는 같은 해석 함수 + 모델)로 나눠 보고 맞힌 수를 셌어요.',
     '문장은 개발자가 지은 가상 문장이에요(`apps/server/src/eval/ai-golden.ts`). 정답은 "이렇게 나눠야 맞다"이고, 지금 규칙이 하는 대로 적지 않았어요.',
+    ...(o.notices ? ['맨 아래 **공지 알림 대상**은 가상 공지로 알림 대상 제안을 따로 재요(11/6, 자동 보내기를 켜기 전에 봐요).'] : []),
     '',
     '| 해석하는 곳 | 문장 | 낱말 규칙 | AI | AI만 맞힘 | 규칙만 맞힘 |',
     '|---|---|---|---|---|---|',
@@ -186,5 +194,6 @@ export function renderReport(results: readonly CaseResult[], o: { model: string 
     '- 운영자는 앱 마이 페이지 > [운영자 · AI 정답률]에서 같은 표를 보고, [AI로 다시 재기]로 시연 모델의 AI 칸을 채워요(1시간에 한 번).',
     '',
   );
+  if (o.notices) lines.push(...renderNoticeSection(o.notices.results, o.notices.people));
   return lines.join('\n');
 }

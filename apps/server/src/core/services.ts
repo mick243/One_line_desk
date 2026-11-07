@@ -88,6 +88,23 @@ export interface NoticesService {
    * mustHave에 맞는 문장이 없으면 null이에요(지어내지 않아요).
    */
   ruleLine?(query: string, mustHave: RegExp): Promise<{ sentence: string; title: string; url: string } | null>;
+  /**
+   * 게시판 사본 갱신(11/6 새 공지 알림 대상, ADR-09 개정): 새 공지 한 건을 공지 사본에 넣고, 새로 들어왔으면 AI가 알림 대상을 제안해요.
+   * 본문은 DB에 두지 않아요. audience: pending = 총무 확인 대기, sent = 자동 보내기로 보냄, null = 공지 기능이 꺼져 제안하지 않음.
+   * 허용 밖 게시판·이미 있는 공지면 copied가 거짓이에요. 시연 가상 게시판(routes/demo-groupware-board.ts)이 불러요.
+   */
+  ingest?(notice: NoticeCopy): Promise<{ copied: boolean; audience: 'pending' | 'sent' | null }>;
+}
+
+/** 게시판 사본 한 건(제목·게시일·원문 링크·본문). 본문은 색인·제안에만 쓰고 DB에 두지 않아요. */
+export interface NoticeCopy {
+  id: string;
+  board: string;
+  title: string;
+  /** YYYY-MM-DD */
+  postedOn: string;
+  url: string;
+  body: string;
 }
 
 export interface NaviService {

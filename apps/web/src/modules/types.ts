@@ -96,4 +96,8 @@ export interface WebModules {
   CafeBoard: ComponentType;
   /** S9 카페 정산(총무만, 11/6 2묶음). 마이 페이지 > 내 역할 > [카페 정산]으로 열려요. 열 때마다 서버 접속기록에 남아요. */
   CafeSettle: ComponentType<{ onBack: () => void }>;
+  /** 공지 탭 "새 공지"(11/6): 최근 7일 새 공지의 제목·게시일·원문 링크, 나에게 알림이 간 공지 표시. 없으면 그리지 않아요. */
+  NewNotices: ComponentType;
+  /** 공지 탭 "새 공지 알림 대상 확인"(11/6, 총무만): AI 제안 대상·대상 수·[알리기]·[대상 바꾸기]·[알리지 않기] */
+  NoticeAudienceReview: ComponentType;
 }

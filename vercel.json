@@ -17,7 +17,8 @@
     { "source": "/oauth/consent", "destination": "/index.html" },
     { "source": "/r/:token", "destination": "/index.html" },
     { "source": "/demo/groupware/leave", "destination": "/index.html" },
-    { "source": "/demo/groupware/inbox", "destination": "/index.html" }
+    { "source": "/demo/groupware/inbox", "destination": "/index.html" },
+    { "source": "/demo/groupware/board", "destination": "/index.html" }
   ],
   "headers": [
     {
@@ -42,6 +43,7 @@
     { "source": "/oauth/consent", "headers": [{ "key": "cache-control", "value": "no-store" }] },
     { "source": "/r/:token", "headers": [{ "key": "cache-control", "value": "no-store" }] },
     { "source": "/demo/groupware/leave", "headers": [{ "key": "cache-control", "value": "no-store" }] },
-    { "source": "/demo/groupware/inbox", "headers": [{ "key": "cache-control", "value": "no-store" }] }
+    { "source": "/demo/groupware/inbox", "headers": [{ "key": "cache-control", "value": "no-store" }] },
+    { "source": "/demo/groupware/board", "headers": [{ "key": "cache-control", "value": "no-store" }] }
   ]
 }
