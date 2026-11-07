@@ -175,7 +175,7 @@ export interface NaviMcpRead {
   /** 링크를 열 때: 그 행이 아직 있으면 받는 곳, 없으면 null */
   inquiryTarget(rowId: string | null): Promise<Pick<NaviTeamRow, 'rowId' | 'team' | 'task'> | null>;
   /**
-   * 휴가 준비 링크(11/3 확인 링크 넓히기): 날짜 형식·주말·기간만 검사해 맞으면 봉인 제안 토큰을 줘요.
+   * 휴가 준비 링크(11/3 확인 링크 넓히기): 날짜 형식·주말·공휴일(회사 휴일 포함)·기간만 검사해 맞으면 봉인 제안 토큰을 줘요.
    * 연차 자료(등급 2)는 읽지 않아요. 토큰에는 날짜·하루/반차·종류만 들어가고 사유는 없어요.
    */
   prepareLeave(

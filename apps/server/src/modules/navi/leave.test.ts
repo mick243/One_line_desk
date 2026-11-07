@@ -11,7 +11,8 @@ import { computeLeave, isOfficialLeaveQuestion, ruleLeaveQuestion } from './leav
 // 시험 시계는 2026-10-26(월)이에요. 가상 연차 자료는 adapters/mock/leave.ts예요.
 
 const TODAY = '2026-10-26';
-const use = (date: string, kind: LeaveUse['kind'] = 'full'): LeaveUse => ({ date, kind });
+// 11/6: 근태 기록의 연차에는 종류(annual)가 있어요. 종류 없는 기록은 연차로 세지 않아요(아래 시험).
+const use = (date: string, kind: LeaveUse['kind'] = 'full'): LeaveUse => ({ date, kind, type: 'annual' });
 
 describe('연차 계산(근로기준법, 입사일 기준)', () => {
   it.each([
@@ -50,7 +51,7 @@ describe('연차 계산(근로기준법, 입사일 기준)', () => {
 describe('공가(11/1)', () => {
   it('공가로 쓴 날은 남은 연차 계산에서 빼지 않아요', () => {
     const uses: LeaveUse[] = [
-      { date: '2026-04-01', kind: 'full' },
+      { date: '2026-04-01', kind: 'full', type: 'annual' },
       { date: '2026-04-02', kind: 'full', type: 'official' },
       { date: '2026-04-03', kind: 'half', type: 'annual' },
     ];
@@ -178,10 +179,16 @@ describe('담당 찾기 답에 붙는 내 남은 연차(ADR-18)', () => {
     }
   });
 
-  it('근태 시스템이 연결되지 않았으면 숫자 대신 확인하는 곳을 알려 줘요', async () => {
+  it('[정확도-연결] 근태 시스템이 연결되지 않았으면 빈칸 대신 "연결되지 않아 보여 드릴 수 없어요"와 확인하는 곳을 알려 줘요', async () => {
     const t = await setup({ adapters: { ...createMockAdapters(), leave: new OffLeave() } });
     const card = myLeave(await askAs(t, MOCK.dev, '내 연차 몇 일 남았어요?'));
-    expect(card).toMatchObject({ headline: '남은 연차를 불러오지 못했어요', fields: [{ name: '확인하는 곳', value: '그룹웨어 근태 메뉴' }] });
+    expect(card).toMatchObject({
+      headline: '남은 연차를 보여 드릴 수 없어요',
+      fields: [
+        { name: '남은 연차', value: '회사 근태 기록과 아직 연결되지 않아 남은 연차를 보여 드릴 수 없어요' },
+        { name: '확인하는 곳', value: '그룹웨어 근태 메뉴' },
+      ],
+    });
   });
 
   it('무보관 계약 뒤 AI가 질문을 해석해도, 모델에는 질문 글만 가고 연차 자료는 가지 않아요', async () => {
@@ -218,15 +225,16 @@ describe('담당 찾기 답에 붙는 내 남은 연차(ADR-18)', () => {
     // 시험 시계는 2026-10-26(월), 도윤의 이번 연차 기간은 ~2026-11-30이에요.
     const nov3 = myLeave(await askAs(t, MOCK.dev, '11월 3일 연차 쓰면 몇 개 남아요?'));
     expect(field(nov3, '읽은 계획')).toBe('11월 3일(화)');
-    expect(field(nov3, '연차 1일을 더 쓰면')).toBe('6.5일 남아요');
+    // 11/6: 입사 1년 미만은 쓰려는 날까지 생기는 연차로 세요(11월 1일에 1일이 더 생겨요).
+    expect(field(nov3, '연차 1일을 더 쓰면')).toBe('7.5일 남아요 (11월 3일(화)까지 1일이 더 생겨요)');
 
     const dec = myLeave(await askAs(t, MOCK.dev, '12월에 3일 휴가 내면 남는 거 있어?'));
-    expect(field(dec, '다음 연차 기간')).toBe('2026-12-01부터는 다음 연차 기간이라 이번 기간에서 빼지 않았어요');
+    expect(field(dec, '다음 연차 기간')).toBe('12월 1일(화)부터는 새 연차 기간이에요. 그 날은 이번 기간 연차에서 빼지 않았어요');
     expect(dec!.fields.some((f) => f.name.endsWith('더 쓰면'))).toBe(false);
 
     const span = myLeave(await askAs(t, MOCK.dev, '11월 30일부터 12월 2일까지 휴가 쓰면'));
     expect(field(span, '읽은 계획')).toBe('11월 30일(월) · 12월 1일(화) · 12월 2일(수)');
-    expect(field(span, '연차 1일을 더 쓰면')).toBe('6.5일 남아요');
+    expect(field(span, '연차 1일을 더 쓰면')).toBe('7.5일 남아요 (11월 30일(월)까지 1일이 더 생겨요)');
     expect(field(span, '다음 연차 기간')).toBeDefined();
 
     const weekend = myLeave(await askAs(t, MOCK.dev, '토요일 연차 쓰면'));

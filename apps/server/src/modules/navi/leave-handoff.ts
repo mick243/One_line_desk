@@ -4,6 +4,9 @@ import {
   type CardAction,
   dayLabel,
   fillLeaveLink,
+  holidayUnknownText,
+  isDefaultWorkWeek,
+  isWorkday,
   KST_OFFSET,
   kstDate,
   kstTime,
@@ -12,21 +15,41 @@ import {
   LEAVE_FREE_DAY_MAX,
   LEAVE_FREE_DAY_RANGE,
   LEAVE_HANDOFF_TEXT,
+  LEAVE_HOURS_TEXT,
   LEAVE_KIND_LABEL,
+  LEAVE_MAY_DEDUCT_TEXT,
+  LEAVE_NOT_CONNECTED_TEXT,
   LEAVE_REASON_IN_GROUPWARE,
+  LEAVE_SMALL_WORKPLACE_TEXT,
+  LEAVE_STATUS_NOT_CONNECTED_TEXT,
   type LeaveDay,
   leaveDayHalves,
   leaveDayPickable,
   leaveDayWord,
   type LeaveKind,
   type LeaveLinkValues,
+  leaveNextPeriodText,
+  restDayWord,
   SICK_NOTE_TEXT,
+  type SkippedHoliday,
+  type WorkCalendar,
 } from '@one-line-desk/shared';
 import type { LeaveUse } from '../../adapters/types';
 import type { AppContext } from '../../context';
 import { makeCard } from '../../core/cards';
-import { weekdayOf } from '../../core/slots';
 import type { DeskUser } from '../../core/user';
+import {
+  basisText,
+  daysOf,
+  expiryText,
+  fmtDays,
+  holidaysText,
+  hourPlanText,
+  hoursDaysText,
+  leavePolicy,
+  restSkippedNote,
+  unknownHolidayYears,
+} from './leave-numbers';
 
 // 휴가 A안: 그룹웨어로 넘기기(11/6 사용자 결정, ADR-24 개정·ADR-18 보강).
 // 휴가 신청·결재(팀장 → 인사)는 회사 그룹웨어 전자결재가 해요. 앱은 결재 권한이 없어요(승인·반려·근태 쓰기 0).
@@ -36,8 +59,9 @@ import type { DeskUser } from '../../core/user';
 //    AI에는 질문 글만 가요(leave.ts readLeaveQuestion). 남은 연차·일정·규정 문장은 모델에 보내지 않아요.
 //    11/6 사용자 결정 "걸린 일이 없는 날 고르기": 이미 잡힌 일이 있는 날에 휴가를 쓰도록 돕지 않아요. 그래서
 //    - [예약 옮기기]·[못 가요]처럼 남에게 영향을 주는 정리 버튼은 카드에 두지 않아요.
-//    - 연차·반차(미리 고를 수 있는 휴가): 그날 잡힌 내 일을 사실로만 보여 주고, 걸린 일이 없는 가까운 평일(앞뒤 7평일)을
-//      2개쯤 제안해요. [이 날로 보기]는 그 날로 카드를 다시 계산해요(읽기만). 회사 휴일은 몰라서 평일만 봐요. 훈계 문구는 쓰지 않아요.
+//    - 연차·반차(미리 고를 수 있는 휴가): 그날 잡힌 내 일을 사실로만 보여 주고, 걸린 일이 없는 가까운 평일(앞뒤 7평일, 공휴일·회사 휴일 빼고)을
+//      2개쯤 제안해요. [이 날로 보기]는 그 날로 카드를 다시 계산해요(읽기만). 주말·법정 공휴일·회사 휴일(운영 설정)은 고르지 않아요(11/6).
+//      훈계 문구는 쓰지 않아요.
 //    - 병가·공가·경조(날을 고를 수 없는 휴가): 다른 날은 제안하지 않고, 그날 잡혀 있던 내 일만 알려요.
 // 2) 승인 뒤 반영: "내 휴가 신청 어떻게 됐어?" → 근태 기록에 들어간(승인된) 본인 휴가만 읽어요. 결재 중인 것은 앱이 몰라서
 //    "결재 진행 상황은 그룹웨어 결재함에서 봐요" + [결재함 열기]예요. 그룹웨어 결재 문서는 읽지 않아요.
@@ -54,11 +78,10 @@ const RULE_WORDS = /연차|휴가|반차/;
 /** 카드에 보여 줄 날·일 수 상한 */
 const MAX_LINES = 4;
 
-const fmt = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}일`;
-const total = (days: readonly LeaveDay[]) => days.reduce((n, d) => n + (d.kind === 'full' ? 1 : 0.5), 0);
+const fmt = fmtDays;
+const total = daysOf;
 /** 짧은 날짜 "11/14(금)" */
 const shortDay = (date: string) => dayLabel(date).replace(/^(\d+)월 (\d+)일/, '$1/$2');
-const isWeekday = (date: string) => weekdayOf(date) !== 0 && weekdayOf(date) !== 6;
 
 /** 그룹웨어 휴가 신청·결재함 주소. 운영 설정이 비어 있으면 시연은 가상 그룹웨어 주소, 운영은 없음(null)이에요. */
 export function groupwareLinks(ctx: Pick<AppContext, 'ops' | 'config'>): { leave: string | null; approvals: string | null } {
@@ -78,9 +101,37 @@ export function leaveLinkValues(type: LeaveKind, days: readonly LeaveDay[]): Lea
   return { from: sorted[0]?.date ?? '', to: sorted.at(-1)?.date ?? '', type, half };
 }
 
-/** [신청 내용 복사] 글: "연차 · 11/14(금) 하루". 종류·날짜만이고 사유는 넣지 않아요. */
+/** 사유를 꼭 적어야 하는 종류(가상 그룹웨어 신청서와 같아요). 앱은 사유를 받지 않고 "직접 적어 주세요"만 붙여요. */
+const REASON_REQUIRED: ReadonlySet<LeaveKind> = new Set<LeaveKind>(['sick', 'official', 'family-event']);
+const reasonLine = (type: LeaveKind) => `사유: 그룹웨어 신청서에 직접 적어 주세요${REASON_REQUIRED.has(type) ? '(꼭 적어야 해요)' : ''}`;
+
+/**
+ * [신청 내용 복사] 글(11/6): 그룹웨어 휴가 신청서 칸 순서(휴가 종류 → 기간 → 날짜 → 일수 → 사유)로 한 줄씩이에요.
+ * 붙여 넣고 칸마다 옮기기 쉽게 하려는 거예요. 종류·날짜·일수만이고 사유 글은 넣지 않아요(앱은 사유를 받지 않아요).
+ */
 export function leaveCopyText(type: LeaveKind, days: readonly LeaveDay[]): string {
-  return [LEAVE_KIND_LABEL[type], ...days.map((d) => `${shortDay(d.date)} ${leaveDayWord(d)}`)].join(' · ');
+  const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
+  const amount = sorted.reduce((sum, d) => sum + (d.kind === 'half' ? 0.5 : 1), 0);
+  return [
+    `휴가 종류: ${LEAVE_KIND_LABEL[type]}`,
+    `기간: ${shortDay(sorted[0]!.date)} ~ ${shortDay(sorted.at(-1)!.date)}`,
+    `날짜: ${sorted.map((d) => `${shortDay(d.date)} ${leaveDayWord(d)}`).join(', ')}`,
+    `일수: ${amount}일`,
+    reasonLine(type),
+  ].join('\n');
+}
+
+/**
+ * 시간 단위로 말한 날의 [신청 내용 복사] 글. 몇 시부터인지는 몰라서 시간만 적어요.
+ * 11/6 사용자 결정: 시간 옆에 일도 같이 적어요("시간: 하루 2시간(0.25일)", 하루 근로시간 운영 값 기준).
+ */
+export function leaveHourCopyText(type: LeaveKind, dates: readonly string[], hours: number, workdayHours: number): string {
+  return [
+    `휴가 종류: ${LEAVE_KIND_LABEL[type]}(시간 단위)`,
+    `날짜: ${dates.map((d) => shortDay(d)).join(', ')}`,
+    `시간: 하루 ${hoursDaysText(hours, workdayHours)}`,
+    reasonLine(type),
+  ].join('\n');
 }
 
 const dayText = (days: readonly LeaveDay[]) => {
@@ -137,15 +188,24 @@ const takenOn = (taken: readonly LeaveUse[], d: LeaveDay) =>
 const meetingText = (s: MySlot) => `${kstTime(s.start)}~${kstTime(s.end)} 회의(${s.room}, ${s.own ? '내 예약' : '참석'})`;
 
 /**
- * 걸린 일이 없는 가까운 평일(11/6). 고른 날(같은 하루·반나절) 앞뒤로 LEAVE_FREE_DAY_RANGE 평일 안에서, 가까운 순(뒤·앞 번갈아)으로
- * 내 일이 없고 근태 기록에도 없는 날을 LEAVE_FREE_DAY_MAX개 찾아요. 오늘 전·1년 뒤·이미 고른 날은 빼요. 회사 휴일은 몰라요.
+ * 걸린 일이 없는 가까운 일하는 날(11/6). 고른 날(같은 하루·반나절) 앞뒤로 LEAVE_FREE_DAY_RANGE 일하는 날 안에서, 가까운 순(뒤·앞 번갈아)으로
+ * 내 일이 없고 근태 기록에도 없는 날을 LEAVE_FREE_DAY_MAX개 찾아요. 오늘 전·1년 뒤·이미 고른 날은 빼요.
+ * 쉬는 요일·법정 공휴일·회사 휴일은 일하는 날이 아니라서 고르지 않아요(11/6 휴가 정확도). 근무 달력(cal)은 그 사람 것이라
+ * 주말 근무자는 토요일도 고를 수 있고, 공휴일을 쉬지 않는 회사(publicHolidaysOff 0)는 공휴일도 골라요(11/6 사용자 결정).
  */
-export function freeDaysNear(day: LeaveDay, slots: readonly MySlot[], taken: readonly LeaveUse[], exclude: ReadonlySet<string>, today: string): string[] {
+export function freeDaysNear(
+  day: LeaveDay,
+  slots: readonly MySlot[],
+  taken: readonly LeaveUse[],
+  exclude: ReadonlySet<string>,
+  today: string,
+  cal: Partial<WorkCalendar> = {},
+): string[] {
   const walk = (step: 1 | -1) => {
     const out: string[] = [];
     for (let d = day.date; out.length < LEAVE_FREE_DAY_RANGE;) {
       d = addDays(d, step);
-      if (isWeekday(d)) out.push(d);
+      if (isWorkday(d, cal)) out.push(d);
     }
     return out;
   };
@@ -163,12 +223,26 @@ export function freeDaysNear(day: LeaveDay, slots: readonly MySlot[], taken: rea
   return found.sort();
 }
 
-/** 신청 전 카드에 넣을 숫자(서버 규칙으로 leave.ts가 계산). AI가 정하지 않아요. */
+/** 신청 전 카드에 넣을 숫자(근태 숫자가 먼저, 없으면 서버 규칙으로 leave.ts가 계산). AI가 정하지 않아요. */
 export interface LeaveCheckNumbers {
-  /** 이번 연차 기간 남은 연차와 쓰면 남는 연차. 근태 기록이 없으면 null이에요. */
-  annual: { remaining: number; after: number } | null;
-  /** 고른 날이 다음 연차 기간에 들면 그 기간 계산 */
-  next?: { periodStart: string; remaining: number; after: number } | null;
+  /**
+   * 이번 연차 기간 남은 연차와 쓰면 남는 연차. 근태 기록이 없으면 null이에요.
+   * deducted: 이 종류가 연차에서 빠지는지(연차는 늘, 병가·경조는 운영 값, 공가는 늘 아님).
+   * grows: 입사 1년 미만이라 쓰려는 날까지 연차가 더 생기면 그만큼과 그 날(11/6).
+   */
+  annual: { remaining: number; after: number; deducted: boolean; grows?: { by: number; asOf: string } } | null;
+  /**
+   * annual이 null인 까닭: 운영의 "연결 안 함"(not-connected), 기록 없음·읽기 실패(not-found),
+   * 5인 미만 사업장이라 앱이 세지 않는데 근태 숫자도 없음(small-workplace, 11/6)
+   */
+  missing?: 'not-connected' | 'not-found' | 'small-workplace';
+  /** 숫자 출처(hr 근태 숫자 · app 앱 계산)와 이번 연차가 끝나는 날(소멸일) */
+  basis?: { source: 'hr' | 'app'; periodEnd: string };
+  /**
+   * 고른 날이 다음 연차 기간에 들면 그 기간 첫날. 11/6 사용자 결정: 숫자는 이번 기간 것만 보여서, 다음 기간은 근태 숫자든 앱 계산이든
+   * 숫자 없이 "○○부터는 새 연차 기간이에요. 그 날은 이번 기간 연차에서 빼지 않았어요" 한 문장이에요.
+   */
+  next?: { periodStart: string } | null;
   /** 병가: 올해 병가 쓴 날 → 쓰면, 한도(0이면 없음 null), 진단서 안내 대상인지 */
   sick?: { used: number; after: number; limit: number | null; note: boolean } | null;
 }
@@ -177,10 +251,16 @@ export interface LeaveCheckInput {
   type: LeaveKind;
   /** 쓸 날(날짜로 말했을 때) */
   days: LeaveDay[];
-  /** 날 없이 양만 말했을 때(하루 연차 일수·반차 횟수) */
-  amount?: { full: number; half: number };
-  /** 주말이라 뺀 날 수 */
+  /** 날 없이 양만 말했을 때(하루 연차 일수·반차 횟수), 또는 시간 단위로 말했을 때(hours, 11/6) */
+  amount?: { full: number; half: number; hours?: number };
+  /** 시간 단위로 말한 날(11/6). 몇 시인지 몰라서 그날 일정은 보지 않고, 링크·복사에만 써요. */
+  hourDates?: string[];
+  /** 쉬는 요일이라 뺀 날 수(기본은 주말, 주말 근무자는 근무하지 않는 요일) */
   weekendSkipped?: number;
+  /** 일하는 요일인데 공휴일·회사 휴일이라 뺀 날(11/6) */
+  holidaysSkipped?: SkippedHoliday[];
+  /** 이 사람의 근무 달력(11/6, 회사 기본 + 근태가 준 근무 요일). 없으면 회사 기본이에요. */
+  calendar?: WorkCalendar;
   numbers: LeaveCheckNumbers;
   /** 본인 근태 기록에 이미 있는 날(겹침 알림·다른 날 고르기용) */
   taken: readonly LeaveUse[];
@@ -188,12 +268,26 @@ export interface LeaveCheckInput {
   viaAi: boolean;
 }
 
-function headlineOf(input: LeaveCheckInput, used: number): string {
+/** 연차에서 빼지 않는 종류의 한 줄. 공가는 법 근거라 단정하고, 병가·경조는 회사 규정에 달려서 "따로 셌어요"예요(11/6). */
+export const separateText = (type: LeaveKind): string =>
+  type === 'official' ? '공가는 연차에서 빠지지 않아요' : `${LEAVE_KIND_LABEL[type]}는 연차와 따로 셌어요`;
+
+/** 이 종류가 연차에서 빠지는지(숫자가 없을 때도 운영 값으로 알아요) */
+const deductedOf = (input: LeaveCheckInput, deducts: boolean) => input.numbers.annual?.deducted ?? deducts;
+
+function headlineOf(input: LeaveCheckInput, used: number, deducts: boolean, workdayHours: number): string {
   const { annual } = input.numbers;
-  if (input.type !== 'annual') return `${LEAVE_KIND_LABEL[input.type]}는 연차에서 빠지지 않아요`;
-  if (!annual) return '남은 연차를 불러오지 못했어요';
+  if (!deductedOf(input, deducts)) return separateText(input.type);
+  if (!annual) return input.numbers.missing === 'not-found' ? '남은 연차를 불러오지 못했어요' : '남은 연차를 보여 드릴 수 없어요';
   if (used <= 0) return `남은 연차는 ${fmt(annual.remaining)}이에요`;
-  const what = input.days.length === 1 ? `${dayLabel(input.days[0]!.date)} ${leaveDayWord(input.days[0]!)}` : `연차 ${fmt(used)}`;
+  const kindWord = input.type === 'annual' ? '' : `${LEAVE_KIND_LABEL[input.type]} `;
+  const hours = input.amount?.hours ?? 0;
+  const what =
+    input.days.length === 1
+      ? `${dayLabel(input.days[0]!.date)} ${kindWord}${leaveDayWord(input.days[0]!)}`
+      : hours && !input.amount?.full && !input.amount?.half
+        ? `연차 ${hoursDaysText(hours, workdayHours)}`
+        : `${input.type === 'annual' ? '연차' : LEAVE_KIND_LABEL[input.type]} ${fmt(used)}`;
   return annual.after >= 0 ? `${what} 쓰면 남은 연차는 ${fmt(annual.after)}이에요` : `${what} 쓰면 연차가 ${fmt(-annual.after)} 모자라요`;
 }
 
@@ -202,7 +296,7 @@ function headlineOf(input: LeaveCheckInput, used: number): string {
  * - 연차·반차: 잡힌 일을 "11/14(금)에는 14:00~15:00 회의(…)가 잡혀 있어요"처럼 사실로만, 그리고 걸린 일이 없는 가까운 날 제안.
  * - 병가·공가·경조: "그날 잡혀 있던 일 N건이 있어요"만(다른 날 제안 없음).
  */
-function scheduleParts(input: LeaveCheckInput, slots: readonly MySlot[], today: string): { fields: Card['fields']; actions: CardAction[] } {
+function scheduleParts(input: LeaveCheckInput, slots: readonly MySlot[], today: string, cal: WorkCalendar): { fields: Card['fields']; actions: CardAction[] } {
   const { days, type } = input;
   if (!days.length) return { fields: [], actions: [] };
   const busy = days.map((d) => ({ day: d, on: slotsOn(slots, d) })).filter((x) => x.on.length > 0);
@@ -217,7 +311,7 @@ function scheduleParts(input: LeaveCheckInput, slots: readonly MySlot[], today: 
   // 걸린 날 하나(첫 날)를 가까운 날로 바꿔 보는 제안이에요. 여러 날이면 나머지 날은 그대로 둬요.
   const first = busy[0]!.day;
   const exclude = new Set(days.map((d) => d.date));
-  const free = freeDaysNear(first, slots, input.taken, exclude, today);
+  const free = freeDaysNear(first, slots, input.taken, exclude, today, cal);
   const actions: CardAction[] = free.map((date) => ({
     type: 'leave-day',
     text: `${shortDay(date)}로 보기`,
@@ -232,58 +326,107 @@ function scheduleParts(input: LeaveCheckInput, slots: readonly MySlot[], today: 
       { name: '그날 내 일정', value: facts },
       {
         name: '걸린 일이 없는 가까운 날',
-        value: free.length ? free.map(shortDay).join(' · ') : `앞뒤 ${LEAVE_FREE_DAY_RANGE}평일 안에서 찾지 못했어요`,
+        value: free.length
+          ? free.map(shortDay).join(' · ')
+          : `앞뒤 ${LEAVE_FREE_DAY_RANGE}${isDefaultWorkWeek(cal.weekdays) ? '평일' : '근무일'} 안에서 찾지 못했어요`,
       },
     ],
     actions,
   };
 }
 
+/** 시간 단위 신청의 링크 값(11/6): 첫날·끝날만, 반차 칸은 비워요(시간은 그룹웨어 신청서에 적어요). */
+const hourLinkValues = (type: LeaveKind, dates: readonly string[]): LeaveLinkValues => {
+  const sorted = [...dates].sort();
+  return { from: sorted[0] ?? '', to: sorted.at(-1) ?? '', type, half: '' };
+};
+
 /**
  * 신청 전 카드(11/6 A안). 홈 채팅·문의함·MCP 휴가 준비 링크·바로 하기·[이 날로 보기]가 같은 카드를 써요. 쓰기는 없어요.
  * [그룹웨어에서 신청하기]는 날짜·종류 코드만 채운 그룹웨어 주소예요. 주소가 없으면 "그룹웨어에서 신청해 주세요" 글만 보여요.
+ * 11/6 휴가 정확도: 공휴일·회사 휴일은 세지 않고, 시간 단위는 시간으로, 숫자는 근태 숫자가 먼저예요. 계산 기준·소멸일·
+ * "결재 중인 신청은 반영하지 않았어요"를 늘 적어요. 근태가 연결 안 됐으면 빈칸 대신 그렇다고 적어요.
  */
 export async function leaveCheckCard(ctx: AppContext, user: DeskUser, input: LeaveCheckInput): Promise<Card> {
   const today = kstDate(ctx.now());
+  const settings = ctx.ops.get();
+  const policy = leavePolicy(ctx);
+  const { workdayHours } = policy;
+  const cal = input.calendar ?? policy.calendar;
   const { days, type, numbers } = input;
-  const amountDays = input.amount ? input.amount.full + input.amount.half * 0.5 : 0;
+  const hours = input.amount?.hours ?? 0;
+  const hourDates = input.hourDates ?? [];
+  const amountDays = input.amount ? input.amount.full + input.amount.half * 0.5 + hours / workdayHours : 0;
   const used = days.length ? total(days) : amountDays;
+  const deducts = policy.deducts.has(type);
+  const deducted = deductedOf(input, deducts);
   const [slots, rule] = await Promise.all([
     days.length ? mySlots(ctx, user).catch(() => [] as MySlot[]) : Promise.resolve([] as MySlot[]),
-    ctx.services.notices?.ruleLine && ctx.ops.get().modules.notices === 'on'
+    ctx.services.notices?.ruleLine && settings.modules.notices === 'on'
       ? ctx.services.notices.ruleLine(RULE_QUERY, RULE_WORDS).catch(() => null)
       : Promise.resolve(null),
   ]);
   const taken = days.filter((d) => takenOn(input.taken, d));
-  const schedule = scheduleParts(input, slots, today);
+  const schedule = scheduleParts(input, slots, today, cal);
   const links = groupwareLinks(ctx);
-  const href = links.leave ? fillLeaveLink(links.leave, leaveLinkValues(type, days)) : null;
+  const linkValues = !days.length && hourDates.length ? hourLinkValues(type, hourDates) : leaveLinkValues(type, days);
+  const href = links.leave ? fillLeaveLink(links.leave, linkValues) : null;
 
   const amountText = input.amount
-    ? [input.amount.full ? `연차 ${fmt(input.amount.full)}` : '', input.amount.half ? `반차 ${input.amount.half}번` : ''].filter(Boolean).join(' · ')
+    ? [
+        input.amount.full ? `연차 ${fmt(input.amount.full)}` : '',
+        input.amount.half ? `반차 ${input.amount.half}번` : '',
+        hours ? `${hourDates.length ? `${hourDates.map(dayLabel).join(' · ')} ` : ''}${hourPlanText(hours, hourDates.length, workdayHours, true)}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ')
     : '';
-  const plan = days.length ? `${dayText(days)}${input.weekendSkipped ? ' (주말은 뺐어요)' : ''}` : amountText;
+  // 말한 날이 모두 쉬는 요일이면(주말 근무자의 월요일 등) 빈칸 대신 그렇다고 적어요(남은 연차 카드 "읽은 계획"과 같아요, 11/6).
+  const plan = days.length
+    ? `${dayText(days)}${input.weekendSkipped ? restSkippedNote(cal.weekdays) : ''}`
+    : amountText || (input.weekendSkipped ? `${restDayWord(cal.weekdays)}이라 연차에서 빼지 않았어요` : '');
+  const unknown = unknownHolidayYears([...days.map((d) => d.date), ...hourDates], cal.publicHolidaysOff);
   const annual = numbers.annual;
+  const grows = annual?.grows ? ` (${dayLabel(annual.grows.asOf)}까지 ${fmt(annual.grows.by)}이 더 생겨요)` : '';
   const annualLine = !annual
-    ? '불러오지 못했어요 · 그룹웨어 근태 메뉴에서 봐요'
-    : type !== 'annual'
-      ? `${fmt(annual.remaining)} 그대로예요(${LEAVE_KIND_LABEL[type]}는 연차에서 빠지지 않아요)`
+    ? numbers.missing === 'not-connected'
+      ? LEAVE_NOT_CONNECTED_TEXT
+      : numbers.missing === 'small-workplace'
+        ? LEAVE_SMALL_WORKPLACE_TEXT
+        : '불러오지 못했어요 · 그룹웨어 근태 메뉴에서 봐요'
+    : !deducted
+      ? `${fmt(annual.remaining)} 그대로예요(${separateText(type)})`
       : annual.after >= 0
-        ? `${fmt(annual.remaining)} → ${fmt(annual.after)}`
-        : `${fmt(annual.remaining)} → ${fmt(-annual.after)} 모자라요`;
+        ? `${fmt(annual.remaining)} → ${fmt(annual.after)}${grows}`
+        : `${fmt(annual.remaining)} → ${fmt(-annual.after)} 모자라요${grows}`;
+  // 11/6 사용자 결정: 다음 연차 기간은 숫자 없이 한 문장이에요(근태 숫자·앱 계산 모두).
+  const nextLine = numbers.next ? leaveNextPeriodText(numbers.next.periodStart, today) : null;
   const sick = numbers.sick;
+  const policyLine =
+    type === 'sick' || type === 'family-event' ? (deducted ? `이 회사는 ${LEAVE_KIND_LABEL[type]}를 연차에서 빼요(운영 설정)` : LEAVE_MAY_DEDUCT_TEXT) : null;
+  const basis = annual && deducted ? numbers.basis : undefined;
+  const copyText = days.length
+    ? leaveCopyText(type, days)
+    : hours && hourDates.length
+      ? // 복사 글은 그룹웨어 신청서 칸대로 "하루 N시간"이라 날마다의 시간을 넣어요(hours는 모든 날을 합한 시간, 11/6).
+        leaveHourCopyText(type, hourDates, hours / hourDates.length, workdayHours)
+      : null;
 
   return makeCard({
     id: CHECK_ID,
     kind: 'navi',
     label: '안내',
-    headline: headlineOf(input, used),
+    headline: headlineOf(input, used, deducts, workdayHours),
     fields: [
       ...(plan ? [{ name: '쓸 날', value: plan }] : []),
+      ...(input.holidaysSkipped?.length ? [{ name: '쉬는 날', value: holidaysText(input.holidaysSkipped) }] : []),
+      ...(unknown.length ? [{ name: '공휴일 정보', value: holidayUnknownText(unknown) }] : []),
+      ...(hours ? [{ name: '시간 단위', value: LEAVE_HOURS_TEXT }] : []),
       { name: '남은 연차', value: annualLine },
-      ...(type === 'annual' && numbers.next
-        ? [{ name: '다음 연차 기간', value: `${numbers.next.periodStart}부터 ${fmt(numbers.next.remaining)} → ${fmt(numbers.next.after)}` }]
-        : []),
+      ...(policyLine ? [{ name: '연차 차감', value: policyLine }] : []),
+      ...(basis ? [{ name: '계산 기준', value: basisText(basis.source) }] : []),
+      ...(basis ? [{ name: '소멸일', value: expiryText(basis.periodEnd, today) }] : []),
+      ...(deducted && nextLine ? [{ name: '다음 연차 기간', value: nextLine }] : []),
       ...(sick ? [{ name: '올해 병가', value: `${fmt(sick.used)} → ${fmt(sick.after)}${sick.limit ? ` (한도 ${fmt(sick.limit)})` : ''}` }] : []),
       ...(sick?.note ? [{ name: '진단서', value: SICK_NOTE_TEXT }] : []),
       ...(taken.length ? [{ name: '이미 잡힌 휴가', value: `${dayText(taken)} · 이미 근태 기록에 있어요` }] : []),
@@ -294,37 +437,59 @@ export async function leaveCheckCard(ctx: AppContext, user: DeskUser, input: Lea
       ...(href ? [] : [{ name: '신청하는 곳', value: LEAVE_APPLY_IN_GROUPWARE }]),
     ],
     evidence: {
-      text: annual ? `인사 근태 기록으로 서버가 계산 · 나에게만 보여요 · ${today} 기준` : '인사 근태 기록',
+      text: !annual
+        ? numbers.missing === 'not-connected'
+          ? '인사 근태 기록(연결 안 함)'
+          : numbers.missing === 'small-workplace'
+            ? '인사 근태 기록(근태 숫자 없음 · 5인 미만 사업장)'
+            : '인사 근태 기록'
+        : numbers.basis?.source === 'hr'
+          ? `인사 근태 기록 기준(근태 시스템이 준 숫자) · 나에게만 보여요 · ${today} 기준`
+          : `인사 근태 기록으로 서버가 계산 · 나에게만 보여요 · ${today} 기준`,
       ...(rule ? { href: rule.url } : {}),
       aiSummarized: input.viaAi && used > 0,
     },
     ...(href ? { primary: { type: 'link' as const, text: '그룹웨어에서 신청하기', href } } : {}),
     // 버튼은 그룹웨어로 가기·복사·다른 날 보기뿐이에요. 남에게 영향을 주는 정리 버튼(예약 옮기기·못 가요)은 두지 않아요(11/6).
-    secondary: [...(days.length ? [{ type: 'copy' as const, text: '신청 내용 복사', value: leaveCopyText(type, days) }] : []), ...schedule.actions],
+    secondary: [...(copyText ? [{ type: 'copy' as const, text: '신청 내용 복사', value: copyText }] : []), ...schedule.actions],
     tail: LEAVE_HANDOFF_TEXT,
   });
 }
 
 /**
+ * 근태 기록 한 줄의 양: "하루"·"오전 반차", 하루·반차가 아닌 양(반반차·시간 단위, amountDays)은 "2시간(0.25일)"이에요
+ * (11/6 사용자 결정: 시간을 보여 주는 곳에는 일도 같이, 하루 근로시간 운영 값 기준).
+ */
+function useWord(u: Pick<LeaveUse, 'kind' | 'half' | 'amountDays'>, workdayHours: number): string {
+  const standard = u.kind === 'full' ? 1 : 0.5;
+  if (u.amountDays === undefined || u.amountDays === standard) return leaveDayWord(u);
+  return hoursDaysText(Math.round(u.amountDays * workdayHours * 100) / 100, workdayHours);
+}
+
+/**
  * 상태 묻기(11/6 A안): "내 휴가 신청 어떻게 됐어?". 근태 기록에 들어간(승인된) 본인 휴가 중 [from, to] 날만 보여요.
  * 결재 중인 신청은 앱이 몰라서 그룹웨어 결재함으로 보내요. 앱은 그룹웨어 결재 문서를 읽지 않아요.
+ * 11/6 휴가 정확도: 종류 없는 근태 기록은 "휴가"로 보여요(연차로 짐작하지 않아요). 근태가 연결 안 됐으면 그렇다고 적어요.
  */
 export async function leaveStatusCard(ctx: AppContext, user: DeskUser, from: string, to: string): Promise<Card> {
   const record = await ctx.adapters.leave.leaveOf({ idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) }).catch(() => null);
+  const { workdayHours } = leavePolicy(ctx);
   const approved = (record?.uses ?? [])
     .filter((u) => u.date >= from && u.date <= to)
     .sort((a, b) => a.date.localeCompare(b.date))
-    .map((u) => ({ date: u.date, kind: u.kind, ...(u.half ? { half: u.half } : {}), type: u.type ?? 'annual' }));
+    .map((u) => ({ date: u.date, word: useWord(u, workdayHours), label: u.type ? LEAVE_KIND_LABEL[u.type] : '휴가' }));
   const approvals = groupwareLinks(ctx).approvals;
   const first = approved[0];
   const headline = !record
-    ? '근태 기록을 불러오지 못했어요'
+    ? ctx.adapters.leave.connected
+      ? '근태 기록을 불러오지 못했어요'
+      : LEAVE_STATUS_NOT_CONNECTED_TEXT
     : !first
       ? '근태 기록에 승인된 휴가가 없어요'
       : approved.length === 1
-        ? `${dayLabel(first.date)} ${LEAVE_KIND_LABEL[first.type]} ${leaveDayWord(first)}가 승인됐어요`
+        ? `${dayLabel(first.date)} ${first.label} ${first.word}${first.word.endsWith('일)') ? '이' : '가'} 승인됐어요`
         : `승인된 휴가가 ${approved.length}개 있어요`;
-  const shown = approved.slice(0, MAX_LINES).map((u) => `${dayLabel(u.date)} ${LEAVE_KIND_LABEL[u.type]} ${leaveDayWord(u)}`);
+  const shown = approved.slice(0, MAX_LINES).map((u) => `${dayLabel(u.date)} ${u.label} ${u.word}`);
   return makeCard({
     id: STATUS_ID,
     kind: 'navi',
@@ -336,7 +501,10 @@ export async function leaveStatusCard(ctx: AppContext, user: DeskUser, from: str
         : []),
       { name: '결재 중인 신청', value: LEAVE_APPROVALS_TEXT },
     ],
-    evidence: { text: record ? `인사 근태 기록(승인된 휴가만) · ${from} ~ ${to}` : '인사 근태 기록', aiSummarized: false },
+    evidence: {
+      text: record ? `인사 근태 기록(승인된 휴가만) · ${from} ~ ${to}` : ctx.adapters.leave.connected ? '인사 근태 기록' : '인사 근태 기록(연결 안 함)',
+      aiSummarized: false,
+    },
     ...(approvals ? { primary: { type: 'link' as const, text: '결재함 열기', href: approvals } } : {}),
     tail: '나에게만 보여요. 앱은 그룹웨어 결재 문서를 읽지 않고, 승인돼 근태 기록에 들어간 휴가만 봐요',
   });

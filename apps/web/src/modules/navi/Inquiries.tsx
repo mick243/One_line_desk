@@ -5,10 +5,13 @@ import {
   INQUIRY_STATE_LABEL,
   type InquiryItem,
   type InquiryListResponse,
+  kstDate,
   LEAVE_REJECT_REASON_MAX,
+  LEAVE_SMALL_WORKPLACE_TEXT,
   LEAVE_TYPE_LABEL,
   type LeaveDay,
   leaveDayWord,
+  leaveNextPeriodText,
   type LeaveRequestBalance,
   maskLine,
   OFFICIAL_LEAVE_REASON_LABEL,
@@ -117,34 +120,30 @@ function Replies({ item }: { item: InquiryItem }) {
 const leftText = (after: number) => (after >= 0 ? `${fmt(after)} 남아요` : `${fmt(-after)} 모자라요`);
 
 /**
- * 연차 기간별 줄(10/30). 요청한 날이 다음 연차 기간(입사일 기준)이면 이번 기간 연차는 그대로이고 다음 기간 연차에서 빠져요.
+ * 연차 기간별 줄(10/30). 요청한 날이 다음 연차 기간이면 이번 기간 연차는 그대로예요.
  * 기간을 말하지 않으면 "7.5일 → 7.5일"처럼 이유 없이 그대로인 것처럼 보여요.
+ * 11/6 사용자 결정: 숫자는 이번 기간 것만이고, 다음 기간은 숫자 없이 한 문장이에요.
  */
-function balanceLines(b: LeaveRequestBalance): { text: string; short: boolean }[] {
+function balanceLines(b: LeaveRequestBalance, today: string): { text: string; short: boolean }[] {
   const lines: { text: string; short: boolean }[] = [];
   const thisEnd = `이번 연차 기간(${dayLabel(b.periodEnd)}까지)`;
   if (b.days > 0 || !b.next) lines.push({ text: `${thisEnd} 남은 ${fmt(b.remaining)} → 승인하면 ${leftText(b.after)}`, short: b.after < 0 });
   else lines.push({ text: `${thisEnd} 남은 ${fmt(b.remaining)} · 이 요청으로는 빠지지 않아요`, short: false });
-  if (b.next) {
-    lines.push({
-      text: `다음 연차 기간(${dayLabel(b.next.periodStart)}부터) 남은 ${fmt(b.next.remaining)} → 승인하면 ${leftText(b.next.after)}`,
-      short: b.next.after < 0,
-    });
-  }
+  if (b.next) lines.push({ text: leaveNextPeriodText(b.next.periodStart, today), short: false });
   return lines;
 }
 
-/** 승인 확인 시트 한 줄: 어느 기간 연차가 얼마에서 얼마로 줄어드는지 */
-function approveLine(b: LeaveRequestBalance): string {
-  const parts = [
-    ...(b.days > 0 ? [`이번 기간 남은 연차가 ${fmt(b.remaining)}에서 ${fmt(b.after)}로`] : []),
-    ...(b.next ? [`다음 기간(${dayLabel(b.next.periodStart)}부터) 남은 연차가 ${fmt(b.next.remaining)}에서 ${fmt(b.next.after)}로`] : []),
-  ];
-  return `승인하면 근태 기록에 들어가 ${parts.join(', ')} 줄어요.`;
+/** 승인 확인 시트 한 줄: 이번 기간 연차가 얼마에서 얼마로 줄어드는지. 다음 기간 날은 숫자 없이 한 문장이에요(11/6). */
+function approveLine(b: LeaveRequestBalance, today: string): string {
+  const next = b.next ? ` ${leaveNextPeriodText(b.next.periodStart, today)}.` : '';
+  return b.days > 0
+    ? `승인하면 근태 기록에 들어가 이번 기간 남은 연차가 ${fmt(b.remaining)}에서 ${fmt(b.after)}로 줄어요.${next}`
+    : `승인하면 근태 기록에 들어가요.${next}`;
 }
 
 function LeaveBlock({ item }: { item: InquiryItem }) {
   const leave = item.leave;
+  const today = useMemo(() => kstDate(Date.now()), []);
   if (!leave) return null;
   const b = leave.balance;
   return (
@@ -174,13 +173,17 @@ function LeaveBlock({ item }: { item: InquiryItem }) {
       {leave.sick && <p className='hint'>근태 기록으로 서버가 계산 · 이 요청 처리에만 보여요</p>}
       {leave.sick === null && <p className='hint'>근태 기록에서 올해 병가를 찾지 못했어요. 그룹웨어 근태에서 확인해 주세요.</p>}
       {b &&
-        balanceLines(b).map((line, i) => (
+        balanceLines(b, today).map((line, i) => (
           <p key={i} className={line.short ? 'leave-after short' : 'leave-after'}>
             {line.text}
           </p>
         ))}
       {b && <p className='hint'>근태 기록으로 서버가 계산 · 이 요청 처리에만 보여요</p>}
-      {b === null && <p className='hint'>근태 기록에서 남은 연차를 찾지 못했어요. 그룹웨어 근태에서 확인해 주세요.</p>}
+      {b === null && (
+        <p className='hint'>
+          {leave.smallWorkplace ? LEAVE_SMALL_WORKPLACE_TEXT : '근태 기록에서 남은 연차를 찾지 못했어요. 그룹웨어 근태에서 확인해 주세요.'}
+        </p>
+      )}
     </div>
   );
 }
@@ -218,7 +221,7 @@ function InboxItem({ item }: { item: InquiryItem }) {
             : isSick(item)
               ? '근태 기록에 병가로 들어가요. 남은 연차는 그대로예요.'
               : b
-                ? approveLine(b)
+                ? approveLine(b, kstDate(Date.now()))
                 : '근태 기록에 들어가 남은 연차에서 빠져요.',
           '보낸 사람에게 승인 알림이 가요.',
         ],

@@ -44,6 +44,17 @@ export interface OpsSettings {
    * 비어 있으면 "계좌는 총무에게 물어봐 주세요"를 보여요. 앱은 돈을 받거나 보내지 않아서 계좌 글은 안내일 뿐이에요.
    */
   cafeAccount: string;
+  /**
+   * 회사 휴일·임시공휴일 날짜(YYYY-MM-DD, 11/6 휴가 정확도). 창립기념일처럼 법정 공휴일 표(holidays.ts)에 없는 쉬는 날을 운영자가 넣어요.
+   * 휴가 날 세기·걸린 일이 없는 날 제안·MCP 휴가 준비·가상 그룹웨어 신청서에서 공휴일처럼 빼요. 날짜만이고 이름·사유는 받지 않아요.
+   */
+  companyHolidays: string[];
+  /**
+   * 회사 기본 근무 요일(0 일요일 … 6 토요일, 11/6 사용자 결정, 기본 월~금). 휴가 날 세기·걸린 일이 없는 날 제안·MCP 휴가 준비·
+   * 가상 그룹웨어 신청서·앱 안 휴가 요청이 이 요일이 아닌 날을 쉬는 요일로 빼요. 교대·주말 근무자처럼 사람마다 다르면
+   * 근태 어댑터가 준 사람별 근무 요일(LeaveRecord.workWeekdays)이 먼저예요. 감사에는 개수만 남아요.
+   */
+  workWeekdays: number[];
   values: {
     /** 아래 값은 아직 정하지 않은 임시값이에요. 운영 설정에서 바꿔요. */
     defaultMeetingMinutes: number;
@@ -73,6 +84,25 @@ export interface OpsSettings {
      * 서버는 요청마다 지금 값으로 봐서, 줄이면 이미 열린 판 세션도 더 일찍 끊겨요.
      */
     cafeBoardSessionHours: number;
+    /** 하루 근로시간(11/6 휴가 정확도, 기본 8). "연차 2시간"을 0.25일로 바꿀 때 써요. 회사 규정의 소정근로시간에 맞춰요. */
+    workdayHours: number;
+    /**
+     * 병가를 연차에서 빼는 회사인지(11/6, 0 안 뺌 · 1 뺌, 기본 0). 병가의 연차 차감은 회사 규정(취업규칙)에 달려요.
+     * 1이면 남은 연차 계산과 신청 전 카드가 병가를 연차처럼 빼요. 공가는 법 근거라 늘 빼지 않아요.
+     */
+    sickLeaveFromAnnual: number;
+    /** 경조를 연차에서 빼는 회사인지(11/6, 0 안 뺌 · 1 뺌, 기본 0). 병가와 같아요. */
+    eventLeaveFromAnnual: number;
+    /**
+     * 5인 미만 사업장인지(11/6 사용자 결정, 0 아님 · 1 맞음, 기본 0). 5인 미만은 법정 연차(근로기준법 제60조)가 적용되지 않아서,
+     * 1이면 앱이 근로기준법 규칙으로 연차를 세지 않아요. 근태 시스템 숫자(LeaveRecord.balance)가 있으면 그 숫자만 보여 주고, 없으면 숫자 없이 까닭을 적어요.
+     */
+    smallWorkplace: number;
+    /**
+     * 법정 공휴일을 쉬는 날로 보는지(11/6 사용자 결정, 0 일하는 날 · 1 쉬는 날, 기본 1). 0이면 공휴일도 일하는 날로 세고 제안해요
+     * (공휴일이 유급휴일이 아닌 5인 미만 사업장 등). 회사 휴일(companyHolidays)은 값과 상관없이 늘 쉬는 날이에요. smallWorkplace와 따로예요.
+     */
+    publicHolidaysOff: number;
   };
 }
 
@@ -100,6 +130,8 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     approvals: '',
   },
   cafeAccount: '',
+  companyHolidays: [],
+  workWeekdays: [1, 2, 3, 4, 5],
   values: {
     defaultMeetingMinutes: 60,
     proposalTtlSeconds: 600,
@@ -116,6 +148,11 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     cafeMonthlyLimitWon: 500_000,
     cafeDueDays: 7,
     cafeBoardSessionHours: 13,
+    workdayHours: 8,
+    sickLeaveFromAnnual: 0,
+    eventLeaveFromAnnual: 0,
+    smallWorkplace: 0,
+    publicHolidaysOff: 1,
   },
 };
 

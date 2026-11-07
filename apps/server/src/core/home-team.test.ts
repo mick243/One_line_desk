@@ -54,6 +54,7 @@ class RecordingProvider implements LlmProvider {
 function withCanary(inner: LeaveAdapter): LeaveAdapter {
   return {
     capabilities: inner.capabilities,
+    connected: inner.connected,
     recordUses: (p, uses) => inner.recordUses(p, uses),
     async leaveOf(p) {
       const r = await inner.leaveOf(p);

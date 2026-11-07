@@ -58,6 +58,11 @@ export interface GroupwareFormResponse {
   line: string[];
   /** 오늘(YYYY-MM-DD, 한국 날짜) */
   today: string;
+  /**
+   * 여러 날 신청서에서 빼는 날 이름(11/6 근무 달력): 기본 "주말·공휴일·회사 휴일", 주말 근무자는 "근무하지 않는 요일·…",
+   * 공휴일을 쉬지 않는 회사는 "…·회사 휴일"만이에요. 기안자 본인 근무 요일로 정해요.
+   */
+  offDays: string;
 }
 
 /**

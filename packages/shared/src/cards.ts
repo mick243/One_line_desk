@@ -73,8 +73,16 @@ export type CardAction =
       remaining: number;
       /** 이번 연차 기간 마지막 날. 이 뒤의 날은 다음 기간 연차에서 빠져요. */
       periodEnd: string;
-      /** 다음 연차 기간 첫날과 그 기간 남은 연차(본인 것) */
-      next: { periodStart: string; remaining: number };
+      /**
+       * 다음 연차 기간 첫날. 이 날부터 고른 날은 이번 기간 연차에서 빼지 않아요.
+       * 11/6 사용자 결정: 숫자는 이번 기간 것만 보여서 다음 기간 남은 연차는 없어요(leaveNextPeriodText 한 문장).
+       */
+      next: { periodStart: string };
+      /**
+       * 본인 근무 달력이 기본(월~금·공휴일 쉼)과 다를 때만 와요(11/6 주말 근무자·공휴일 운영 값). 양식이 쉬는 날 검사에 써요.
+       * weekdays는 일하는 요일(0 일요일 … 6 토요일)이에요. 회사 휴일은 서버가 막아요.
+       */
+      calendar?: { weekdays: number[]; publicHolidaysOff: boolean };
       /** 날짜 없이 양만 말했을 때("이틀 쓰고 싶어") 고를 일수 안내 */
       planned?: number;
       /** 양식을 열 때 고른 종류. 없으면 연차예요. 공가 카드에서 열면 'official'(11/1), 병가 카드에서 열면 'sick'(11/3)이에요. */
