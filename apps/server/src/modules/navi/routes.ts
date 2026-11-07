@@ -33,7 +33,7 @@ import type { AppContext } from '../../context';
 import { DeskError } from '../../core/errors';
 import type { InquiryService } from './inquiries';
 import type { ItHelpService } from './it-help';
-import { findLeaveRequestRow, leaveCheckForLink, leaveLinkAction } from './leave';
+import { findLeaveRequestRow, leaveCheckForLink, leaveLinkAction, myLeaveCalendar } from './leave';
 import { checkLeaveLink } from './mcp-read';
 import * as repo from './repo';
 import type { NaviService } from './service';
@@ -85,7 +85,7 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
   });
 
   // [이 날로 보기](11/6 A안 신청 전 카드): 걸린 일이 없는 가까운 날로 카드를 다시 계산해요. 읽기만이고 저장·감사·AI 호출이 없어요.
-  // 날짜·종류 코드만 POST 본문으로 받아요(글 없음). 날 검사는 MCP 휴가 준비 링크와 같아요(평일·1년 안·병가는 지난 3일까지).
+  // 날짜·종류 코드만 POST 본문으로 받아요(글 없음). 날 검사는 MCP 휴가 준비 링크와 같아요(평일·공휴일·회사 휴일 아님·1년 안·병가는 지난 3일까지).
   app.post<{ Body: LeaveCheckRequest }>(
     '/api/navi/leave/check',
     {
@@ -115,9 +115,11 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
     async (req): Promise<LeaveCheckResponse> => {
       assertNotOff();
       if (ctx.config.leaveInApp) throw new DeskError('not-found', 404, '앱 안 휴가 결재가 켜져 있으면 휴가 신청 양식에서 날을 골라요');
-      const checked = checkLeaveLink(req.body, kstDate(ctx.now()));
+      // 11/6 근무 달력: 본인 근태가 준 근무 요일(주말 근무자)로 검사해요. 기록은 이 요청 메모리에만 있어요.
+      const mine = await myLeaveCalendar(ctx, req.deskUser!);
+      const checked = checkLeaveLink(req.body, kstDate(ctx.now()), mine.calendar);
       if (!checked.ok) throw new DeskError('bad-request', 400, checked.message);
-      return { card: await leaveCheckForLink(ctx, req.deskUser!, checked.days, req.body.type) };
+      return { card: await leaveCheckForLink(ctx, req.deskUser!, checked.days, req.body.type, { record: mine.record }) };
     },
   );
 

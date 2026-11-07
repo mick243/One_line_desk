@@ -1,9 +1,12 @@
 import {
   CAFE_BILLING_LIMITS,
+  COMPANY_HOLIDAYS_MAX,
   DEFAULT_OPS_SETTINGS,
   hasControlChar,
   isPantryStandalone,
   type ModuleKind,
+  normalizeCompanyHolidays,
+  normalizeWorkWeekdays,
   OPS_CLEARABLE_LINKS,
   type ModuleSwitch,
   type OpsLinkKey,
@@ -33,6 +36,8 @@ interface Overrides {
   noticeAutoSend?: boolean;
   links?: Partial<Record<OpsLinkKey, string>>;
   cafeAccount?: string;
+  companyHolidays?: string[];
+  workWeekdays?: number[];
   values?: Partial<OpsValues>;
 }
 
@@ -57,6 +62,15 @@ export const OPS_VALUE_RANGE: Record<keyof OpsValues, readonly [number, number]>
   cafeDueDays: [1, 28],
   // 카페 판 전용 세션 길이(시간, 11/6 3묶음, ADR-20 예외). 정규 업무시간 앞뒤 1~2시간을 덮는 13시간까지만 받아요.
   cafeBoardSessionHours: [1, 13],
+  // 하루 근로시간(11/6 휴가 정확도). "연차 2시간" → 2 ÷ 이 값 일이에요.
+  workdayHours: [1, 12],
+  // 병가·경조를 연차에서 빼는지(11/6, 0 안 뺌 · 1 뺌). 회사 규정(취업규칙)에 따라 운영자가 정해요. 공가는 값이 없어요(늘 안 빼요).
+  sickLeaveFromAnnual: [0, 1],
+  eventLeaveFromAnnual: [0, 1],
+  // 5인 미만 사업장인지(11/6 사용자 결정, 0 아님 · 1 맞음). 1이면 앱이 법정 연차를 세지 않고 근태 숫자만 보여요.
+  smallWorkplace: [0, 1],
+  // 법정 공휴일을 쉬는 날로 보는지(11/6 사용자 결정, 0 일하는 날 · 1 쉬는 날). 회사 휴일은 값과 상관없이 쉬어요.
+  publicHolidaysOff: [0, 1],
 };
 
 export const NAVI_OFF_ONLY_STANDALONE = '문의함은 공지·회의실이 모두 꺼진 같이 채워요 단독 모드에서만 끌 수 있어요';
@@ -74,6 +88,8 @@ function merge(base: OpsSettings, o: Overrides): OpsSettings {
     noticeAutoSend: o.noticeAutoSend ?? base.noticeAutoSend,
     links: { ...base.links, ...o.links },
     cafeAccount: o.cafeAccount ?? base.cafeAccount,
+    companyHolidays: o.companyHolidays ?? base.companyHolidays,
+    workWeekdays: o.workWeekdays ?? base.workWeekdays,
     values: { ...base.values, ...o.values },
   };
 }
@@ -188,6 +204,32 @@ export class OpsSettingsStore {
     return this.save(
       { ...this.overrides, cafeAccount: value },
       { pseudonymId: operatorId, channel: 'ops', module: 'cafeteria', action: 'cafeAccount.set', result: value ? 'ok' : 'cleared' },
+    );
+  }
+
+  /**
+   * 회사 휴일·임시공휴일 날짜(11/6 휴가 정확도). 진짜 날짜(YYYY-MM-DD)만 상한까지 받고, 겹친 날은 하나로 날짜 순으로 둬요.
+   * 목록을 통째로 바꿔요(빈 목록이면 지워요). 감사 로그에는 날짜 없이 개수만 남아요.
+   */
+  async setCompanyHolidays(operatorId: string, dates: readonly unknown[]): Promise<OpsSettings> {
+    const list = normalizeCompanyHolidays(dates);
+    if (!list) throw new DeskError('bad-request', 400, `회사 휴일은 YYYY-MM-DD 날짜로 ${COMPANY_HOLIDAYS_MAX}개까지 넣어 주세요`);
+    return this.save(
+      { ...this.overrides, companyHolidays: list },
+      { pseudonymId: operatorId, channel: 'ops', action: 'companyHolidays.set', result: String(list.length) },
+    );
+  }
+
+  /**
+   * 회사 기본 근무 요일(11/6 사용자 결정, 0 일요일 … 6 토요일). 0~6 정수만 1~7개 받고, 겹친 요일은 하나로 작은 순으로 둬요.
+   * 목록을 통째로 바꿔요. 사람마다 다른 근무 요일은 근태 어댑터 값이 먼저예요. 감사 로그에는 요일 없이 개수만 남아요.
+   */
+  async setWorkWeekdays(operatorId: string, days: readonly unknown[]): Promise<OpsSettings> {
+    const list = normalizeWorkWeekdays(days);
+    if (!list) throw new DeskError('bad-request', 400, '근무 요일은 0(일요일)~6(토요일) 숫자로 하나 이상 넣어 주세요');
+    return this.save(
+      { ...this.overrides, workWeekdays: list },
+      { pseudonymId: operatorId, channel: 'ops', action: 'workWeekdays.set', result: String(list.length) },
     );
   }
 

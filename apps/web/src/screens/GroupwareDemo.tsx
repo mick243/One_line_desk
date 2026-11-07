@@ -231,7 +231,7 @@ function LeaveForm({ onDone }: { onDone: () => void }) {
           ))}
         </fieldset>
       )}
-      {!oneDay && !halfDay && <p className='gw-hint'>여러 날은 평일을 하루씩 신청해요. 주말은 빼요.</p>}
+      {!oneDay && !halfDay && <p className='gw-hint'>여러 날은 일하는 날을 하루씩 신청해요. {form?.offDays ?? '주말·공휴일·회사 휴일'}은 빼요.</p>}
       <label className='gw-label'>
         {needReason ? '사유(꼭 적어요)' : '사유(골라서 적어요)'}
         <textarea value={reason} maxLength={DEMO_GROUPWARE_REASON_MAX} rows={2} autoComplete='off' onChange={(e) => setReason(e.target.value)} />

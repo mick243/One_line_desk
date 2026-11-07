@@ -134,11 +134,12 @@ export function ActionHost({
           }
           case 'copy':
             // 신청 내용 복사(11/6 휴가 A안): 서버가 정한 종류·날짜 글만 클립보드에 넣어요. 앱은 어디에도 남기지 않아요(R13).
+            // 글은 그룹웨어 신청서 칸 순서(휴가 종류·기간·날짜·일수·사유는 직접) 여러 줄이라 줄을 살려 보여 줘요.
             try {
               await navigator.clipboard.writeText(action.value);
-              setShown({ title: '복사했어요', message: `${action.value} · 그룹웨어 신청서에 붙여 넣어 주세요`, cards: [] });
+              setShown({ title: '복사했어요', message: `그룹웨어 신청서에 붙여 넣어 주세요\n\n${action.value}`, cards: [] });
             } catch {
-              setShown({ title: '복사하지 못했어요', message: `이 브라우저는 복사를 막았어요. 직접 적어 주세요: ${action.value}`, cards: [] });
+              setShown({ title: '복사하지 못했어요', message: `이 브라우저는 복사를 막았어요. 직접 적어 주세요\n\n${action.value}`, cards: [] });
             }
             return;
           case 'navigate':
@@ -231,7 +232,7 @@ export function ActionHost({
       {inviting && InviteSheet && <InviteSheet action={inviting} channels={inviteChannels} onClose={() => setInviting(null)} />}
       {shown && (
         <Sheet title={shown.title} onClose={() => setShown(null)}>
-          {shown.message && <p>{shown.message}</p>}
+          {shown.message && <p className='sheet-message'>{shown.message}</p>}
           {shown.cards.map((c) => (
             <CardView key={c.id} card={c} onAction={(a) => run(a)} />
           ))}

@@ -148,8 +148,8 @@ describe('반차 오전·오후 보내기(ADR-24 개정)', () => {
     const record = {
       hireDate: '2020-03-02',
       uses: [
-        { date: '2026-04-01', kind: 'half' as const, half: 'am' as const },
-        { date: '2026-04-02', kind: 'half' as const },
+        { date: '2026-04-01', kind: 'half' as const, half: 'am' as const, type: 'annual' as const },
+        { date: '2026-04-02', kind: 'half' as const, type: 'annual' as const },
       ],
     };
     expect(computeLeave(record, '2026-10-26')).toMatchObject({ usedHalf: 2, used: 1 });

@@ -109,7 +109,7 @@ export const LEAVE_OUTPUT = z
           .strict(),
       )
       .max(LEAVE_REQUEST_MAX_DAYS)
-      .describe('양식에 채울 날(날짜 순). 형식·주말·기간을 확인한 날만이에요'),
+      .describe('양식에 채울 날(날짜 순). 형식·주말·공휴일·기간을 확인한 날만이에요'),
     link: LINK.link.optional(),
     linkText: LINK.linkText.optional(),
     emptyReason: EMPTY_REASON.optional(),

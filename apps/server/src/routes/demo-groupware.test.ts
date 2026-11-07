@@ -127,7 +127,8 @@ describe('가상 그룹웨어 결재와 근태 반영', () => {
     const done = ((await decide(doyun, doc.id, await refOf(doyun, '가상 직원 은우'), 'approved')).body as { doc: GroupwareDoc }).doc;
     expect(done).toMatchObject({ state: 'approved', recorded: true });
     const uses = (await t.ctx.adapters.leave.leaveOf({ idpSubject: MOCK.dev, email: 'doyun@corp.example' }))!.uses;
-    expect(uses).toContainEqual({ date: '2026-10-28', kind: 'half', half: 'pm' });
+    // 종류는 늘 같이 넣어요(11/6: 종류 없는 근태 기록은 연차로 세지 않아요).
+    expect(uses).toContainEqual({ date: '2026-10-28', kind: 'half', half: 'pm', type: 'annual' });
   });
 
   it('기안 검사: 같은 요청 번호는 한 번만, 지난 날·주말만·근태에 이미 있는 날·결재 중인 날과 겹침은 막아요', async () => {

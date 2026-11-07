@@ -20,9 +20,13 @@ export class OffMessenger implements MessengerAdapter {
   }
 }
 
-/** 인사 근태 시스템을 아직 붙이지 않았을 때예요. 남은 연차 카드는 "그룹웨어 근태 메뉴에서 확인해 주세요"로 안내해요. */
+/**
+ * 인사 근태 시스템을 아직 붙이지 않았을 때예요. 남은 연차·휴가 상태 카드는 빈칸 대신
+ * "회사 근태 기록과 아직 연결되지 않아 … 보여 드릴 수 없어요"로 알려요(11/6 휴가 정확도).
+ */
 export class OffLeave implements LeaveAdapter {
   readonly capabilities: AdapterCapabilities = { name: 'leave-off', label: '인사 근태(연결 안 함)', mock: false };
+  readonly connected = false;
   async leaveOf(): Promise<LeaveRecord | null> {
     return null;
   }

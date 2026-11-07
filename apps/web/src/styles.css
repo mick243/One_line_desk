@@ -797,6 +797,11 @@ button.chip:active {
 .sheet:focus {
   outline: none;
 }
+/* 시트 안내 글의 줄바꿈을 살려요(신청 내용 복사는 그룹웨어 신청서 칸 순서 여러 줄이에요). */
+.sheet-message {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
 .sheet .handle {
   width: 36px;
   height: 5px;

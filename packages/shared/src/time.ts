@@ -27,6 +27,11 @@ export function dayLabel(date: string): string {
   return `${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일(${WEEKDAY_NAMES[d.getUTCDay()]})`;
 }
 
+/** 올해면 "11월 30일(월)", 다른 해면 "2027년 3월 3일(수)". today는 한국 날짜(YYYY-MM-DD)예요. */
+export function dayLabelWithYear(date: string, today: string): string {
+  return date.slice(0, 4) === today.slice(0, 4) ? dayLabel(date) : `${date.slice(0, 4)}년 ${dayLabel(date)}`;
+}
+
 /** 한국 날짜·시각을 UTC 밀리초로 바꿔요. */
 export function kstToEpoch(date: string, time: string): number {
   return Date.parse(`${date}T${time}:00${KST_OFFSET}`);

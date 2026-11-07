@@ -4,6 +4,7 @@ import {
   type CardAction,
   checkInput,
   dayLabel,
+  offDayName,
   INQUIRY_KEEP_DAYS,
   INQUIRY_QUESTION_MAX,
   INQUIRY_REASON_MAX,
@@ -14,6 +15,7 @@ import {
   type InquiryListResponse,
   type InquiryReplyRequest,
   type InquiryRequest,
+  isWorkWeekday,
   kstDate,
   LEAVE_REJECT_REASON_MAX,
   LEAVE_REQUEST_MAX_DAYS,
@@ -27,21 +29,24 @@ import {
   OFFICIAL_LEAVE_REASON_LABEL,
   type OfficialLeaveReason,
   recordCutoff,
+  restDayWord,
   SICK_LEAVE_PAST_DAYS,
   SICK_LEAVE_REASON_LABEL,
   SICK_NOTE_TEXT,
   type SickLeaveReason,
   type SickLeaveUsage,
+  type WorkCalendar,
+  workCalendar,
 } from '@one-line-desk/shared';
 import type { LeaveRecord } from '../../adapters/types';
 import type { AppContext } from '../../context';
 import { makeCard } from '../../core/cards';
 import { DeskError } from '../../core/errors';
-import { weekdayOf } from '../../core/slots';
 import type { DeskUser } from '../../core/user';
 import { GENERAL_TASK } from './cards';
 import { GENERAL_DESK } from './fixtures';
 import { HALF_DAY, leaveRequestBalance, needsSickNote, sickUsage } from './leave';
+import { calendarOf, leavePolicy } from './leave-numbers';
 import * as repo from './repo';
 import { feedbackDay } from './service';
 
@@ -131,6 +136,8 @@ function inboxActions(i: repo.InquiryRow): CardAction[] {
 /** 받은 문의함에서 결정 전 요청에 붙이는 계산(서버 규칙, 저장 안 함). 연차는 남은 연차, 병가는 올해 병가 쓴 날이에요. */
 interface ItemExtra {
   balance?: LeaveRequestBalance | null;
+  /** balance가 null인 까닭이 5인 미만 사업장(앱이 법정 연차를 세지 않음)인지(11/6) */
+  smallWorkplace?: boolean;
   sick?: SickLeaveUsage | null;
   sickNote?: boolean;
 }
@@ -159,6 +166,7 @@ function toItem(i: repo.InquiryRow, view: 'inbox' | 'mine', replies: repo.ReplyR
             days: i.leaveDays,
             total: leaveTotal(i.leaveDays),
             ...(view === 'inbox' && open && annual ? { balance: extra.balance ?? null } : {}),
+            ...(view === 'inbox' && open && annual && extra.smallWorkplace ? { smallWorkplace: true as const } : {}),
             ...(view === 'inbox' && open && i.leaveType === 'sick' ? { sick: extra.sick ?? null } : {}),
             ...(i.leaveType === 'sick' && extra.sickNote ? { sickNote: true as const } : {}),
           },
@@ -182,10 +190,12 @@ function checked(text: string, max: number, what: string): string {
 }
 
 /**
- * 휴가 날 검사: 오늘부터 1년 안의 평일, 겹치지 않게, 날짜 순으로 정리해요. 병가는 지난 3일까지 받아요(earliest).
+ * 휴가 날 검사: 오늘부터 1년 안의 일하는 날, 겹치지 않게, 날짜 순으로 정리해요. 병가는 지난 3일까지 받아요(earliest).
  * 11/3: 반차는 오전·오후 중 하나가 꼭 있어야 해요. 같은 날 오전 반차와 오후 반차를 같이 고르면 하루로 합쳐요.
+ * 11/6: 쉬는 요일·공휴일은 보낸 사람 근무 달력(cal)을 따라요(주말 근무자는 토요일도 받고, 근무하지 않는 평일은 막아요).
  */
-function checkedLeaveDays(input: readonly LeaveDay[], today: string, earliest = today): LeaveDay[] {
+function checkedLeaveDays(input: readonly LeaveDay[], today: string, earliest = today, cal: Partial<WorkCalendar> = {}): LeaveDay[] {
+  const c = workCalendar(cal);
   if (!input.length) throw new DeskError('bad-request', 400, '쓸 날을 하나 이상 골라 주세요');
   if (input.length > LEAVE_REQUEST_MAX_DAYS) throw new DeskError('bad-request', 400, `한 번에 ${LEAVE_REQUEST_MAX_DAYS}일까지 신청할 수 있어요`);
   for (const d of input) {
@@ -201,7 +211,10 @@ function checkedLeaveDays(input: readonly LeaveDay[], today: string, earliest = 
       throw new DeskError('bad-request', 400, `${dayLabel(d.date)}은 지난 날이에요${more}`);
     }
     if (d.date > last) throw new DeskError('bad-request', 400, '1년 안의 날만 신청할 수 있어요');
-    if ([0, 6].includes(weekdayOf(d.date))) throw new DeskError('bad-request', 400, `${dayLabel(d.date)}은 주말이에요`);
+    if (!isWorkWeekday(d.date, c.weekdays)) throw new DeskError('bad-request', 400, `${dayLabel(d.date)}은 ${restDayWord(c.weekdays)}이에요`);
+    // 11/6 휴가 정확도: 법정 공휴일(운영 값 publicHolidaysOff가 1일 때)·회사 휴일은 쉬는 날이라 연차로 받지 않아요.
+    const off = offDayName(d.date, c);
+    if (off) throw new DeskError('bad-request', 400, `${dayLabel(d.date)}은 쉬는 날이에요(${off})`);
     if (seen.has(d.date)) throw new DeskError('bad-request', 400, `${dayLabel(d.date)}을 두 번 골랐어요`);
     seen.add(d.date);
   }
@@ -258,7 +271,9 @@ export function createInquiryService(ctx: AppContext) {
     const record = await ctx.adapters.leave.leaveOf(await personOf(i.senderSubject)).catch(() => null);
     const today = kstDate(ctx.now());
     if (i.leaveType === 'sick') return { sickNote, sick: record ? sickUsage(record, today, ctx.ops.get().values.sickLeaveYearDays) : null };
-    return { balance: record ? leaveRequestBalance(record, today, i.leaveDays) : null };
+    // 5인 미만 사업장이고 근태 숫자가 없으면 null이고 그 까닭을 같이 줘요(11/6).
+    const balance = record ? leaveRequestBalance(record, today, i.leaveDays, leavePolicy(ctx)) : null;
+    return { balance, ...(record && !balance ? { smallWorkplace: true } : {}) };
   };
   const withReplies = async (rows: repo.InquiryRow[], view: 'inbox' | 'mine'): Promise<InquiryItem[]> => {
     const replies = await repo.repliesOf(
@@ -293,10 +308,15 @@ export function createInquiryService(ctx: AppContext) {
       const sick = leaveType?.type === 'sick';
       // 병가는 자유 글 사유를 받지 않아요. 사유 칸이 오면 거절해요(병명이 글로 들어오지 않게).
       if (sick && req.reason !== undefined) throw new DeskError('bad-request', 400, '병가 사유는 선택지로만 골라요');
-      const leaveDays = req.leave ? checkedLeaveDays(req.leave.days, today, sick ? addDays(today, -SICK_LEAVE_PAST_DAYS) : today) : null;
+      // 보낸 사람 본인 근태 기록: 근무 요일(주말 근무자, 11/6)로 날을 검사하고, 이미 있는 날과 겹치는지 봐요. 저장하지 않아요.
+      const mine = req.leave
+        ? await ctx.adapters.leave.leaveOf({ idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) }).catch(() => null)
+        : null;
+      const leaveDays = req.leave
+        ? checkedLeaveDays(req.leave.days, today, sick ? addDays(today, -SICK_LEAVE_PAST_DAYS) : today, calendarOf(leavePolicy(ctx), mine))
+        : null;
       if (leaveDays && !req.rowId) throw new DeskError('bad-request', 400, '휴가 요청은 분장표의 휴가 신청 업무로만 보내요');
       if (leaveDays) {
-        const mine = await ctx.adapters.leave.leaveOf({ idpSubject: user.idpSubject, ...(user.email ? { email: user.email } : {}) }).catch(() => null);
         const clash = overlapping(mine, leaveDays);
         if (clash.length) throw new DeskError('conflict', 409, `이미 근태 기록에 있는 날이에요: ${clash.join(' · ')}`);
       }

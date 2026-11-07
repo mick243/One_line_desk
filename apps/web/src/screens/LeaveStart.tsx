@@ -1,4 +1,4 @@
-import type { Card, CardAction, LeaveStartResponse } from '@one-line-desk/shared';
+import { type Card, type CardAction, LEAVE_IN_APP_DEV_TEXT, type LeaveStartResponse } from '@one-line-desk/shared';
 import { useState } from 'react';
 import { ApiFailure, apiRequest } from '../api';
 import { useActions } from '../components/ActionHost';
@@ -48,7 +48,7 @@ export function LeaveStart({ variant = 'button', inApp = true }: { variant?: 'bu
           <h2>휴가 신청</h2>
           <p className='hint'>
             {inApp
-              ? '연차·반차·공가·병가를 인사팀에 보내요. 남은 연차는 열 때 계산하고 저장하지 않아요.'
+              ? `연차·반차·공가·병가를 인사팀에 보내요. 남은 연차는 열 때 계산하고 저장하지 않아요. ${LEAVE_IN_APP_DEV_TEXT}.`
               : '신청·결재는 그룹웨어에서 해요. 누르면 남은 연차와 신청할 곳을 보여 줘요. 남은 연차는 저장하지 않아요.'}
           </p>
           {button}
