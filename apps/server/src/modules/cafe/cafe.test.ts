@@ -9,7 +9,7 @@ import type {
 import { afterEach, describe, expect, it } from 'vitest';
 import { pseudonymize } from '../../core/pseudonym';
 import { computeRoles } from '../../core/roles';
-import { createTestApp, MOCK } from '../../testing';
+import { createTestApp, expectNoSecrets, MOCK } from '../../testing';
 
 // F4 사내 카페 주문 1묶음(11/6, PRD F4 완료 기준·ADR-29 "시험으로 지키는 것").
 // 시계는 2026-10-26(월) 09:00(한국)이에요. 고를 수 있는 첫 픽업 칸은 09:10이에요.
@@ -318,9 +318,7 @@ describe('[F4-4] 카페 판(바리스타)', () => {
     ]);
     const text = JSON.stringify(res.body);
     const staffPseudonym = pseudonymize(t.ctx.config.pseudonymSecret, MOCK.staff);
-    for (const secret of [staffPseudonym, '가상 직원 하늘', '하늘', 'haneul', '재무팀', '원', '4000', '4,000', '2000', 'price', 'total', 'won', 'pseudonym']) {
-      expect(text).not.toContain(secret);
-    }
+    expectNoSecrets(text, [staffPseudonym, '가상 직원 하늘', '하늘', 'haneul', '재무팀', '원', '4000', '4,000', '2000', 'price', 'total', 'won', 'pseudonym']);
   });
 
   it('[F4-4] 상태는 접수 대기 → 만드는 중 → 나왔어요 → 가져감 순서로만 바뀌고, 나왔어요 알림 글에는 메뉴·금액이 없어요', async () => {
@@ -349,7 +347,7 @@ describe('[F4-4] 카페 판(바리스타)', () => {
     expect(after.items[0]).toMatchObject({ title: '주문한 음료가 나왔어요', page: 'cafe', read: false });
     const { rows } = await t.db.query<{ title: string; module: string }>('select title, module from notifications');
     expect(rows).toEqual([{ title: '주문한 음료가 나왔어요', module: 'cafeteria' }]);
-    for (const secret of ['아메리카노', '아이스', '2,000', '2000', '원', '픽업']) expect(JSON.stringify(after)).not.toContain(secret);
+    expectNoSecrets(JSON.stringify(after), ['아메리카노', '아이스', '2,000', '2000', '원', '픽업']);
     // 바리스타에게는 알림이 가지 않아요.
     expect(((await barista.call('GET', '/api/notifications')).body as NotificationsResponse).items).toEqual([]);
 
@@ -504,7 +502,6 @@ describe('[ADR-21·29] 보관과 감사 로그', () => {
       ['write', 'order-cancel', 'done'],
     ]);
     const text = JSON.stringify(rows);
-    for (const secret of ['바닐라라테', '카페라테', '아메리카노', '샷 추가', '9000', '9,000', '2000', '원', `"${id}"`, `"${second}"`])
-      expect(text).not.toContain(secret);
+    expectNoSecrets(text, ['바닐라라테', '카페라테', '아메리카노', '샷 추가', '9000', '9,000', '2000', '원', `"${id}"`, `"${second}"`]);
   });
 });
