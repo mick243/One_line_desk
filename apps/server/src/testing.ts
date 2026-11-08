@@ -16,6 +16,27 @@ export const MOCK = {
   devMember: 'mock|emp-006', // 가상 직원 서준, 개발팀, 5층(팀장 도윤의 팀원, 11/6 가상 그룹웨어 결재선)
 } as const;
 
+/**
+ * 무작위로 생기는 글자(UUID·가명 ID·긴 16진수·10자리 넘는 숫자)를 지워요(11/8).
+ * 금액 같은 숫자 비밀값("8000")이 plan_id UUID 같은 무작위 글자 안에 우연히 섞여 시험이 가끔 깨지던 것을 막아요.
+ */
+export function withoutRandomTokens(text: string): string {
+  return text
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<uuid>')
+    .replace(/p_[0-9a-f]{24}/g, '<pseudonym>')
+    .replace(/[0-9a-f]{16,}/gi, '<hex>')
+    .replace(/\d{10,}/g, '<number>');
+}
+
+/**
+ * 내보낸 글·남긴 줄에 비밀값이 없는지 봐요. 숫자로만 된 비밀값(금액)은 무작위 글자를 지운 뒤에 찾고,
+ * 글자 비밀값(이름·메뉴·가명 ID·입금 코드)은 원문 그대로 찾아요. 그래서 가명 ID가 새는지도 그대로 잡혀요.
+ */
+export function expectNoSecrets(text: string, secrets: readonly string[]): void {
+  const scrubbed = withoutRandomTokens(text);
+  for (const secret of secrets) expect(/^\d+$/.test(secret) ? scrubbed : text, `비밀값 "${secret}"`).not.toContain(secret);
+}
+
 export async function createTestApp(
   opts: Partial<Omit<BuildOptions, 'config'>> & {
     start?: number;

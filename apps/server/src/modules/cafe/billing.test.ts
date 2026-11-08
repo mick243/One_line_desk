@@ -9,7 +9,7 @@ import type {
 } from '@one-line-desk/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { pseudonymize } from '../../core/pseudonym';
-import { createTestApp, MOCK } from '../../testing';
+import { createTestApp, expectNoSecrets, MOCK } from '../../testing';
 
 // F4 사내 카페 2묶음(11/6, PRD F4 세부 요구 6~12·완료 기준, ADR-29 "시험으로 지키는 것"): 청구·입금 확인·한도·미납 막기·알림·보관·총무 정산.
 // 시계는 2026-10-26(월) 09:00(한국)에서 시작해요. 10월 주문은 11월 1일 0시 뒤 첫 보관 회차에서 청구돼요(기한 11월 7일, 8일부터 막힘).
@@ -492,7 +492,7 @@ describe('[F4-11] 총무 정산 화면(등급 2 예외)', () => {
       [me, 'cafe.sales', []],
     ]);
     const text = JSON.stringify((await t.db.query("select * from access_log where action like 'cafe.%'")).rows);
-    for (const secret of ['8000', '8,000', '2000', '원', '하늘', '도윤', ...v.bills.map((b) => b.code)]) expect(text).not.toContain(secret);
+    expectNoSecrets(text, ['8000', '8,000', '2000', '원', '하늘', '도윤', ...v.bills.map((b) => b.code)]);
   });
 
   it('[ADR-29 시험] 감사 로그에는 모듈·동작·결과만 남고 금액·입금 코드·메뉴는 없어요', async () => {
@@ -515,8 +515,7 @@ describe('[F4-11] 총무 정산 화면(등급 2 예외)', () => {
       ['menu-update', 'done'],
     ]);
     const text = JSON.stringify((await t.db.query("select * from audit_log where module = 'cafeteria'")).rows);
-    for (const secret of ['777000', '777,000', '3300', '2700', '8000', '원', '쑥라테', '카페라테', ...v.bills.map((b) => b.code)])
-      expect(text).not.toContain(secret);
+    expectNoSecrets(text, ['777000', '777,000', '3300', '2700', '8000', '원', '쑥라테', '카페라테', ...v.bills.map((b) => b.code)]);
   });
 
   it('[F4-12] 매출 합계 CSV는 날·메뉴별 잔 수·금액이고 이름·가명 ID가 없어요. 합계가 청구서 합계와 같아요', async () => {
@@ -622,8 +621,7 @@ describe('[F4 완료 기준] 이름·금액을 다른 사람·AI에 내보내지
     await t.runRetention();
     const board = (await p.barista.call('GET', '/api/cafe/board')).body as CafeBoardResponse;
     const text = JSON.stringify(board) + JSON.stringify(await notes(p.barista));
-    for (const secret of ['원', '8000', '8,000', '2000', 'won', 'Won', 'unpaid', 'overdue', 'bill', '하늘', '도윤', ...(await bills(t)).map((b) => b.code)])
-      expect(text).not.toContain(secret);
+    expectNoSecrets(text, ['원', '8000', '8,000', '2000', 'won', 'Won', 'unpaid', 'overdue', 'bill', '하늘', '도윤', ...(await bills(t)).map((b) => b.code)]);
   });
 
   it('모든 카페 알림 제목은 정해진 글이고 금액·메뉴·입금 코드가 없어요', async () => {

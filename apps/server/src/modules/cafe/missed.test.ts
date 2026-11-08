@@ -1,7 +1,7 @@
 import type { CafeOrderLineInput, CafeResponse, CafeSettleResponse, NotificationsResponse, PlanConfirmResponse } from '@one-line-desk/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { pseudonymize } from '../../core/pseudonym';
-import { createTestApp, MOCK } from '../../testing';
+import { createTestApp, expectNoSecrets, MOCK } from '../../testing';
 
 // F4 사내 카페 3묶음(11/6, PRD F4-5·완료 기준, ADR-29): [못 받았어요].
 // 직원이 자기 주문이 나왔어요·가져감인 그날 [못 받았어요](고정 버튼, 사유 없음)를 누르면 총무 역할에게 알림이 가고,
@@ -141,7 +141,7 @@ describe('[F4-5] [못 받았어요] 신고', () => {
     const { rows } = await t.db.query('select * from notifications');
     const text = JSON.stringify(rows);
     // 알림 글에는 종류만 있어요(보낸 사람 빼기용 가명 ID 칸만 있고, 이름·메뉴·금액은 없어요).
-    for (const secret of ['하늘', '재무팀', '아메리카노', '아이스', '2,000', '2000', '원']) expect(text).not.toContain(secret);
+    expectNoSecrets(text, ['하늘', '재무팀', '아메리카노', '아이스', '2,000', '2000', '원']);
     const { rows: roleRows } = await t.db.query<{ audience_role: string; page: string }>(
       "select audience_role, page from notifications where title = '카페 못 받은 주문 확인 요청이 왔어요'",
     );
