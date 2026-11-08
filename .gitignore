@@ -10,3 +10,6 @@ coverage/
 .vercel
 .env*
 !.env.example
+
+# Hallmark 디자인 검사 기록·스크린숏(11/8 리디자인, 저장소에 넣지 않아요)
+.hallmark/

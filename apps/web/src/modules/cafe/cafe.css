@@ -1,18 +1,19 @@
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: Coral (deal 1/3) · redesign: full · module stylesheet, tokens from tokens.css, full stamp in styles.css · v2.0.0 */
 /* S7 카페 주문 · S8 카페 판(11/6, ADR-29). 색·간격은 styles.css의 변수만 써요. */
 .cafe-band {
   margin: 0;
-  padding: 12px 16px;
-  border-radius: var(--radius-s);
-  font-size: 0.9375rem;
-  font-weight: 700;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-input);
+  font-size: var(--text-md);
+  font-weight: 600;
 }
 .cafe-band.open {
-  background: var(--ok-bg);
-  color: var(--ok-text);
+  background: var(--color-success-bg);
+  color: var(--color-success);
 }
 .cafe-band.closed {
-  background: var(--warn-bg);
-  color: var(--warn-text);
+  background: var(--color-warn-bg);
+  color: var(--color-warn);
 }
 .cafe-menu-list,
 .cafe-my-orders,
@@ -31,26 +32,26 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 12px;
-  padding: 14px 0;
-  border-top: 1px solid var(--line);
+  gap: var(--space-xs) var(--space-sm);
+  padding: var(--space-sm) 0;
+  border-top: 1px solid var(--color-rule);
 }
 .cafe-menu-row:first-child {
   border-top: 0;
 }
 .cafe-menu-row.sold-out {
-  color: var(--text-quiet);
+  color: var(--color-muted);
 }
 .cafe-menu-name {
   flex: 1 1 160px;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 .cafe-price {
-  color: var(--text-2);
-  font-size: 0.9375rem;
+  color: var(--color-ink-2);
+  font-size: var(--text-md);
 }
 .cafe-menu-row .chips {
   flex: 1 1 100%;
@@ -59,7 +60,7 @@
 .cafe-qty {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-xs);
   font-weight: 600;
 }
 .cafe-qty span {
@@ -67,36 +68,40 @@
   text-align: center;
 }
 .cafe-slots .chip:disabled {
-  opacity: 0.45;
+  background-color: var(--color-paper-3);
+  color: var(--color-muted);
+  box-shadow: none;
+  opacity: 0.55;
+  cursor: not-allowed;
   text-decoration: line-through;
 }
 .cafe-order-bar {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 .cafe-total {
   margin: 0;
-  font-size: 1.0625rem;
-  font-weight: 700;
+  font-size: var(--text-lg);
+  font-weight: 600;
 }
 .cafe-my-orders,
 .cafe-board-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-xs);
 }
 .cafe-my-order,
 .cafe-board-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border-radius: var(--radius-m);
-  background: var(--surface-2);
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  border-radius: var(--radius-stock);
+  background: var(--color-paper-2);
 }
 .cafe-my-order.ready {
-  box-shadow: inset 0 0 0 2px var(--ok-text);
+  box-shadow: inset 0 0 0 2px var(--color-success);
 }
 .cafe-my-order-body,
 .cafe-board-body {
@@ -104,61 +109,61 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2xs);
 }
 .cafe-no {
   flex: none;
   min-width: 2.4em;
-  font-size: 1.5rem;
-  font-weight: 800;
+  font-size: var(--text-2xl);
+  font-weight: 600;
   text-align: center;
-  color: var(--accent-text);
+  color: var(--color-ink);
 }
 .cafe-duty {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-sm);
 }
 .cafe-duty-state {
   flex: 1;
   margin: 0;
-  font-size: 1.125rem;
-  font-weight: 800;
+  font-size: var(--text-lg);
+  font-weight: 600;
 }
 .cafe-duty .primary {
   width: auto;
   flex: 1 1 180px;
 }
 .cafe-duty.open .cafe-duty-state {
-  color: var(--ok-text);
+  color: var(--color-success);
 }
 .cafe-board-lines li {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px;
-  font-size: 1.0625rem;
+  gap: var(--space-2xs);
+  font-size: var(--text-lg);
 }
 .cafe-opts {
-  color: var(--text-2);
-  font-size: 0.9375rem;
+  color: var(--color-ink-2);
+  font-size: var(--text-md);
 }
 .cafe-qty-text {
-  font-weight: 700;
+  font-weight: 600;
 }
 .cafe-board-row.status-making {
-  box-shadow: inset 4px 0 0 var(--accent);
+  box-shadow: inset 0 0 0 2px var(--color-board);
 }
 .cafe-board-row.status-ready {
-  box-shadow: inset 4px 0 0 var(--ok-text);
+  box-shadow: inset 0 0 0 2px var(--color-success);
 }
 .cafe-board-row.fresh {
-  animation: cafe-blink 1s var(--ease) 3;
+  animation: cafe-blink 1s var(--ease-out) 3;
 }
 @keyframes cafe-blink {
   50% {
-    background: var(--accent-soft);
+    background: var(--color-paper-3);
   }
 }
 .cafe-step {
@@ -169,12 +174,12 @@
 .cafe-soldout-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 .cafe-soldout-list li {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 .cafe-soldout-list li > span:first-child {
   flex: 1;
@@ -182,24 +187,24 @@
 @media (prefers-reduced-motion: reduce) {
   .cafe-board-row.fresh {
     animation: none;
-    background: var(--accent-soft);
+    background: var(--color-paper-3);
   }
 }
 
 /* S7 내 청구 · S9 카페 정산(11/6 2묶음, ADR-29). 색·간격은 styles.css의 변수만 써요. */
 .cafe-band.blocked {
-  background: var(--lock-bg);
-  color: var(--lock-text);
+  background: var(--color-error-bg);
+  color: var(--color-error);
 }
 .cafe-blocked {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-sm);
 }
 .cafe-left {
   margin: 0;
-  color: var(--text-2);
-  font-size: 0.9375rem;
+  color: var(--color-ink-2);
+  font-size: var(--text-md);
 }
 .cafe-bills {
   list-style: none;
@@ -207,139 +212,139 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-sm);
 }
 .cafe-bill {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  border-radius: var(--radius-m);
-  background: var(--surface-2);
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+  border-radius: var(--radius-stock);
+  background: var(--color-paper-2);
 }
 .cafe-bill.status-overdue {
-  box-shadow: inset 4px 0 0 var(--lock-text);
+  box-shadow: inset 0 0 0 1px var(--color-error);
 }
 .cafe-bill-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 .cafe-bill-head strong {
-  font-size: 1.0625rem;
+  font-size: var(--text-lg);
 }
 .cafe-bill-facts {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 4px 12px;
+  gap: var(--space-2xs) var(--space-sm);
   margin: 0;
-  font-size: 0.9375rem;
+  font-size: var(--text-md);
 }
 .cafe-bill-facts dt {
-  color: var(--text-quiet);
+  color: var(--color-muted);
 }
 .cafe-bill-facts dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
 .cafe-code {
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.08em;
   font-variant-numeric: tabular-nums;
 }
 .cafe-bill details summary {
   cursor: pointer;
-  color: var(--accent-text);
-  font-size: 0.9375rem;
+  color: var(--color-ink);
+  font-size: var(--text-md);
   font-weight: 600;
 }
 .cafe-bill-orders {
   list-style: none;
-  margin: 8px 0 0;
+  margin: var(--space-xs) 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 0.9375rem;
+  gap: var(--space-2xs);
+  font-size: var(--text-md);
 }
 .cafe-bill-orders li {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 4px 12px;
+  gap: var(--space-2xs) var(--space-sm);
 }
 .chip.cafe-bill-overdue {
-  background: var(--lock-bg);
-  color: var(--lock-text);
+  background: var(--color-error-bg);
+  color: var(--color-error);
 }
 .chip.cafe-bill-paid {
-  background: var(--ok-bg);
-  color: var(--ok-text);
+  background: var(--color-success-bg);
+  color: var(--color-success);
 }
 .cafe-ask {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-sm);
 }
 .cafe-won {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 .cafe-won input,
 .cafe-menu-edit input:not([type='checkbox']) {
   min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-s);
-  background: var(--surface);
-  color: var(--text);
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-input);
+  background: var(--color-cotton);
+  color: var(--color-ink);
   min-width: 0;
 }
 .cafe-ask .cafe-won input {
   flex: 1;
-  font-size: 1.0625rem;
+  font-size: var(--text-lg);
 }
 .cafe-settle-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 .cafe-month {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 .cafe-table-wrap {
   overflow-x: auto;
-  margin-top: 8px;
+  margin-top: var(--space-xs);
 }
 .cafe-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9375rem;
+  font-size: var(--text-md);
 }
 .cafe-table th,
 .cafe-table td {
-  border-bottom: 1px solid var(--line);
-  padding: 10px 6px;
+  border-bottom: 1px solid var(--color-rule);
+  padding: var(--space-xs) var(--space-2xs);
   text-align: left;
   vertical-align: middle;
   white-space: nowrap;
 }
 .cafe-table thead th {
-  color: var(--text-quiet);
+  color: var(--color-muted);
   font-weight: 600;
 }
 .cafe-table .num {
   text-align: right;
 }
 .cafe-table tr.status-paid td {
-  color: var(--text-quiet);
+  color: var(--color-muted);
 }
 .cafe-requests,
 .cafe-menu-admin {
@@ -353,9 +358,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
-  padding: 12px 0;
-  border-top: 1px solid var(--line);
+  gap: var(--space-xs) var(--space-sm);
+  padding: var(--space-sm) 0;
+  border-top: 1px solid var(--color-rule);
 }
 .cafe-request:first-child {
   border-top: 0;
@@ -364,7 +369,7 @@
   flex: 1 1 240px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2xs);
 }
 .cafe-request .actions {
   flex-wrap: nowrap;
@@ -373,15 +378,15 @@
   display: grid;
   grid-template-columns: minmax(120px, 2fr) minmax(110px, 1fr) minmax(140px, 2fr) auto auto;
   align-items: center;
-  gap: 8px;
-  padding: 10px 0;
-  border-top: 1px solid var(--line);
+  gap: var(--space-xs);
+  padding: var(--space-xs) 0;
+  border-top: 1px solid var(--color-rule);
 }
 .cafe-menu-edit:first-child {
   border-top: 0;
 }
 .cafe-menu-edit.off input:not([type='checkbox']) {
-  color: var(--text-quiet);
+  color: var(--color-muted);
 }
 .cafe-menu-edit .lock-line {
   grid-column: 1 / -1;
@@ -392,9 +397,9 @@
 .cafe-active {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2xs);
   white-space: nowrap;
-  font-size: 0.9375rem;
+  font-size: var(--text-md);
 }
 @media (max-width: 720px) {
   .cafe-menu-edit {

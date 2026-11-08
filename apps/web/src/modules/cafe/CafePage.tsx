@@ -461,7 +461,6 @@ function LimitAskSheet({ billing, need, onClose, onSent }: { billing: CafeMyBill
 function CafeHead({ lead }: { lead?: string }) {
   return (
     <header className='page-head'>
-      <p className='eyebrow'>카페</p>
       <h1>무엇을 마실까요?</h1>
       <p className='lead'>{lead ?? '사내 카페에 주문하고 픽업 번호로 받아요. 값은 직원가예요.'}</p>
     </header>

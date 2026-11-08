@@ -1,6 +1,7 @@
 import type { AiEvalResponse, NoticeEvalAnswer, NoticeEvalSide, NoticeEvalView } from '@one-line-desk/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiFailure, apiRequest } from '../api';
+import { Icon } from '../components/Icon';
 
 // 관리자 화면 "AI 정답률"(11/5 시험, AI 보완 1번). 운영자(관리자)만 들어와요. 서버도 운영자가 아니면 403이에요.
 // 정답 단 가상 문장으로 낱말 규칙과 AI가 몇 개 맞히는지 비교해요. 직원이 쓴 글은 쓰지 않아요.
@@ -142,12 +143,13 @@ export function AiEvalScreen({ onBack }: { onBack: () => void }) {
   return (
     <div className='feature-page ai-eval'>
       <button type='button' className='link back' onClick={onBack}>
-        ← 마이 페이지
+        <Icon name='back' size={18} />
+        마이 페이지
       </button>
       <header className='page-head'>
-        <p className='eyebrow'>운영자만 봐요</p>
         <h1>AI 정답률</h1>
         <p className='lead'>정답을 단 가상 문장·공지로 낱말 규칙과 AI가 각각 몇 개 맞히는지 비교해요. 직원이 쓴 글은 쓰지 않아요.</p>
+        <p className='page-meta'>운영자만 봐요</p>
       </header>
 
       {error && <p className='lock-line'>{error}</p>}

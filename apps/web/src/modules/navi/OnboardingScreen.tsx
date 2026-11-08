@@ -1,6 +1,7 @@
 import { type CardAction, deskLinkText, type OnboardingResponse } from '@one-line-desk/shared';
 import { useEffect, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
+import { Icon } from '../../components/Icon';
 import { InquirySheet } from './InquirySheet';
 import './navi.css';
 
@@ -28,10 +29,10 @@ export function OnboardingScreen({ onBack }: { onBack: () => void }) {
   return (
     <div className='feature-page onboarding'>
       <button type='button' className='link back' onClick={onBack}>
-        ← 문의함
+        <Icon name='back' size={18} />
+        문의함
       </button>
       <header className='page-head'>
-        <p className='eyebrow'>문의함</p>
         <h1>처음 2주에 할 일이에요</h1>
         <p className='lead'>업무 분장표에서 새로 온 분이 먼저 챙기면 좋은 일을 모았어요. 무엇을 했는지는 저장하지 않아요.</p>
       </header>

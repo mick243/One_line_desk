@@ -113,12 +113,16 @@ export function MergePanel({ me }: ScreenProps) {
           {suggestions?.map((s) => {
             const key = `${s.a.bundleId}-${s.b.bundleId}`;
             return (
-              <article key={key} className='result-card'>
+              <article key={key} className='item-well'>
                 <p className='headline'>
                   {s.a.name} ↔ {s.b.name} 같은 상품 같아요
                 </p>
-                <p className='hint'>
-                  지금 표 수 {s.a.votes} · {s.b.votes} → 합친 뒤 {s.votesAfter}표 · 대표 이름 {s.representativeName} · 카탈로그 품목 {s.catalogName ?? '없음'}
+                <p className='hint meta-row'>
+                  <span>
+                    지금 표 수 {s.a.votes}, {s.b.votes} → 합친 뒤 {s.votesAfter}표
+                  </span>
+                  <span>대표 이름 {s.representativeName}</span>
+                  <span>카탈로그 품목 {s.catalogName ?? '없음'}</span>
                 </p>
                 <p className='evidence'>{s.source === 'ai' ? <span className='ai-badge'>AI 정리</span> : '이름 규칙'} · 같은 층 열린 요청</p>
                 <div className='card-actions'>
@@ -140,7 +144,7 @@ export function MergePanel({ me }: ScreenProps) {
         {records?.length === 0 && <p className='empty'>합친 품목이 없어요.</p>}
         <div className='actions'>
           {records?.map((r) => (
-            <article key={r.mergeId} className='result-card'>
+            <article key={r.mergeId} className='item-well'>
               <p className='headline'>
                 {r.representativeName} ← {r.mergedName}
               </p>

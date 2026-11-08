@@ -14,13 +14,31 @@ const ROLE_HINT: Partial<Record<Role, string>> = {
   cafe: '카페 판',
 };
 
-export function roleLine(roles: Role[] = []): string {
+/** 역할 이름과 더 볼 수 있는 화면. 로그인 줄에서는 두 줄로 나눠 보여요(11/8 리디자인, 줄표 없이). */
+export function roleParts(roles: Role[] = []): { labels: string; more: string | null } {
   const extra = roles.filter((r) => r !== 'employee');
-  if (extra.length === 0) return '직원 화면';
+  if (extra.length === 0) return { labels: '직원 화면', more: null };
   const labels = extra.map((r) => ROLE_LABEL[r]).join('·');
   const hints = extra.map((r) => ROLE_HINT[r]).filter(Boolean);
-  // 설명이 없는 역할만 있으면 역할 이름만 보여요(빈 "— 도 볼 수 있어요"가 나오지 않게).
-  return hints.length ? `${labels} — ${hints.join(', ')}도 볼 수 있어요` : labels;
+  // 설명이 없는 역할만 있으면 역할 이름만 보여요(빈 "도 볼 수 있어요"가 나오지 않게).
+  return { labels, more: hints.length ? `${hints.join(', ')}도 볼 수 있어요` : null };
+}
+
+/** 한 줄로 쓸 때(역할 이름 — 볼 수 있는 화면) */
+export function roleLine(roles: Role[] = []): string {
+  const { labels, more } = roleParts(roles);
+  return more ? `${labels} — ${more}` : labels;
+}
+
+/** 로그인 줄의 역할 두 줄: 역할 이름, 그 아래 더 볼 수 있는 화면 */
+function RoleLines({ roles }: { roles?: Role[] }) {
+  const { labels, more } = roleParts(roles);
+  return (
+    <>
+      <small className='role-line'>{labels}</small>
+      {more && <small className='role-more'>{more}</small>}
+    </>
+  );
 }
 
 /** 동그라미 안 글자: 이름 마지막 낱말의 첫 글자("가상 직원 도윤" → "도") */
@@ -158,7 +176,7 @@ export function Login({
                     <span>
                       {u.department} · {u.floor}
                     </span>
-                    <small className='role-line'>{roleLine(u.roles)}</small>
+                    <RoleLines roles={u.roles} />
                   </span>
                   <span className='chevron'>
                     <Icon name='chevron' size={20} />
