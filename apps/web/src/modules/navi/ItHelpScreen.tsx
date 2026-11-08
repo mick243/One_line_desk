@@ -117,10 +117,10 @@ export function ItHelpScreen({ onBack }: { onBack: () => void }) {
   return (
     <div className='feature-page it-help'>
       <button type='button' className='link back' onClick={onBack}>
-        ← 문의함
+        <Icon name='back' size={18} />
+        문의함
       </button>
       <header className='page-head'>
-        <p className='eyebrow'>문의함</p>
         <h1>IT 오류가 났나요?</h1>
         <p className='lead'>오류 창의 글을 붙여 넣으면 비슷한 IT FAQ의 해결 단계를 원문 그대로 보여 줘요.</p>
       </header>
@@ -183,7 +183,8 @@ export function ItHelpScreen({ onBack }: { onBack: () => void }) {
         )}
         {picked && found && (
           <button type='button' className='link back' onClick={backToFound}>
-            ← 찾은 결과로 돌아가기
+            <Icon name='back' size={18} />
+            찾은 결과로 돌아가기
           </button>
         )}
         {/* 못 찾았을 때는 후보 칩을 먼저 보여 줘요. 맞는 FAQ가 문의 버튼 아래에 묻히던 문제(L2). */}

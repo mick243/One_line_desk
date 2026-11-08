@@ -45,14 +45,14 @@ export function Home({
   return (
     <div className='home'>
       <header className='page-head'>
-        <p className='eyebrow'>
-          {me.department} · {me.floor}
-        </p>
         <h1>
           {me.displayName}님,
           <br />
           무엇을 할까요?
         </h1>
+        <p className='page-meta'>
+          {me.department} {me.floor}
+        </p>
       </header>
 
       {homeAsk && <HomeAsk onOpen={onOpen} teamSchedule={switches.teamSchedule === true} modules={modules} initialText={initialText} autoRun={autoRun} />}
@@ -70,7 +70,7 @@ export function Home({
             {features.map((f) => (
               <li key={f.page}>
                 <button type='button' className='menu-row' onClick={() => onOpen(f.page)}>
-                  <span className={`menu-icon tint-${f.module}`}>
+                  <span className='menu-icon'>
                     <Icon name={ICON[f.module]} />
                   </span>
                   <span className='menu-text'>

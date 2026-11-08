@@ -158,8 +158,8 @@ export function CafeBoard() {
 function BoardHead() {
   return (
     <header className='page-head'>
-      <p className='eyebrow'>카페 판</p>
       <h1>들어온 주문</h1>
+      <p className='page-meta'>카페 판</p>
     </header>
   );
 }

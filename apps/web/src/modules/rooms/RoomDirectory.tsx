@@ -159,7 +159,11 @@ export function RoomDirectory({ me, show = null }: ScreenProps & { show?: RoomSh
           </ul>
         </section>
       ))}
-      <p className='hint'>현황 {data.checkedAt.slice(11, 16)} 기준 · 다른 날 일정은 회의실을 눌러 봐요 · 그림은 시연용이에요</p>
+      <p className='hint meta-row'>
+        <span>현황 {data.checkedAt.slice(11, 16)} 기준</span>
+        <span>다른 날 일정은 회의실을 눌러 봐요</span>
+        <span>그림은 시연용이에요</span>
+      </p>
 
       {open && (
         <RoomDetail roomId={open} today={today} initialDate={data.date} canEditFacilities={me.roles.includes('facilities')} onClose={() => setOpen(null)} />

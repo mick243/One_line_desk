@@ -129,7 +129,8 @@ export function NotificationBell({ onNavigate }: { onNavigate: (to: AppDestinati
       {toast &&
         createPortal(
           <button type='button' className='toast' role='status' onClick={() => (setToast(null), setOpen(true))}>
-            🔔 {toast}
+            <Icon name='bell' size={18} />
+            {toast}
           </button>,
           document.body,
         )}

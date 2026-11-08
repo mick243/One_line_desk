@@ -120,9 +120,9 @@ export function BoardScreen({
     <div className='board'>
       <header className='screen-head'>
         <div className='page-head'>
-          <p className='eyebrow'>{floor} 같이 채워요</p>
           <h1>{canWrite ? head.question : `${floor} 판을 보고 있어요`}</h1>
           <p className='lead'>{head.summary}</p>
+          <p className='page-meta'>{floor} 같이 채워요</p>
           {data?.cycleNote && <p className='hint'>{data.cycleNote}</p>}
         </div>
         {isFacilities && (
@@ -173,7 +173,7 @@ export function BoardScreen({
         {data && data.items.length > 0 && (
           <div className='actions'>
             {data.items.map((item) => (
-              <article key={item.bundleId} className='result-card' aria-label={`${item.name} 표 ${item.votes}`}>
+              <article key={item.bundleId} className='item-well' aria-label={`${item.name} 표 ${item.votes}`}>
                 <header className='card-head'>
                   <span className='kind'>{item.name}</span>
                   <span className='label'>표 {item.votes}</span>

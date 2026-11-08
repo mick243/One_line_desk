@@ -88,7 +88,6 @@ export function FeaturePage({
 
   const pageHead = (
     <header className='page-head'>
-      <p className='eyebrow'>{feature.title}</p>
       <h1>{feature.question}</h1>
       <p className='lead'>{feature.summary}</p>
     </header>
@@ -96,16 +95,17 @@ export function FeaturePage({
 
   if (input) {
     return (
-      <div className='feature-page'>
+      <section className='feature-page' aria-label={feature.title}>
         {pageHead}
         {input({ initialText, autoRun, onMove })}
         {children}
-      </div>
+      </section>
     );
   }
 
+  // 페이지 이름(문의함·회의실·공지)은 앱 바에 보이고, 화면 읽기 프로그램에는 이 묶음의 이름으로 알려요(11/8 리디자인).
   return (
-    <div className='feature-page'>
+    <section className='feature-page' aria-label={feature.title}>
       {pageHead}
       {before}
       {inputHeading && <h2 className='section-title'>{inputHeading}</h2>}
@@ -165,6 +165,6 @@ export function FeaturePage({
 
       {inquiry && <InquirySheet action={inquiry} initialQuestion={sent ?? text} onClose={() => setInquiry(null)} />}
       {leaveRequest && <LeaveRequestSheet action={leaveRequest} onClose={() => setLeaveRequest(null)} />}
-    </div>
+    </section>
   );
 }

@@ -1,0 +1,185 @@
+/*
+ * 디자인 토큰(11/8 Hallmark 리디자인, 테마 Coral). 색·글꼴·간격·모서리는 이 변수만 써요. 모듈 CSS도 같은 변수를 써요.
+ * 펠트 책상(바탕) 위에 면 종이(카드)를 올려 둔 모습이에요. 빛은 왼쪽 위에서 한 번만 오고, 그림자는 오른쪽 아래로 떨어져요.
+ * 코랄은 "확정" 도장·포커스 테두리·링크 밑줄에만 써요. 주 버튼은 먹색 판이에요.
+ */
+:root {
+  color-scheme: light;
+
+  /* 간격(4px 단계). padding·margin·gap은 이 값만 써요. */
+  --space-3xs: 2px;
+  --space-2xs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 40px;
+  --space-2xl: 64px;
+  --space-3xl: 96px;
+  --space-4xl: 144px;
+  --page-gutter: 20px;
+
+  /* 글자 크기: 본문 16px에서 1.125배씩. 앱 화면이라 큰 제목도 한 단계만 키워요. */
+  --text-2xs: 0.6875rem;
+  --text-xs: 0.8125rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.4375rem;
+  --text-3xl: 1.75rem;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
+  --dur-long: 420ms;
+
+  --z-raised: 10;
+  --z-sticky: 200;
+  --z-sticky-nav: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+
+  /* 종이와 먹 */
+  --color-paper: oklch(97% 0.006 55);
+  --color-paper-2: oklch(94.5% 0.007 55);
+  --color-paper-3: oklch(91.5% 0.009 55);
+  --color-desk: oklch(94.3% 0.008 64);
+  --color-cotton: oklch(98.8% 0.0045 80);
+  --color-ink: oklch(21% 0.012 38);
+  --color-ink-2: oklch(37% 0.013 40);
+  --color-muted: oklch(47% 0.013 45);
+  --color-print: oklch(23% 0.012 38);
+  --color-rule: oklch(87% 0.009 55);
+  --color-rule-2: oklch(81% 0.011 55);
+
+  /* 먹색 판: 주 버튼과 고른 것 */
+  --color-board: oklch(22% 0.011 40);
+  --color-board-press: oklch(31% 0.012 40);
+  --color-board-off: oklch(58% 0.012 40);
+  --color-board-type: oklch(96.5% 0.006 70);
+
+  /* 코랄: 확정 도장 하나와 포커스·링크 밑줄 */
+  --color-accent: oklch(74% 0.125 30);
+  --color-accent-ink: oklch(21% 0.012 38);
+  --color-accent-2: oklch(54% 0.165 29);
+  --color-focus: oklch(54% 0.17 30);
+  --color-paid: oklch(55.5% 0.15 33);
+
+  /* 상태: 글자와 아이콘이 먼저이고 색은 거들기만 해요 */
+  --color-error: oklch(46% 0.16 22);
+  --color-error-bg: oklch(95.5% 0.018 25);
+  --color-success: oklch(45% 0.09 150);
+  --color-success-bg: oklch(95% 0.022 150);
+  --color-warn: oklch(44% 0.09 68);
+  --color-warn-bg: oklch(94.5% 0.04 85);
+  --color-scrim: oklch(20% 0.012 40 / 0.45);
+
+  /* 글꼴: 한글이 있는 Pretendard 한 벌(앱 안에 넣은 파일, 바깥 글꼴 서버 없음). 숫자는 고정폭 숫자로 맞춰요. */
+  --font-body: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+  --font-display: var(--font-body);
+  /* 코드·명령 줄에만 써요(터미널 AI 앱 연결 명령, 분장표 파일 미리보기) */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --tracking-display: -0.03em;
+  --display-weight: 600;
+
+  /* 모서리: 종이 8 · 입력 6 · 시트 위 12 */
+  --radius-card: 8px;
+  --radius-stock: 8px;
+  --radius-input: 6px;
+  --radius-sheet: 12px;
+  --radius-pill: 999px;
+
+  /* 종이 결(생성한 SVG, 사진 아님) */
+  --tex-cotton: url('/tex/cotton.svg');
+  --tex-desk: url('/tex/felt.svg');
+  --tex-ink: url('/tex/ink.svg');
+
+  /* 빛: 왼쪽 위 한 곳. 종이 가장자리와 오른쪽 아래 그림자 */
+  --shade: 32% 0.03 50;
+  --lit: 100% 0.005 80;
+  --deep: 7% 0.01 40;
+  --edge-stock:
+    inset 0 1px 0 oklch(var(--lit) / 0.9), inset 0 -1px 0 oklch(var(--shade) / 0.07), 0 0 0 0.5px oklch(var(--shade) / 0.22), 0 1px 0 oklch(var(--shade) / 0.12);
+  --cast-stock: 6px 5px 10px -6px oklch(var(--shade) / 0.3);
+  --cast-stock-lift: 12px 10px 18px -8px oklch(var(--shade) / 0.3);
+  --press-groove: inset 1px 1.5px 2px oklch(var(--shade) / 0.16), inset -1px -1px 0 oklch(var(--lit) / 0.9), 0 0 0 0.5px oklch(var(--shade) / 0.2);
+  --shadow-float: 14px 12px 28px -12px oklch(var(--shade) / 0.38), 0 0 0 0.5px oklch(var(--shade) / 0.22);
+  --press-type: 0.5px 0.75px 0 oklch(var(--lit) / 0.9);
+  --press-type-board: 0 -0.75px 0 oklch(var(--deep) / 0.6);
+  --press-stamp: 0.6px 0.8px 0 oklch(var(--lit) / 0.85), -0.5px -0.6px 0 oklch(var(--shade) / 0.3);
+
+  /* 시연 전용 가상 그룹웨어(11/6): 한 줄 데스크와 헷갈리지 않게 일부러 다른 색(짙은 청록 머리·네모난 모서리)이에요. */
+  --gw-head: oklch(38% 0.06 215);
+  --gw-head-text: oklch(98.5% 0.004 215);
+  --gw-head-edge: oklch(98.5% 0.004 215 / 0.5);
+  --gw-band-bg: oklch(96.5% 0.045 88);
+  --gw-band-text: oklch(42% 0.09 65);
+  --gw-bg: oklch(95.5% 0.006 215);
+  --gw-surface: oklch(99.5% 0.002 215);
+  --gw-text: oklch(25% 0.02 220);
+  --gw-quiet: oklch(46% 0.02 220);
+  --gw-line: oklch(87% 0.012 220);
+  --gw-accent: oklch(47% 0.08 215);
+  --gw-on-accent: oklch(98.5% 0.004 215);
+  --gw-danger: oklch(50% 0.17 27);
+  --gw-ok: oklch(46% 0.1 150);
+}
+
+/* 어두운 화면: 뒤집지 않고 같은 색상(hue)에서 다시 뽑아요. 그림자 대신 밝기와 가는 테두리로 층을 나눠요. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --color-paper: oklch(17% 0.01 55);
+    --color-paper-2: oklch(23% 0.011 55);
+    --color-paper-3: oklch(27% 0.012 55);
+    --color-desk: oklch(15% 0.01 55);
+    --color-cotton: oklch(20.5% 0.011 60);
+    --color-ink: oklch(94% 0.008 70);
+    --color-ink-2: oklch(84% 0.01 62);
+    --color-muted: oklch(73% 0.012 55);
+    --color-print: oklch(93% 0.008 70);
+    --color-rule: oklch(31% 0.012 55);
+    --color-rule-2: oklch(38% 0.012 55);
+    --color-board: oklch(91% 0.008 70);
+    --color-board-press: oklch(84% 0.01 70);
+    --color-board-off: oklch(62% 0.01 70);
+    --color-board-type: oklch(19% 0.012 40);
+    --color-accent: oklch(78% 0.1 30);
+    --color-accent-ink: oklch(19% 0.012 40);
+    --color-accent-2: oklch(74% 0.12 30);
+    --color-focus: oklch(74% 0.13 30);
+    --color-paid: oklch(74% 0.12 33);
+    --color-error: oklch(76% 0.12 25);
+    --color-error-bg: oklch(25% 0.04 25);
+    --color-success: oklch(78% 0.1 150);
+    --color-success-bg: oklch(24% 0.035 150);
+    --color-warn: oklch(84% 0.1 82);
+    --color-warn-bg: oklch(26% 0.04 75);
+    --color-scrim: oklch(5% 0.01 40 / 0.62);
+    --lit: 100% 0.005 80;
+    --edge-stock: inset 0 1px 0 oklch(var(--lit) / 0.05), 0 0 0 1px oklch(31% 0.012 55);
+    --cast-stock: 0 0 0 0 oklch(var(--deep) / 0);
+    --cast-stock-lift: 0 0 0 1px oklch(40% 0.012 55);
+    --press-groove: inset 0 1px 2px oklch(var(--deep) / 0.55), 0 0 0 1px oklch(31% 0.012 55);
+    --shadow-float: 0 0 0 1px oklch(38% 0.012 55);
+    --press-type: none;
+    --press-type-board: none;
+    --press-stamp: none;
+
+    --gw-head: oklch(31% 0.05 215);
+    --gw-band-bg: oklch(27% 0.045 75);
+    --gw-band-text: oklch(86% 0.1 82);
+    --gw-bg: oklch(18% 0.01 215);
+    --gw-surface: oklch(23% 0.012 215);
+    --gw-text: oklch(94% 0.006 215);
+    --gw-quiet: oklch(76% 0.015 215);
+    --gw-line: oklch(35% 0.015 215);
+    --gw-accent: oklch(78% 0.09 210);
+    --gw-on-accent: oklch(20% 0.02 215);
+    --gw-danger: oklch(76% 0.13 25);
+    --gw-ok: oklch(80% 0.1 150);
+  }
+}

@@ -7,7 +7,8 @@ export function DemoBand({ items }: { items: string[] }) {
   return (
     <div className='demo-band'>
       <button type='button' onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        시연 데이터로 돌아가는 중이에요 · {open ? '접기' : '자세히'}
+        <span>시연 데이터로 돌아가는 중이에요</span>
+        <span className='demo-band-more'>{open ? '접기' : '자세히'}</span>
       </button>
       {open && (
         <ul>

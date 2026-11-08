@@ -13,6 +13,7 @@ import {
 import { useEffect, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
 import { useActions, useListVersion } from '../../components/ActionHost';
+import { Icon } from '../../components/Icon';
 import './cafe.css';
 
 // S9 카페 정산(총무만, F4 2묶음, ADR-29 등급 2 예외). 마이 페이지 > 내 역할 > [카페 정산]으로 들어와요.
@@ -50,12 +51,13 @@ export function CafeSettle({ onBack }: { onBack: () => void }) {
   return (
     <div className='feature-page cafe-settle'>
       <button type='button' className='link back' onClick={onBack}>
-        ← 마이 페이지
+        <Icon name='back' size={18} />
+        마이 페이지
       </button>
       <header className='page-head'>
-        <p className='eyebrow'>총무만 봐요</p>
         <h1>카페 정산</h1>
         <p className='lead'>{CAFE_TEXT.settleHead}</p>
+        <p className='page-meta'>총무만 봐요</p>
       </header>
 
       {error && <p className='lock-line'>{error}</p>}
@@ -83,9 +85,11 @@ export function SettleView({ data, onMonth }: { data: CafeSettleResponse; onMont
             </select>
           </label>
         </div>
-        <p className='hint'>
-          청구 {data.summary.count}건 · 합계 {wonText(data.summary.totalWon)} · 입금 확인 {wonText(data.summary.paidWon)}
-          {data.summary.overdue > 0 && ` · 기한 지남 ${data.summary.overdue}건`}
+        <p className='hint meta-row'>
+          <span>청구 {data.summary.count}건</span>
+          <span>합계 {wonText(data.summary.totalWon)}</span>
+          <span>입금 확인 {wonText(data.summary.paidWon)}</span>
+          {data.summary.overdue > 0 && <span>기한 지남 {data.summary.overdue}건</span>}
         </p>
         <p className='hint'>통장에서 입금자명의 입금 코드를 찾아 맞는 줄의 [입금 확인]을 눌러 주세요. 누르면 그 사람의 주문 막힘이 바로 풀려요.</p>
         {data.bills.length === 0 ? <p className='empty'>이 달에 나온 청구서가 없어요</p> : <BillTable bills={data.bills} monthLabel={data.monthLabel} />}
@@ -221,8 +225,12 @@ function MissedList({ missed }: { missed: CafeSettleMissed[] }) {
             <strong>
               {m.name} · {m.dayLabel} 픽업 번호 {m.pickupNo}
             </strong>
-            <span className='hint'>
-              {lineOf(m)} · 픽업 {m.pickupLabel} · {wonText(m.totalWon)} · 알린 때 {m.reportedLabel} · {CAFE_MISSED_LABEL[m.status]}
+            <span className='hint meta-row'>
+              <span>{lineOf(m)}</span>
+              <span>픽업 {m.pickupLabel}</span>
+              <span>{wonText(m.totalWon)}</span>
+              <span>알린 때 {m.reportedLabel}</span>
+              <span>{CAFE_MISSED_LABEL[m.status]}</span>
             </span>
           </div>
           {m.status === 'reported' && (

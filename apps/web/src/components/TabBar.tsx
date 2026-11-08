@@ -26,6 +26,11 @@ export function isBaristaMenu(modules: Record<ModuleKind, ModuleSwitch>, roles: 
   return roles.includes('cafe') && modules.cafeteria === 'on';
 }
 
+/** 탭 이름(앱 바의 "지금 있는 곳" 표시가 같이 써요). */
+export function tabLabel(id: Tab): string {
+  return TABS.find((t) => t.id === id)?.label ?? '';
+}
+
 /** PC 왼쪽 메뉴와 모바일 아래 탭이 같이 쓰는 목록이에요. */
 export function visibleTabs(modules: Record<ModuleKind, ModuleSwitch>, roles: readonly Role[] = []): Tab[] {
   const barista = isBaristaMenu(modules, roles);

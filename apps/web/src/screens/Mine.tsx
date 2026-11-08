@@ -116,28 +116,37 @@ export function Mine({
       {(hasFacilities || hasChart || isOperator || hasCafeSettle) && (
         <section className='card'>
           <h2>내 역할</h2>
-          <div className='actions'>
+          {/* 역할마다 갈 곳 목록(11/8): 버튼마다 "역할 · 갈 곳" 한 줄이에요. */}
+          <ul className='actions role-links'>
             {hasFacilities && (
-              <button type='button' className='secondary' onClick={() => onOpen('ops')}>
-                {ROLE_LABEL.facilities} · 운영
-              </button>
+              <li>
+                <button type='button' className='secondary' onClick={() => onOpen('ops')}>
+                  {ROLE_LABEL.facilities} · 운영
+                </button>
+              </li>
             )}
             {hasCafeSettle && (
-              <button type='button' className='secondary' onClick={() => onOpen('cafe-settle')}>
-                {ROLE_LABEL.facilities} · 카페 정산
-              </button>
+              <li>
+                <button type='button' className='secondary' onClick={() => onOpen('cafe-settle')}>
+                  {ROLE_LABEL.facilities} · 카페 정산
+                </button>
+              </li>
             )}
             {hasChart && (
-              <button type='button' className='secondary' onClick={() => onOpen('chart')}>
-                {ROLE_LABEL['chart-owner']} · 수정 제안함
-              </button>
+              <li>
+                <button type='button' className='secondary' onClick={() => onOpen('chart')}>
+                  {ROLE_LABEL['chart-owner']} · 수정 제안함
+                </button>
+              </li>
             )}
             {isOperator && (
-              <button type='button' className='secondary' onClick={() => onOpen('ai-eval')}>
-                {ROLE_LABEL.operator} · AI 정답률
-              </button>
+              <li>
+                <button type='button' className='secondary' onClick={() => onOpen('ai-eval')}>
+                  {ROLE_LABEL.operator} · AI 정답률
+                </button>
+              </li>
             )}
-          </div>
+          </ul>
         </section>
       )}
 

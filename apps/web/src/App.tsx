@@ -15,7 +15,7 @@ import { ActionHost } from './components/ActionHost';
 import { DemoBand } from './components/DemoBand';
 import { VersionBand } from './components/VersionBand';
 import { NotificationBell } from './components/NotificationBell';
-import { isBaristaMenu, TabBar, type Tab, visibleTabs } from './components/TabBar';
+import { isBaristaMenu, TabBar, type Tab, tabLabel, visibleTabs } from './components/TabBar';
 import { lazyPart } from './components/LazyPart';
 import { webModules } from './modules/registry';
 import { FEATURES, featureFor, pageOfKind } from './screens/features';
@@ -217,7 +217,11 @@ export function App() {
       ) : (
         <ActionHost onNavigate={navigate} InviteSheet={webModules.InviteSheet} inviteChannels={config.inviteChannels}>
           <div className='app-bar'>
-            <span className='brand'>한 줄 데스크</span>
+            {/* 지금 있는 곳(11/8 리디자인): 기능 이름은 제목 위 작은 글씨 대신 앱 바에 늘 떠 있어요. */}
+            <p className='app-bar-title'>
+              <span className='brand'>한 줄 데스크</span>
+              {tabOf(current) !== 'home' && <span className='folio'>{tabLabel(tabOf(current))}</span>}
+            </p>
             <NotificationBell onNavigate={navigate} />
           </div>
           <main className='screen'>
