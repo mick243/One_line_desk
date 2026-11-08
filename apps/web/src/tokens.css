@@ -1,7 +1,8 @@
 /*
  * 디자인 토큰(11/8 Hallmark 리디자인, 테마 Coral). 색·글꼴·간격·모서리는 이 변수만 써요. 모듈 CSS도 같은 변수를 써요.
- * 펠트 책상(바탕) 위에 면 종이(카드)를 올려 둔 모습이에요. 빛은 왼쪽 위에서 한 번만 오고, 그림자는 오른쪽 아래로 떨어져요.
- * 코랄은 "확정" 도장·포커스 테두리·링크 밑줄에만 써요. 주 버튼은 먹색 판이에요.
+ * 밝은 책상(바탕) 위에 흰 종이(카드)를 올려 둔 모습이에요. 빛은 왼쪽 위에서 한 번만 오고, 그림자는 오른쪽 아래로 떨어져요.
+ * 11/8 사용자 요청으로 따뜻한 갈색 쪽 회색에서 차갑고 밝은 푸른 회색(hue 250)으로 바꿨어요. 주 버튼은 남색 먹이에요.
+ * 코랄은 "확정" 도장·포커스 테두리·링크 밑줄에만 써요.
  */
 :root {
   color-scheme: light;
@@ -43,39 +44,39 @@
   --z-toast: 500;
 
   /* 종이와 먹 */
-  --color-paper: oklch(97% 0.006 55);
-  --color-paper-2: oklch(94.5% 0.007 55);
-  --color-paper-3: oklch(91.5% 0.009 55);
-  --color-desk: oklch(94.3% 0.008 64);
-  --color-cotton: oklch(98.8% 0.0045 80);
-  --color-ink: oklch(21% 0.012 38);
-  --color-ink-2: oklch(37% 0.013 40);
-  --color-muted: oklch(47% 0.013 45);
-  --color-print: oklch(23% 0.012 38);
-  --color-rule: oklch(87% 0.009 55);
-  --color-rule-2: oklch(81% 0.011 55);
+  --color-paper: oklch(98.5% 0.004 250);
+  --color-paper-2: oklch(95.5% 0.009 250);
+  --color-paper-3: oklch(92.5% 0.012 250);
+  --color-desk: oklch(97.2% 0.007 250);
+  --color-cotton: oklch(99.5% 0.003 250);
+  --color-ink: oklch(22% 0.025 260);
+  --color-ink-2: oklch(38% 0.022 258);
+  --color-muted: oklch(50% 0.02 255);
+  --color-print: oklch(23% 0.025 260);
+  --color-rule: oklch(90% 0.01 250);
+  --color-rule-2: oklch(84% 0.013 250);
 
   /* 먹색 판: 주 버튼과 고른 것 */
-  --color-board: oklch(22% 0.011 40);
-  --color-board-press: oklch(31% 0.012 40);
-  --color-board-off: oklch(58% 0.012 40);
-  --color-board-type: oklch(96.5% 0.006 70);
+  --color-board: oklch(25% 0.04 262);
+  --color-board-press: oklch(34% 0.05 262);
+  --color-board-off: oklch(66% 0.025 258);
+  --color-board-type: oklch(98.5% 0.004 250);
 
   /* 코랄: 확정 도장 하나와 포커스·링크 밑줄 */
   --color-accent: oklch(74% 0.125 30);
-  --color-accent-ink: oklch(21% 0.012 38);
+  --color-accent-ink: oklch(22% 0.025 260);
   --color-accent-2: oklch(54% 0.165 29);
-  --color-focus: oklch(54% 0.17 30);
-  --color-paid: oklch(55.5% 0.15 33);
+  --color-focus: oklch(55% 0.17 30);
+  --color-paid: oklch(55.5% 0.16 30);
 
   /* 상태: 글자와 아이콘이 먼저이고 색은 거들기만 해요 */
-  --color-error: oklch(46% 0.16 22);
-  --color-error-bg: oklch(95.5% 0.018 25);
-  --color-success: oklch(45% 0.09 150);
-  --color-success-bg: oklch(95% 0.022 150);
-  --color-warn: oklch(44% 0.09 68);
-  --color-warn-bg: oklch(94.5% 0.04 85);
-  --color-scrim: oklch(20% 0.012 40 / 0.45);
+  --color-error: oklch(48% 0.17 22);
+  --color-error-bg: oklch(96.5% 0.018 20);
+  --color-success: oklch(47% 0.1 155);
+  --color-success-bg: oklch(96% 0.03 155);
+  --color-warn: oklch(45% 0.1 70);
+  --color-warn-bg: oklch(96.5% 0.045 90);
+  --color-scrim: oklch(20% 0.02 260 / 0.4);
 
   /* 글꼴: 한글이 있는 Pretendard 한 벌(앱 안에 넣은 파일, 바깥 글꼴 서버 없음). 숫자는 고정폭 숫자로 맞춰요. */
   --font-body: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
@@ -98,9 +99,9 @@
   --tex-ink: url('/tex/ink.svg');
 
   /* 빛: 왼쪽 위 한 곳. 종이 가장자리와 오른쪽 아래 그림자 */
-  --shade: 32% 0.03 50;
-  --lit: 100% 0.005 80;
-  --deep: 7% 0.01 40;
+  --shade: 40% 0.03 255;
+  --lit: 100% 0.003 250;
+  --deep: 10% 0.02 260;
   --edge-stock:
     inset 0 1px 0 oklch(var(--lit) / 0.9), inset 0 -1px 0 oklch(var(--shade) / 0.07), 0 0 0 0.5px oklch(var(--shade) / 0.22), 0 1px 0 oklch(var(--shade) / 0.12);
   --cast-stock: 6px 5px 10px -6px oklch(var(--shade) / 0.3);
@@ -132,39 +133,39 @@
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --color-paper: oklch(17% 0.01 55);
-    --color-paper-2: oklch(23% 0.011 55);
-    --color-paper-3: oklch(27% 0.012 55);
-    --color-desk: oklch(15% 0.01 55);
-    --color-cotton: oklch(20.5% 0.011 60);
-    --color-ink: oklch(94% 0.008 70);
-    --color-ink-2: oklch(84% 0.01 62);
-    --color-muted: oklch(73% 0.012 55);
-    --color-print: oklch(93% 0.008 70);
-    --color-rule: oklch(31% 0.012 55);
-    --color-rule-2: oklch(38% 0.012 55);
-    --color-board: oklch(91% 0.008 70);
-    --color-board-press: oklch(84% 0.01 70);
-    --color-board-off: oklch(62% 0.01 70);
-    --color-board-type: oklch(19% 0.012 40);
+    --color-paper: oklch(18% 0.012 255);
+    --color-paper-2: oklch(24% 0.015 255);
+    --color-paper-3: oklch(28% 0.016 255);
+    --color-desk: oklch(16% 0.012 255);
+    --color-cotton: oklch(21% 0.014 255);
+    --color-ink: oklch(95% 0.006 250);
+    --color-ink-2: oklch(85% 0.01 250);
+    --color-muted: oklch(74% 0.015 250);
+    --color-print: oklch(94% 0.006 250);
+    --color-rule: oklch(32% 0.015 255);
+    --color-rule-2: oklch(39% 0.015 255);
+    --color-board: oklch(93% 0.01 250);
+    --color-board-press: oklch(86% 0.014 250);
+    --color-board-off: oklch(62% 0.014 250);
+    --color-board-type: oklch(20% 0.025 262);
     --color-accent: oklch(78% 0.1 30);
-    --color-accent-ink: oklch(19% 0.012 40);
+    --color-accent-ink: oklch(20% 0.025 262);
     --color-accent-2: oklch(74% 0.12 30);
     --color-focus: oklch(74% 0.13 30);
-    --color-paid: oklch(74% 0.12 33);
-    --color-error: oklch(76% 0.12 25);
-    --color-error-bg: oklch(25% 0.04 25);
-    --color-success: oklch(78% 0.1 150);
-    --color-success-bg: oklch(24% 0.035 150);
-    --color-warn: oklch(84% 0.1 82);
+    --color-paid: oklch(74% 0.13 30);
+    --color-error: oklch(76% 0.12 22);
+    --color-error-bg: oklch(25% 0.04 22);
+    --color-success: oklch(80% 0.1 155);
+    --color-success-bg: oklch(24% 0.035 155);
+    --color-warn: oklch(85% 0.1 82);
     --color-warn-bg: oklch(26% 0.04 75);
-    --color-scrim: oklch(5% 0.01 40 / 0.62);
-    --lit: 100% 0.005 80;
-    --edge-stock: inset 0 1px 0 oklch(var(--lit) / 0.05), 0 0 0 1px oklch(31% 0.012 55);
+    --color-scrim: oklch(5% 0.015 260 / 0.62);
+    --lit: 100% 0.003 250;
+    --edge-stock: inset 0 1px 0 oklch(var(--lit) / 0.05), 0 0 0 1px oklch(32% 0.015 255);
     --cast-stock: 0 0 0 0 oklch(var(--deep) / 0);
-    --cast-stock-lift: 0 0 0 1px oklch(40% 0.012 55);
-    --press-groove: inset 0 1px 2px oklch(var(--deep) / 0.55), 0 0 0 1px oklch(31% 0.012 55);
-    --shadow-float: 0 0 0 1px oklch(38% 0.012 55);
+    --cast-stock-lift: 0 0 0 1px oklch(41% 0.015 255);
+    --press-groove: inset 0 1px 2px oklch(var(--deep) / 0.55), 0 0 0 1px oklch(32% 0.015 255);
+    --shadow-float: 0 0 0 1px oklch(39% 0.015 255);
     --press-type: none;
     --press-type-board: none;
     --press-stamp: none;

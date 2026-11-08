@@ -1,6 +1,6 @@
 /* Hallmark · shape: app screen · genre: modern-minimal · theme: Coral (deal 1/3, seed in-house-workplace-desk-app-ffca·ca3d69d2·2026-11-08·r0) · redesign: full
  * nav: kept (top bar on the desk, bottom tabs on a cotton strip, left menu from 1024px) · signature: the result card as a cotton index card, 확정 pressed into it in coral · states: loading, empty, error, full
- * axes: light/grotesk-sans/warm · posture: restrained · faces: Pretendard (kept, General Sans has no Hangul) · modes: light+dark · contrast: pass · v2.0.0 */
+ * axes: light/grotesk-sans/cool (palette moved from warm grey to a bright blue-grey at hue 250 on the user's request) · posture: restrained · faces: Pretendard (kept, General Sans has no Hangul) · modes: light+dark · contrast: pass · v2.0.0 */
 /* Hallmark · pre-emit critique: P4 H4 E4 S4 R4 V4 · weakest: E, 3,700 inherited lines re-tokened by script; the shared parts (cards, controls, chips, sheet, tabs) rebuilt by hand */
 /* Hallmark · waive 39b · the 97 to 118px buttons are the login person rows (initial, name, team, what they can see) · each row is one pressed target for choosing a 가상 직원, not a control bar */
 /* Hallmark · dismissed 41 · the flagged surfaces are paper-2 wells and room photo frames; their text inherits --color-ink, which the dark block re-derives to L 94, so no grey text sits on a dark well */
@@ -14,7 +14,7 @@
 
 /* 화면 부품. 색·간격·글자는 tokens.css 변수만 써요(10/26 디자인 기준 → 11/8 Coral 리디자인, 화면설계 "디자인 기준"). */
 
-/* 폰 너비·한 손 기준. 펠트 책상(바탕) 위에 면 종이(카드)를 올려요. 주 버튼은 먹색 판 하나예요. */
+/* 폰 너비·한 손 기준. 밝은 책상(바탕) 위에 흰 종이(카드)를 올려요. 주 버튼은 먹색 판 하나예요. */
 .app {
   max-width: 480px;
   min-height: 100vh;
@@ -2213,13 +2213,15 @@ select:focus-visible {
   align-self: flex-start;
   border-radius: var(--radius-stock);
   padding: var(--space-xs) var(--space-sm);
-  background: var(--color-paper-2);
+  background-color: var(--color-cotton);
+  box-shadow: var(--edge-stock);
   color: var(--color-ink);
   font-size: var(--text-md);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 .chat-bubble.mine {
+  box-shadow: none;
   align-self: flex-end;
   background: var(--color-board);
   color: var(--color-board-type);
