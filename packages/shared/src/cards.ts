@@ -109,6 +109,7 @@ export type InquiryRouteBy = 'ai' | 'rule' | 'none';
 // ai-eval: 관리자(운영자)만 보는 AI 정답률 화면(11/5 시험, R7 예외). 마이 페이지 아래에 있어요.
 // cafe: 사내 카페 주문(S7, 11/6 ADR-29, 출시 기본 끔). 바리스타의 카페 판(S8)은 바리스타 홈이라 따로 페이지가 없어요.
 // cafe-settle: 카페 정산(S9, 총무만, 11/6 2묶음). 마이 페이지 > 내 역할 아래에 있어요.
+// groupware: 시연 전용 가상 그룹웨어 결재함(/demo/groupware/inbox, 11/10). 결재 차례 알림만 이 곳을 열어요. 시연 설정에서만 와요.
 export const APP_DESTINATIONS = [
   'home',
   'navi',
@@ -123,6 +124,7 @@ export const APP_DESTINATIONS = [
   'ai-eval',
   'cafe',
   'cafe-settle',
+  'groupware',
 ] as const;
 export type AppDestination = (typeof APP_DESTINATIONS)[number];
 
