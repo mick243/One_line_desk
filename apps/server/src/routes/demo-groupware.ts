@@ -28,11 +28,12 @@ import {
   type WorkCalendar,
   workCalendar,
 } from '@one-line-desk/shared';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import { MockLeave } from '../adapters/mock/leave';
 import type { LeaveUse } from '../adapters/types';
 import type { AppContext } from '../context';
 import { DeskError } from '../core/errors';
+import { pseudonymize } from '../core/pseudonym';
 import type { DeskUser } from '../core/user';
 import { companyCalendar, personCalendar } from '../core/work-calendar';
 
@@ -50,12 +51,18 @@ import { companyCalendar, personCalendar } from '../core/work-calendar';
 //   그 문서의 지금 결재자(팀장·인사)와 기안자 본인에게만 보여요. 한 줄 데스크 앱·근태 기록·로그·감사·DB로는 가지 않고,
 //   근태 반영은 날·하루/반차·종류 코드까지만이에요. 반려 사유도 같은 검사를 지나요.
 // - "결재자로 보기"는 발표자가 한 화면에서 결재를 돌려 보려는 장치예요. 실제 그룹웨어는 결재자가 자기 계정으로 봐요.
-// - 감사 로그·접속기록·알림·AI 호출은 없어요(한 줄 데스크의 일이 아니라서요).
+//   그래서 결재자(팀장·인사팀)가 자기 계정으로 결재함을 열면 처음부터 자기 결재함이에요(11/10).
+// - 결재 차례 알림(11/10 사용자 결정): 신청서가 올라오거나 팀장이 승인해서 차례가 넘어가면, 그 차례인 사람에게 앱 알림을 보내요.
+//   팀장 칸은 그 팀장 한 사람, 인사팀 칸은 인사팀(기안자는 빼요)이에요. 실제 회사에서는 그룹웨어가 결재자에게 알리는 자리예요.
+//   알림 글은 "결재할 휴가 신청서가 왔어요"뿐이고 이름·날짜·종류·사유는 넣지 않아요. 누르면 가상 그룹웨어 결재함이 열려요.
+// - 감사 로그·접속기록·AI 호출은 없어요(한 줄 데스크의 일이 아니라서요).
 
 /** 메모리에 둘 문서 수 상한(넘으면 오래된 것부터 지워요) */
 export const DEMO_GROUPWARE_MAX_DOCS = 200;
 /** 인사 결재를 하는 부서(가상 직원 명단의 부서 이름) */
 const HR_DEPARTMENT = '인사팀';
+/** 결재 차례 알림 글(11/10). 내용(이름·날짜·종류·사유)은 넣지 않아요. */
+export const GROUPWARE_TURN_TITLE = '결재할 휴가 신청서가 왔어요';
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const REF = '^[0-9a-f]{16}$';
 const MAX_DAY_TEXT = 5;
@@ -268,6 +275,23 @@ export function registerDemoGroupwareRoutes(app: FastifyInstance, ctx: AppContex
     return step.kind === 'lead' ? a.subject === step.subject : a.department === HR_DEPARTMENT;
   };
 
+  /**
+   * 지금 결재 차례인 사람에게 앱 알림을 보내요(11/10 사용자 결정). 팀장 칸은 그 팀장, 인사팀 칸은 인사팀(기안자는 빼요).
+   * 글에는 할 일만 넣고, 누르면 가상 그룹웨어 결재함이 열려요. 문서는 메모리에 이미 있어서, 알림을 못 넣어도 기안·결재는 그대로 둬요.
+   */
+  async function notifyTurn(d: Doc, log: FastifyBaseLogger): Promise<void> {
+    const step = d.steps[d.current];
+    if (d.state !== 'pending' || !step) return;
+    const n = { module: 'core' as const, title: GROUPWARE_TURN_TITLE, page: 'groupware' as const };
+    const secret = ctx.config.pseudonymSecret;
+    try {
+      if (step.kind === 'lead' && step.subject) await ctx.notify.toUser(ctx.db, pseudonymize(secret, step.subject), n);
+      else await ctx.notify.toDepartment(ctx.db, HR_DEPARTMENT, n, pseudonymize(secret, d.drafter.subject));
+    } catch {
+      log.warn('가상 그룹웨어 결재 차례 알림을 넣지 못했어요');
+    }
+  }
+
   const limited = (user: DeskUser) => {
     if (!ctx.rateLimiter.hit(user.pseudonymId, 'demo-groupware')) throw new DeskError('rate-limited', 429, '요청이 많아요. 잠시 뒤에 다시 해 주세요');
   };
@@ -328,6 +352,7 @@ export function registerDemoGroupwareRoutes(app: FastifyInstance, ctx: AppContex
         current: 0,
         state: 'pending',
       });
+      await notifyTurn(doc, req.log);
       return { doc: view(doc, true) };
     },
   );
@@ -342,7 +367,8 @@ export function registerDemoGroupwareRoutes(app: FastifyInstance, ctx: AppContex
     async (req): Promise<GroupwareInboxResponse> => {
       const user = req.deskUser!;
       const list = await approvers();
-      const found = req.query.as ? list.find((a) => a.ref === req.query.as) : undefined;
+      // 결재자를 고르지 않았으면, 로그인한 사람이 결재자(팀장·인사팀)일 때 자기 결재함을 열어요(11/10, 결재 차례 알림에서 들어올 때).
+      const found = req.query.as ? list.find((a) => a.ref === req.query.as) : list.find((a) => a.subject === user.idpSubject);
       const docs = store.all();
       const shown = (a: Approver): GroupwareApprover => ({ ref: a.ref, name: a.name, department: a.department, role: a.role });
       return {
@@ -400,6 +426,7 @@ export function registerDemoGroupwareRoutes(app: FastifyInstance, ctx: AppContex
         if (doc.current < doc.steps.length - 1) {
           step.decided = { by: approver.name, at, decision: 'approved' };
           doc.current += 1;
+          await notifyTurn(doc, req.log);
           return { doc: view(doc) };
         }
         // 최종 승인: 그 순간 근태 기록을 다시 보고 겹치면 막아요. 근태 기록에 넣어야 앱(남은 연차·팀 일정·회의실 인원)에 보여요.

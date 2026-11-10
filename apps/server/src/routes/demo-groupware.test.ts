@@ -1,14 +1,14 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { AskResponse, GroupwareDoc, GroupwareFormResponse, GroupwareInboxResponse, HomeAskResponse } from '@one-line-desk/shared';
+import type { AskResponse, GroupwareDoc, GroupwareFormResponse, GroupwareInboxResponse, HomeAskResponse, NotificationsResponse } from '@one-line-desk/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { type Adapters, createMockAdapters } from '../adapters';
 import { buildApp } from '../app';
 import { loadConfig } from '../config';
 import { createTestDb } from '../core/db/test-db';
 import { createTestApp, MOCK } from '../testing';
-import { DEMO_GROUPWARE_MAX_DOCS, DemoGroupwareStore } from './demo-groupware';
+import { DEMO_GROUPWARE_MAX_DOCS, DemoGroupwareStore, GROUPWARE_TURN_TITLE } from './demo-groupware';
 
 // 시연 전용 가상 그룹웨어 전자결재(11/6 사용자 결정, 휴가 A안). 시험 시계는 2026-10-26(월) 09:00이에요.
 // 서준(개발팀) 기안 → 개발팀 팀장 도윤 → 인사팀(지후) → 최종 승인되면 가상 근태 기록에 들어가고, 한 줄 데스크는 근태 기록만 읽어요.
@@ -312,5 +312,66 @@ describe('가상 그룹웨어는 시연에서만 있어요', () => {
       await db.close();
       rmSync(dist, { recursive: true, force: true });
     }
+  });
+});
+
+describe('결재 차례 알림(11/10 사용자 결정)', () => {
+  const turns = async (me: Session) =>
+    ((await me.call('GET', '/api/notifications')).body as NotificationsResponse).items.filter((i) => i.page === 'groupware').map((i) => i.title);
+
+  it('기안하면 팀장에게만, 팀장이 승인하면 인사팀에게 알림이 가요. 글에는 이름·날짜·종류·사유가 없어요', async () => {
+    const t = await setup();
+    const seojun = await t.loginAs(MOCK.devMember);
+    const doyun = await t.loginAs(MOCK.dev);
+    const jiwoo = await t.loginAs('mock|emp-008');
+    const jihu = await t.loginAs(MOCK.hr);
+    const doc = ((await draft(seojun, '2026-11-06', '2026-11-06', 'full', 'annual', requestId(), '가족 여행')).body as { doc: GroupwareDoc }).doc;
+
+    expect(await turns(doyun)).toEqual([GROUPWARE_TURN_TITLE]);
+    // 다른 팀 팀장·인사팀·기안자 본인에게는 아직 가지 않아요.
+    expect(await turns(jiwoo)).toEqual([]);
+    expect(await turns(jihu)).toEqual([]);
+    expect(await turns(seojun)).toEqual([]);
+    const all = JSON.stringify((await doyun.call('GET', '/api/notifications')).body);
+    expect(all).not.toMatch(/서준|11월 6일|2026-11-06|연차|가족 여행/);
+
+    // 팀장이 자기 계정으로 결재함을 열면 처음부터 자기 결재함이에요. 그대로 승인하면 인사팀 차례 알림이 가요.
+    const box = await inbox(doyun);
+    expect(box.as).toMatchObject({ name: '가상 직원 도윤', role: '팀장' });
+    expect(box.waiting.map((d) => d.id)).toEqual([doc.id]);
+    expect(await decide(doyun, doc.id, box.as!.ref, 'approved')).toMatchObject({ status: 200 });
+    expect(await turns(jihu)).toEqual([GROUPWARE_TURN_TITLE]);
+    expect(await turns(doyun)).toEqual([GROUPWARE_TURN_TITLE]);
+    expect(await turns(seojun)).toEqual([]);
+
+    // 인사팀 최종 승인 뒤에는 더 보낼 차례가 없어요.
+    const hrBox = await inbox(jihu);
+    expect(hrBox.as).toMatchObject({ name: '가상 인사 지후', role: '인사팀' });
+    expect(await decide(jihu, doc.id, hrBox.as!.ref, 'approved')).toMatchObject({ status: 200 });
+    expect(await turns(jihu)).toEqual([GROUPWARE_TURN_TITLE]);
+  });
+
+  it('팀장이 없는 부서는 기안하면 바로 인사팀에 알림이 가요. 같은 요청을 다시 보내도 한 번만 가요', async () => {
+    const t = await setup();
+    const haneul = await t.loginAs(MOCK.staff);
+    const jihu = await t.loginAs(MOCK.hr);
+    const id = requestId();
+    expect(await draft(haneul, '2026-11-13', '2026-11-13', 'full', 'annual', id)).toMatchObject({ status: 200 });
+    expect(await draft(haneul, '2026-11-13', '2026-11-13', 'full', 'annual', id)).toMatchObject({ status: 200 });
+    expect(await turns(jihu)).toEqual([GROUPWARE_TURN_TITLE]);
+    expect(await turns(haneul)).toEqual([]);
+    // 결재자가 아닌 사람은 결재함을 열어도 고른 결재자가 없어요(예전처럼 골라야 해요).
+    expect((await inbox(haneul)).as).toBeNull();
+  });
+
+  it('반려하면 다음 차례가 없어서 알림을 더 보내지 않아요', async () => {
+    const t = await setup();
+    const seojun = await t.loginAs(MOCK.devMember);
+    const doyun = await t.loginAs(MOCK.dev);
+    const jihu = await t.loginAs(MOCK.hr);
+    const doc = ((await draft(seojun, '2026-11-06')).body as { doc: GroupwareDoc }).doc;
+    const box = await inbox(doyun);
+    expect(await decide(doyun, doc.id, box.as!.ref, 'rejected', '그날은 배포가 있어요')).toMatchObject({ status: 200 });
+    expect(await turns(jihu)).toEqual([]);
   });
 });

@@ -52,6 +52,8 @@ function tabOf(view: View): Tab {
   // 관리자 AI 정답률(11/5 시험)과 카페 정산(S9, 총무, 11/6)은 마이 페이지 아래에 있어요.
   if (view === 'ai-eval' || view === 'cafe-settle') return 'mine';
   if (view === 'chart' || view === 'it-help' || view === 'onboarding') return 'navi';
+  // 시연 가상 그룹웨어 결재함(11/10)은 앱 안 페이지가 아니라 navigate가 따로 열어요.
+  if (view === 'groupware') return 'home';
   return view;
 }
 
@@ -140,7 +142,18 @@ export function App() {
     // 다른 페이지로 가면 맨 위부터 보여요.
     window.scrollTo(0, 0);
   }, []);
-  const navigate = useCallback((to: AppDestination) => go(to), [go]);
+  // 결재 차례 알림(11/10)은 시연 가상 그룹웨어 결재함을 열어요. 앱 안 페이지가 아니라서 주소를 바꾸고 그룹웨어 화면으로 그려요.
+  // 뒤로 가기는 앞 페이지 기록(deskView)으로 돌아가요.
+  const navigate = useCallback(
+    (to: AppDestination) => {
+      if (to !== 'groupware') return go(to);
+      window.history.pushState(null, '', '/demo/groupware/inbox');
+      setHandoff(null);
+      setEntry({ kind: 'groupware', page: 'inbox' });
+      window.scrollTo(0, 0);
+    },
+    [go],
+  );
   const move = useCallback((kind: Kind, text: string) => go(pageOfKind(kind), text, true), [go]);
   // 회의실 채팅에 넘기는 함수는 렌더마다 새로 만들지 않아요(채팅 안 useMemo가 깨지지 않게).
   const showRooms = useCallback((show: RoomShowQuery | null) => setRoomShow(show ?? null), []);

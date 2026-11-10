@@ -259,8 +259,11 @@ function Inbox() {
 
   const load = useCallback(async (ref: string) => {
     try {
-      setData(await apiRequest<GroupwareInboxResponse>('GET', `/api/demo/groupware/inbox${ref ? `?as=${encodeURIComponent(ref)}` : ''}`));
+      const res = await apiRequest<GroupwareInboxResponse>('GET', `/api/demo/groupware/inbox${ref ? `?as=${encodeURIComponent(ref)}` : ''}`);
+      setData(res);
       setMessage(null);
+      // 결재자(팀장·인사팀)가 자기 계정으로 열면 서버가 자기 결재함을 줘요(11/10). 결재 버튼도 그 사람으로 보내요.
+      if (!ref && res.as) setAs(res.as.ref);
     } catch (e) {
       setMessage(failText(e, '결재함을 열지 못했어요'));
     }

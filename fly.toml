@@ -23,11 +23,11 @@ kill_timeout = 60
   # 앞단이 Vercel이라 접속지는 모두 Vercel 주소예요. 믿지 않고, 시연 접속지는 법정 기록으로 쓰지 않아요.
   TRUST_PROXY = "none"
   SERVER_PORT = "3190"
-  # AI 공급자(11/3 사용자 결정): Anthropic을 써요. 키는 비밀이라 여기 적지 않고 `fly secrets set ANTHROPIC_API_KEY=…`로만 넣어요.
-  # 키 없이 배포하면 운영 설정 검사가 막아서 서버가 뜨지 않아요. Gemini로 바꾸려면 DESK_AI_PROVIDER="gemini"·DESK_AI_MODEL="gemini-…"·GEMINI_API_KEY(비밀).
-  DESK_AI_PROVIDER = "anthropic"
-  # 모델(11/3 사용자 결정): 앱이 모델에 맡기는 일은 짧은 분류·번호 고르기라서 빠른 모델(Haiku)을 써요.
-  DESK_AI_MODEL = "claude-haiku-5-5"
+  # AI 공급자(11/10 사용자 결정): Gemini를 써요(11/3에는 Anthropic). 키는 비밀이라 여기 적지 않고 `fly secrets set GEMINI_API_KEY=…`로만 넣어요.
+  # 키 없이 배포하면 운영 설정 검사가 막아서 서버가 뜨지 않아요. Anthropic으로 되돌리려면 DESK_AI_PROVIDER="anthropic"·DESK_AI_MODEL="claude-…"·ANTHROPIC_API_KEY(비밀).
+  DESK_AI_PROVIDER = "gemini"
+  # 모델(11/10): 앱이 모델에 맡기는 일은 짧은 분류·번호 고르기라서 빠른 안정판 Flash 모델을 써요(11/10 기준 Gemini API 안정판).
+  DESK_AI_MODEL = "gemini-3.6-flash"
   # 무보관 계약을 했다고 가정한 시연이에요(11/3 사용자 결정). 사람이 쓴 질문 글(등급 1)이 모델로 가요. 자료는 모두 가상이에요.
   NO_RETENTION_CONTRACT_CONFIRMED = "true"
   # 시연에서 처음부터 켜 둘 운영 스위치(11/4 사용자 결정). 디스크가 배포마다 비워져 운영자가 켠 값이 사라져서 여기서 켜요.
