@@ -35,8 +35,9 @@ class RecordingProvider implements LlmProvider {
   }
 }
 
-async function setup(o: { contract?: boolean; provider?: LlmProvider; lines?: string[] } = {}) {
+async function setup(o: { contract?: boolean; provider?: LlmProvider; lines?: string[]; start?: number } = {}) {
   const t = await createTestApp({
+    ...(o.start ? { start: o.start } : {}),
     ...(o.provider ? { provider: o.provider } : {}),
     ...(o.lines ? { logger: { level: 'debug', stream: { write: (line: string) => void o.lines!.push(line) } } } : {}),
   });
@@ -313,6 +314,27 @@ describe('홈 AI 채팅: 나에게 해당하는 일(ADR-27)', () => {
     for (const res of [move, pantry, leave, notice, free, unknown]) expect(JSON.stringify(res)).not.toMatch(/proposalToken|"type":"(fixed|propose|post)"/);
   });
 
+  it('[QA E1 시험] 후보를 못 찾는 "지금 빈 회의실 있어?"(밤 11시 50분)도 빈 답이 아니라 읽기 전용 회의실 현황 카드 한 장이에요', async () => {
+    const t = await setup({ start: Date.parse('2026-10-26T23:50:00+09:00') });
+    const doyun = await t.loginAs(MOCK.dev);
+    const before = await rowCounts(t);
+    const res = await home(doyun, '지금 빈 회의실 있어?');
+    expect(res.intent).toBe('move');
+    expect(res.cards).toHaveLength(1);
+    expect(res.cards[0]).toMatchObject({
+      kind: 'rooms',
+      variant: 'rooms-overview',
+      overview: { readOnly: true },
+      actions: { primary: { type: 'reask', text: '회의실 탭에서 예약하기', kind: 'rooms' }, secondary: [] },
+    });
+    expect(res.cards[0]!.headline).toMatch(/^지금 빈 회의실( \d+곳이에요|이 없어요)$/);
+    expect(JSON.stringify(res)).not.toMatch(/proposalToken|"type":"(fixed|propose|post)"/);
+    expect(await rowCounts(t)).toEqual(before);
+    // 회의실이 링크만이면 현황 카드 대신 그룹웨어 링크 카드예요.
+    await t.ctx.ops.setModule('p_op', 'rooms', 'link');
+    expect((await home(doyun, '지금 빈 회의실 있어?')).cards[0]).toMatchObject({ id: 'link-rooms' });
+  });
+
   it('[ADR-27·ADR-12 시험] 모듈이 끔이면 그 종류는 안 모으고, 링크만이면 옮기기 대신 그룹웨어 링크 카드예요', async () => {
     const t = await setup();
     const doyun = await t.loginAs(MOCK.dev);
@@ -478,6 +500,96 @@ describe('홈 질문 해석: 게이트웨이(ADR-10·27)', () => {
     const res = await home(doyun, '내일 3시 회의실 잡아 줘');
     expect(res).toMatchObject({ intent: 'move', by: 'rule' });
     expect(res.cards[0]!.evidence.aiSummarized).toBe(false);
+  });
+});
+
+describe('IT 오류·첫 2주 화면으로 바로 잇기(11/17, 추가 호출 0)', () => {
+  it.each([
+    ['와이파이가 안 잡혀요', 'it-help'],
+    ['VPN이 자꾸 끊겨요', 'it-help'],
+    ['아웃룩 로그인이 안 돼요', 'it-help'],
+    ['오류 0x80070005가 떠요', 'it-help'],
+    ['신입인데 첫 주에 뭘 해야 해?', 'onboarding'],
+    ['이번 주에 입사했는데 뭐부터 해요?', 'onboarding'],
+    ['첫 출근 날 뭐 챙겨야 해?', 'onboarding'],
+  ] as const)('규칙: %s → move:%s', (text, moveTo) => {
+    expect(interpretByRules(text)).toMatchObject({ intent: 'move', moveTo });
+  });
+
+  it.each(['회의실 TV가 안 켜져요', '요즘 노트북이 너무 느려요', '다음 주 첫날 회의 있어?', '내 입사일 기준 연차 몇 개야?', '와이파이 비밀번호 어디서 봐요?'])(
+    '규칙: %s 는 IT 오류·첫 2주 화면이 아니에요',
+    (text) => {
+      expect(['it-help', 'onboarding']).not.toContain(interpretByRules(text).moveTo);
+    },
+  );
+
+  it('답 맨 앞에 그 화면으로 가는 버튼이 오고, 담당 카드가 뒤따라요. 같은 버튼은 한 번만이고 쓰기 버튼·저장은 0이에요', async () => {
+    const t = await setup();
+    const doyun = await t.loginAs(MOCK.dev);
+    const before = await rowCounts(t);
+    const wifi = await home(doyun, '와이파이가 안 잡혀요');
+    expect(wifi).toMatchObject({ intent: 'move', by: 'rule', items: [], team: null });
+    expect(wifi.links).toEqual([{ text: '오류 창 글로 해결 방법 찾기', to: 'it-help' }]);
+    expect(wifi.read).toEqual({ understood: '하려는 일 · IT 오류 해결 방법 찾기' });
+    expect(wifi.cards.length).toBeGreaterThan(0);
+    expect(wifi.cards.every((c) => c.kind === 'navi')).toBe(true);
+    const navigates = (res: HomeAskResponse) =>
+      res.cards
+        .flatMap((c) => [c.actions.primary, ...c.actions.secondary])
+        .filter((a) => a?.type === 'navigate' && (a.to === 'it-help' || a.to === 'onboarding'));
+    expect(navigates(wifi)).toEqual([]);
+
+    const newbie = await home(doyun, '신입인데 첫 주에 뭘 해야 해?');
+    expect(newbie.links).toEqual([{ text: '첫 2주에 할 일 보기', to: 'onboarding' }]);
+    expect(navigates(newbie)).toEqual([]);
+    for (const res of [wifi, newbie]) expect(JSON.stringify(res)).not.toMatch(/proposalToken|"type":"(fixed|propose|post)"/);
+    expect(await rowCounts(t)).toEqual(before);
+
+    // 담당 찾기가 링크만이면 화면 버튼 없이 그룹웨어 링크 카드만이에요.
+    await t.ctx.ops.setModule('p_op', 'navi', 'link');
+    const link = await home(doyun, '와이파이가 안 잡혀요');
+    expect(link.links).toEqual([]);
+    expect(link.cards[0]).toMatchObject({ id: 'link-navi' });
+  });
+
+  it('[ADR-10 시험] 낱말 규칙이 놓친 문장도 모델이 it-help로 보면 버튼이 붙어요. 모델 입력은 질문 글뿐이에요', async () => {
+    const provider = new RecordingProvider('anthropic', { intent: 'move', period: 'recent', kinds: [], moveTo: 'it-help' });
+    const t = await setup({ contract: true, provider });
+    const doyun = await t.loginAs(MOCK.dev);
+    const text = '노트북 화면에 파란 창이 뜨고 다시 켜져요';
+    const res = await home(doyun, text);
+    expect(res).toMatchObject({ intent: 'move', by: 'ai', links: [{ to: 'it-help' }] });
+    expect(provider.homeInputs()).toEqual([{ purpose: 'home-ask', input: text, grade: 1 }]);
+  });
+});
+
+describe('실사용 신호(11/17): 게이트웨이에 규칙과 같은지 견주는 함수만 넘겨요', () => {
+  /** 실제 모델 흉내. 목적마다 넘겨받은 agrees를 규칙 답(fallback)과 일부러 다른 답에 불러 봐요. 글·값은 남기지 않아요. */
+  class AgreesProvider implements LlmProvider {
+    readonly name = 'anthropic' as const;
+    readonly seen: { purpose: string; same: boolean | undefined; differ: boolean | undefined }[] = [];
+    constructor(private readonly differ: Record<string, unknown>) {}
+    async complete<T>(req: StructuredRequest<T>): Promise<ProviderResult<T>> {
+      const out = req.schema.parse(req.fallback());
+      const other = this.differ[req.purpose];
+      this.seen.push({
+        purpose: req.purpose,
+        same: req.agrees?.(out),
+        differ: other === undefined ? undefined : req.agrees?.(req.schema.parse({ ...(out as object), ...(other as object) })),
+      });
+      return { output: out, inputTokens: 1, outputTokens: 1 };
+    }
+  }
+
+  it('home-ask(뜻)·pick-row(단독 1등 행)는 규칙과 같으면 참, 다르면 거짓이고 참·거짓만 돌려줘요', async () => {
+    const provider = new AgreesProvider({ 'home-ask': { intent: 'unknown' }, 'pick-row': { choice: 'none' } });
+    const t = await setup({ contract: true, provider });
+    const doyun = await t.loginAs(MOCK.dev);
+    await home(doyun, '법인카드 잃어버리면 어디에 말해요?');
+    const home_ = provider.seen.find((s) => s.purpose === 'home-ask')!;
+    expect(home_).toEqual({ purpose: 'home-ask', same: true, differ: false });
+    const pick = provider.seen.find((s) => s.purpose === 'pick-row')!;
+    expect(pick).toEqual({ purpose: 'pick-row', same: true, differ: false });
   });
 });
 

@@ -15,7 +15,7 @@ import type { LeaveAdapter, LeaveRecord, LeaveUse } from '../adapters/types';
 import { createTestApp, MOCK } from '../testing';
 import { AiGateway, FakeProvider, type LlmProvider, type ProviderResult, type StructuredRequest } from './ai/gateway';
 import { type HomeInterpretation, interpretByRules } from './home';
-import { mentionsOtherTeam } from './home-team';
+import { isJointMeeting, mentionsOtherTeam, otherTeamsIn, teamWhatOf } from './home-team';
 import { pseudonymize } from './pseudonym';
 
 // 홈 채팅 "같은 팀 일정"(11/3 사용자 결정). 시험 시계는 2026-10-26(월) 09:00이에요.
@@ -233,7 +233,9 @@ describe('[팀 일정] 홈 채팅 같은 팀 일정(11/3)', () => {
       { name: '가상 직원 하은', date: '2026-10-26', what: 'meeting', start: '15:00', end: '16:00', room: r.roomName },
     ]);
     for (const m of meetings) expect(Object.keys(m).sort()).toEqual(['date', 'end', 'name', 'room', 'start', 'what']);
-    expect(res.headline).toContain(`가상 직원 서준 하루 부재 · 15:00–16:00 회의(${r.roomName})`);
+    // 11/17: 회의만 물어서 휴가(서준 하루 부재)는 읽지도 보이지도 않아요.
+    expect(res.headline).toBe(`오늘 개발팀 일정: 가상 직원 서준 15:00–16:00 회의(${r.roomName}) / 가상 직원 하은 15:00–16:00 회의(${r.roomName})`);
+    expect(res.team!.entries.every((e) => e.what === 'meeting')).toBe(true);
     // 다른 팀 참석자(하늘)·답 안 한 주원·부른 사람 표시·참석자 목록은 어디에도 없어요.
     const body = JSON.stringify(res);
     expect(body).not.toMatch(/하늘|재무팀|attendee|inviter|불렀|참석자|response/);
@@ -578,5 +580,126 @@ describe('[팀 일정] 자리비움(11/3)', () => {
     expect((await home(doyun, '자리비움 알릴게요')).away).toEqual({ kind: 'away' });
     expect((await home(doyun, '12월 20일에 출장 가요')).away).toEqual({ kind: 'trip' });
     expect(await rowCounts(t)).toEqual(before);
+  });
+});
+
+describe('[팀 일정] 물은 것만 보이기(11/17, 추가 호출 0)', () => {
+  it.each([
+    ['오늘 개발 팀 내에 휴가인사람', ['leave']],
+    ['우리 팀 누가 쉬어?', ['leave']],
+    ['오늘 우리 팀 병가 누구야?', ['leave']],
+    ['팀장님 오늘 회의 있어?', ['meeting']],
+    ['팀 회의 일정 뭐 있어?', ['meeting']],
+    ['오늘 우리 팀 외근 누구야?', ['away']],
+    ['오늘 우리 팀 누가 없어?', ['leave', 'away']],
+    ['이번 주 팀 부재', ['leave', 'away']],
+    ['오늘 팀원 중 안 나온 사람', ['leave', 'away']],
+    ['이번 주 우리 팀 일정', []],
+    ['서준님 오늘 자리에 있어?', []],
+    ['과장님 어디 계셔?', []],
+    ['오늘 팀 휴가랑 회의랑 외근 다 알려 줘', []],
+  ] as const)('%s → %j', (text, what) => {
+    expect(teamWhatOf(text)).toEqual(what);
+    // 낱말 규칙 해석기도 같은 모양으로 내요(계약 전에도 같은 동작).
+    expect(interpretByRules(text)).toMatchObject({ intent: 'team-schedule', teamWhat: what });
+  });
+
+  it('[팀 일정·ADR-20 시험] 휴가만 물으면 회의·자리비움을 조회하지 않고, 접속기록에는 휴가로 보여 준 사람만 남아요', async () => {
+    const t = await setup();
+    // 주원(개발팀, 오늘 휴가 없음)이 오늘 15시 회의실을 잡아요. 서준은 오늘 하루 휴가, 하은은 오후 반차예요.
+    await reserve(await t.loginAs(JUWON), '오늘 3시 6명 회의실');
+    expect((await setAway(await t.loginAs(HAEUN), 'outside', '2026-10-26T10:00:00+09:00', '2026-10-26T12:00:00+09:00')).status).toBe(200);
+    const calls = { meetings: 0, aways: 0, leave: 0 };
+    const team = t.ctx.services.rooms!.team!;
+    const meetingsOf = team.meetingsOf.bind(team);
+    team.meetingsOf = async (...args) => ((calls.meetings += 1), meetingsOf(...args));
+    const away = t.ctx.services.navi!.away!;
+    const ofPeople = away.ofPeople.bind(away);
+    away.ofPeople = async (...args) => ((calls.aways += 1), ofPeople(...args));
+    const leave = t.ctx.adapters.leave;
+    t.ctx.adapters.leave = { ...leave, leaveOf: async (p) => ((calls.leave += 1), leave.leaveOf(p)) };
+    const doyun = await t.loginAs(MOCK.dev);
+
+    const onlyLeave = await home(doyun, '오늘 우리 팀 휴가인 사람');
+    expect(onlyLeave.read).toEqual({ understood: '오늘 · 같은 팀 일정(휴가)' });
+    expect(onlyLeave.team!.entries.map((e) => [e.name, e.what])).toEqual([
+      ['가상 직원 서준', 'leave'],
+      ['가상 직원 하은', 'leave'],
+    ]);
+    expect(calls).toMatchObject({ meetings: 0, aways: 0 });
+    expect(calls.leave).toBeGreaterThan(0);
+    let rows = await accessRows(t);
+    expect([...rows.at(-1)!.subject_refs].sort()).toEqual([ref(t, SEOJUN), ref(t, HAEUN)].sort());
+
+    // 회의만 물으면 근태·자리비움을 읽지 않아요. 휴가인 서준·하은은 접속기록에 없고, 회의한 주원만 남아요.
+    const leaveCalls = calls.leave;
+    const onlyMeeting = await home(doyun, '오늘 우리 팀 회의 있어?');
+    expect(onlyMeeting.team!.entries.map((e) => [e.name, e.what])).toEqual([['가상 직원 주원', 'meeting']]);
+    expect(onlyMeeting.team!.leaveConnected).toBe(true);
+    expect(calls.leave).toBe(leaveCalls);
+    expect(calls.aways).toBe(0);
+    rows = await accessRows(t);
+    expect(rows.at(-1)!.subject_refs).toEqual([ref(t, JUWON)]);
+
+    // "누가 없어?"는 휴가와 자리비움이에요. 회의(주원)는 읽지 않아요.
+    const meetingCalls = calls.meetings;
+    const absent = await home(doyun, '오늘 우리 팀 누가 없어?');
+    expect(absent.team!.entries.map((e) => [e.name, e.what])).toEqual([
+      ['가상 직원 서준', 'leave'],
+      ['가상 직원 하은', 'leave'],
+      ['가상 직원 하은', 'away'],
+    ]);
+    expect(calls.meetings).toBe(meetingCalls);
+    rows = await accessRows(t);
+    expect(rows.at(-1)!.subject_refs).not.toContain(ref(t, JUWON));
+
+    // 종류를 말하지 않으면 지금처럼 다 보여요.
+    const all = await home(doyun, '오늘 우리 팀 일정');
+    expect(new Set(all.team!.entries.map((e) => e.what))).toEqual(new Set(['leave', 'meeting', 'away']));
+    rows = await accessRows(t);
+    expect([...rows.at(-1)!.subject_refs].sort()).toEqual([ref(t, SEOJUN), ref(t, HAEUN), ref(t, JUWON)].sort());
+  });
+
+  it('[팀 일정·ADR-10 시험] 모델이 고른 종류(teamWhat)로 거르고, 모델 입력은 질문 글뿐이에요(결과·이름 0)', async () => {
+    const provider = new RecordingProvider('anthropic', { intent: 'team-schedule', period: 'today', kinds: [], moveTo: null, teamWhat: ['leave'] });
+    const t = await setup({ contract: true, provider });
+    await reserve(await t.loginAs(JUWON), '오늘 3시 6명 회의실');
+    const doyun = await t.loginAs(MOCK.dev);
+    provider.inputs.length = 0;
+    const text = '그 사람들 오늘 다 나왔나';
+    const res = await home(doyun, text);
+    expect(res).toMatchObject({ intent: 'team-schedule', by: 'ai' });
+    expect(res.team!.entries.every((e) => e.what === 'leave')).toBe(true);
+    // 낱말 규칙은 종류를 짚지 못해(셋 다) 라벨이 달라서 규칙이 본 것도 같이 붙어요.
+    expect(res.read).toEqual({ understood: '오늘 · 같은 팀 일정(휴가)', ruleSaid: '오늘 · 같은 팀 일정' });
+    expect(provider.inputs.filter((i) => i.purpose === 'home-ask')).toEqual([{ purpose: 'home-ask', input: text, grade: 1 }]);
+    expect(JSON.stringify(provider.inputs)).not.toMatch(/서준|하은|주원|개발팀|2026-10-26|회의실|가상/);
+  });
+});
+
+describe('[여러 팀 회의] 줄여 말한 팀(11/17, 규칙만)', () => {
+  const departments = ['개발팀', '디자인팀', '재무팀', '인사팀', '정보보안팀', 'IT지원팀'];
+
+  it('끝말을 뗀 줄기 + "이랑·랑·과·와·하고"면 그 부서로 알아봐요', () => {
+    expect(otherTeamsIn('디자인이랑 내일 3시 회의', '개발팀', departments)).toEqual(['디자인팀']);
+    expect(otherTeamsIn('개발과 회의 잡아 줘', '디자인팀', departments)).toEqual(['개발팀']);
+    expect(otherTeamsIn('재무하고 인사랑 내일 회의', '개발팀', departments).sort()).toEqual(['인사팀', '재무팀']);
+    expect(otherTeamsIn('정보보안이랑 회의', '개발팀', departments)).toEqual(['정보보안팀']);
+    // 통째로 쓴 이름은 지금처럼이에요.
+    expect(otherTeamsIn('디자인팀이랑 회의', '개발팀', departments)).toEqual(['디자인팀']);
+    expect(mentionsOtherTeam('디자인이랑 우리 팀 휴가', '개발팀', departments)).toBe(true);
+    expect(isJointMeeting('내일 3시 디자인이랑 회의실 잡아 줘', '개발팀', departments)).toBe(true);
+  });
+
+  it('오탐은 맞추지 않아요: 조사 없음·자기 부서·다른 낱말의 일부·같은 줄기 둘', () => {
+    expect(otherTeamsIn('디자인 리뷰 회의', '개발팀', departments)).toEqual([]);
+    expect(otherTeamsIn('디자인안 검토 회의', '개발팀', departments)).toEqual([]);
+    expect(otherTeamsIn('개발이랑 회의', '개발팀', departments)).toEqual([]);
+    expect(isJointMeeting('개발이랑 회의실 잡아 줘', '개발팀', departments)).toBe(false);
+    expect(otherTeamsIn('앱개발이랑 회의', '디자인팀', departments)).toEqual([]);
+    expect(otherTeamsIn('앱개발이랑 회의', '디자인팀', [...departments, '앱개발팀'])).toEqual(['앱개발팀']);
+    expect(otherTeamsIn('개발이랑의 회의', '디자인팀', departments)).toEqual([]);
+    expect(otherTeamsIn('개발과 회의', '디자인팀', ['개발팀', '개발부', '디자인팀'])).toEqual([]);
+    expect(otherTeamsIn('IT랑 회의', '개발팀', departments)).toEqual([]);
   });
 });

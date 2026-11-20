@@ -80,9 +80,18 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext, demo
   });
 
   // 운영 설정·운영 표는 운영자만 봐요. 운영자 전용 화면은 S1~S6에 없어요(R7).
+  // 실사용 신호(11/17): aiUsage의 agreement(목적별 모델·규칙 견준 수·다른 수)와 noticeAudienceEdits(총무가 공지 알림 대상
+  // 제안을 정한 수·고친 수, 모델 제안·낱말 규칙 제안 따로)는 수뿐이에요. 글·대상 이름·누가는 없고, 10건이 안 되면 접혀서 와요.
   app.get('/api/ops/settings', { preHandler: [ctx.guards.user, ctx.guards.role('operator')] }, async () => {
     const s = ctx.ops.get();
-    return { ...s, mcpTools: listMcpTools(s).map((t) => t.name), aiUsage: await ctx.gateway.usageByModule(), recentAudit: await ctx.audit.recent(20) };
+    return {
+      ...s,
+      mcpTools: listMcpTools(s).map((t) => t.name),
+      aiUsage: await ctx.gateway.usageByModule(),
+      // 공지 모듈이 꺼져 서비스가 없으면 빈 목록이에요(모듈 경계: routes는 ctx.services로만 받아요).
+      noticeAudienceEdits: (await ctx.services.notices?.audienceEdits?.()) ?? [],
+      recentAudit: await ctx.audit.recent(20),
+    };
   });
 
   // 운영 설정 바꾸기. 명단 밖으로 넓힌 시연은 누구나 가상 운영자로 들어와서 바꾸지 못하게 막아요(배포 준비 회의 쟁점 5).

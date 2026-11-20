@@ -25,33 +25,40 @@ const migrationFiles = (dir: string): MigrationFile[] =>
     });
 
 /**
- * 이미 적용한 기록이 지금 폴더와 맞는지 보고, 적용한 이름을 돌려줘요. 맞지 않으면 멈춰요(10/30 백엔드 점검).
- * - 폴더에 없는 이름이 적혀 있으면: 마이그레이션을 합치기 전의 옛 DB예요. 그대로 두면 새 파일을 다시 적용하다 깨지거나,
- *   일부만 적용된 DB를 "다 적용됨"으로 잘못 볼 수 있어요.
+ * 이미 적용한 기록이 지금 폴더와 맞는지 보고, 적용한 이름과 더 새 판이 붙인 이름을 돌려줘요. 맞지 않으면 멈춰요(10/30 백엔드 점검).
+ * - 폴더에 없는 이름이 적혀 있으면:
+ *   - 폴더 파일이 모두 (같은 확인값으로) 적용돼 있으면, 더 새 판이 붙인 기록이에요(11/11 QA Q1). 장애 때 앞 판 이미지로
+ *     되돌리면 이렇게 돼요. 마이그레이션은 넓히기만 해서 앞 판이 그대로 떠야 하니 멈추지 않고 newer로 알려요(시작할 때 경고).
+ *     파일 이름 번호는 모듈 순서라 날짜 순서가 아니어서(020_core_notify_groupware는 11/10), 이름 순서로 가르지 않아요.
+ *   - 폴더 파일 중 적용 안 된 것이 있으면: 마이그레이션을 합치기 전의 옛 DB예요. 그대로 두면 새 파일을 다시 적용하다 깨지거나,
+ *     일부만 적용된 DB를 "다 적용됨"으로 잘못 볼 수 있어요.
+ * - 확인값 칸이 없는 옛 표도 합치기 전 DB예요.
  * - 내용 확인값이 다르면: 이미 적용한 파일을 고친 거예요. 고친 내용은 그 DB에 들어가지 않아요. 새 파일을 더해야 해요.
  */
-async function checkedApplied(q: Queryable, files: MigrationFile[]): Promise<Set<string>> {
+async function checkedApplied(q: Queryable, files: MigrationFile[]): Promise<{ done: Set<string>; newer: string[] }> {
   const columns = (
     await q.query<{ column_name: string }>(
       "select column_name from information_schema.columns where table_name = 'schema_migrations' and table_schema = current_schema()",
     )
   ).rows.map((r) => r.column_name);
-  if (!columns.length) return new Set();
+  if (!columns.length) return { done: new Set(), newer: [] };
   const hasSha = columns.includes('sha256');
   const rows = (await q.query<{ name: string; sha256: string | null }>(`select name, ${hasSha ? 'sha256' : 'null as sha256'} from schema_migrations`)).rows;
   const byName = new Map(files.map((f) => [f.name, f]));
   const unknown = rows.filter((r) => !byName.has(r.name)).map((r) => r.name);
-  if (unknown.length || !hasSha) {
+  const recorded = new Set(rows.map((r) => r.name));
+  const allApplied = files.every((f) => recorded.has(f.name));
+  if (!hasSha || (unknown.length && !allApplied)) {
     throw new Error(
       `DB에 지금 폴더에 없는 마이그레이션 기록이 있어요(${unknown.join(', ') || '확인값 없는 옛 기록'}). 마이그레이션을 합치기 전의 옛 DB예요. ` +
         '개발 DB면 서버를 끄고 .data/pglite를 지우거나 docker compose down -v 뒤 다시 띄워 주세요. 운영 DB면 멈추고 리드에게 알려 주세요',
     );
   }
-  const changed = rows.filter((r) => r.sha256 !== byName.get(r.name)!.sha256).map((r) => r.name);
+  const changed = rows.filter((r) => byName.has(r.name) && r.sha256 !== byName.get(r.name)!.sha256).map((r) => r.name);
   if (changed.length) {
     throw new Error(`이미 적용한 마이그레이션 파일이 바뀌었어요(${changed.join(', ')}). 적용한 파일은 고치지 말고 새 파일을 더해 주세요`);
   }
-  return new Set(rows.map((r) => r.name));
+  return { done: new Set(rows.filter((r) => byName.has(r.name)).map((r) => r.name)), newer: unknown.sort() };
 }
 
 const CREATE_TABLE =
@@ -69,7 +76,7 @@ export async function applyMigrations(db: Db, dir = MIGRATIONS_DIR): Promise<str
   if (db.kind === 'pg') {
     return db.tx(async (q) => {
       await q.query("select pg_advisory_xact_lock(hashtext($1 || ':' || current_schema()))", [MIGRATION_LOCK]);
-      const done = await checkedApplied(q, files);
+      const { done } = await checkedApplied(q, files);
       await q.query(CREATE_TABLE);
       const applied: string[] = [];
       for (const file of files) {
@@ -83,7 +90,7 @@ export async function applyMigrations(db: Db, dir = MIGRATIONS_DIR): Promise<str
     });
   }
   // PGlite(개발·시험)는 한 프로세스만 열 수 있어서 잠금이 필요 없어요.
-  const done = await checkedApplied(db, files);
+  const { done } = await checkedApplied(db, files);
   await db.exec(CREATE_TABLE);
   const applied: string[] = [];
   for (const file of files) {
@@ -100,7 +107,15 @@ export async function applyMigrations(db: Db, dir = MIGRATIONS_DIR): Promise<str
  * 기록이 폴더와 맞지 않으면(옛 이름·고친 파일) 던져서 서버가 뜨지 않아요.
  */
 export async function pendingMigrations(db: Queryable, dir = MIGRATIONS_DIR): Promise<string[]> {
+  return (await migrationState(db, dir)).pending;
+}
+
+/**
+ * 아직 적용하지 않은 것(pending)과 더 새 판이 붙인 기록(newer, 앞 판으로 되돌렸을 때). 기록이 폴더와 맞지 않으면 던져요.
+ * newer가 있으면 서버는 뜨고 경고만 남겨요(11/11 QA Q1, 장애런북 3절 "마이그레이션을 넣은 배포를 되돌릴 때").
+ */
+export async function migrationState(db: Queryable, dir = MIGRATIONS_DIR): Promise<{ pending: string[]; newer: string[] }> {
   const files = migrationFiles(dir);
-  const done = await checkedApplied(db, files);
-  return files.map((f) => f.name).filter((name) => !done.has(name));
+  const { done, newer } = await checkedApplied(db, files);
+  return { pending: files.map((f) => f.name).filter((name) => !done.has(name)), newer };
 }

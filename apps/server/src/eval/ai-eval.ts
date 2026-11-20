@@ -1,4 +1,14 @@
-import { type AiEvalResponse, HOME_MOVE_LABEL, type HomeMoveTo, LOAN_KINDS, personNameWords, ROUTER_MODULES } from '@one-line-desk/shared';
+import {
+  type AiEvalResponse,
+  HOME_MOVE_LABEL,
+  type HomeMoveTo,
+  LOAN_KINDS,
+  normalizeTeamWhat,
+  personNameWords,
+  ROUTER_MODULES,
+  TEAM_WHAT_LABEL,
+  type TeamWhat,
+} from '@one-line-desk/shared';
 import type { AiGateway } from '../core/ai/gateway';
 import { interpretByRules as homeByRules, interpretHomeText } from '../core/home';
 import { classifyText } from '../core/router';
@@ -26,7 +36,13 @@ export interface CaseResult extends GoldenCase {
   ai?: string;
 }
 
-const homeKey = (r: { intent: string; moveTo: HomeMoveTo | null }) => (r.intent === 'move' ? `move:${r.moveTo}` : r.intent);
+/** 11/17: 같은 팀 일정은 물은 종류를 붙여요("team-schedule:leave·away"). 종류를 말하지 않았으면 "team-schedule"이에요. */
+const homeKey = (r: { intent: string; moveTo: HomeMoveTo | null; teamWhat?: readonly TeamWhat[] }) => {
+  if (r.intent === 'move') return `move:${r.moveTo}`;
+  if (r.intent !== 'team-schedule') return r.intent;
+  const what = normalizeTeamWhat(r.teamWhat);
+  return what.length ? `team-schedule:${what.join('·')}` : 'team-schedule';
+};
 const chatKey = (r: { intent: string; kinds: readonly string[] }) => {
   const kinds = LOAN_KINDS.filter((k) => r.kinds.includes(k));
   return kinds.length ? `${r.intent}:${kinds.join('·')}` : r.intent;
@@ -117,8 +133,16 @@ function toward(word: string): string {
 export function keyLabel(task: EvalTask, key: string | undefined): string {
   if (key === undefined) return '—';
   if (key === 'error') return '답 못 함';
-  if (task === 'home')
-    return key.startsWith('move:') ? `${toward(HOME_MOVE_LABEL[key.slice(5) as HomeMoveTo] ?? key.slice(5))} 옮기기` : (HOME_WORD[key] ?? key);
+  if (task === 'home') {
+    if (key.startsWith('move:')) return `${toward(HOME_MOVE_LABEL[key.slice(5) as HomeMoveTo] ?? key.slice(5))} 옮기기`;
+    if (key.startsWith('team-schedule:'))
+      return `${HOME_WORD['team-schedule']}(${key
+        .slice('team-schedule:'.length)
+        .split('·')
+        .map((w) => TEAM_WHAT_LABEL[w as TeamWhat] ?? w)
+        .join('·')})`;
+    return HOME_WORD[key] ?? key;
+  }
   if (task === 'room-chat') {
     const [intent, kinds] = key.split(':') as [string, string | undefined];
     return CHAT_INTENTS_FOR_LABEL.has(intent) ? chatReadLabel({ intent: intent as never, kinds: kinds ? kinds.split('·') : [] } as never) : key;

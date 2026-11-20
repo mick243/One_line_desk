@@ -314,7 +314,11 @@ export function createJointService(ctx: AppContext, invites: InviteService) {
       return this.delegates(user);
     },
 
-    /** 보관 회차(한 시간마다): 시간이 지난 요청은 짐작한 인원 그대로 두고 알려요. 만든 지 7일 지난 요청은 지워요. */
+    /**
+     * 보관 회차(한 시간마다): 시간이 지난 요청은 짐작한 인원 그대로 두고 알려요.
+     * 요청은 예약과 함께 지워져요(회의가 끝나고 7일 뒤 예약을 지울 때 cascade). 만든 날로 지우면 8일 넘게 뒤의 회의는
+     * 마감 전에 요청이 사라져서(11/11 QA S1), 회의가 끝나고 7일 지난 것만 지워요(예약 지우기가 빠졌을 때의 안전망).
+     */
     async sweep(now: number): Promise<void> {
       await ctx.db.tx(async (q) => {
         const { rows } = await q.query<RequestRow>(
@@ -330,7 +334,11 @@ export function createJointService(ctx: AppContext, invites: InviteService) {
           });
         }
         for (const reservationId of new Set(rows.map((r) => r.reservationId))) await recount(q, reservationId);
-        await q.query('delete from room_joint_requests where created_at < $1', [new Date(recordCutoff(now)).toISOString()]);
+        await q.query(
+          `delete from room_joint_requests j using room_reservations r
+            where r.id = j.reservation_id and j.created_at < $1 and upper(r.slot) < $1`,
+          [new Date(recordCutoff(now)).toISOString()],
+        );
       });
     },
   };

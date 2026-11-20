@@ -12,6 +12,7 @@ import {
   sessionEndedByRestart,
 } from './api';
 import { ActionHost } from './components/ActionHost';
+import { atSheetEntry, sheetHandledPop } from './components/Sheet';
 import { DemoBand } from './components/DemoBand';
 import { VersionBand } from './components/VersionBand';
 import { NotificationBell } from './components/NotificationBell';
@@ -121,6 +122,8 @@ export function App() {
   useEffect(() => {
     if (window.location.pathname === '/') window.history.replaceState({ deskView: 'home' }, '', '/');
     const onPop = (e: PopStateEvent) => {
+      // 뒤로 가기로 시트를 닫았으면 페이지는 그대로예요(11/11 QA P1·U1).
+      if (sheetHandledPop(e)) return;
       const to = (e.state as { deskView?: unknown } | null)?.deskView;
       if (typeof to !== 'string' || !(APP_DESTINATIONS as readonly string[]).includes(to)) return;
       setEntry(null);
@@ -135,7 +138,8 @@ export function App() {
   const go = useCallback((to: View, text?: string, auto = false) => {
     setEntry(null);
     // 바깥에서 들어온 주소(/r/…·/oauth/consent)는 기록에서 바꿔 치우고, 앱 안 이동은 기록을 하나 더해요.
-    if (window.location.pathname !== '/' || to === viewRef.current) window.history.replaceState({ deskView: to }, '', '/');
+    // 시트가 열린 채(시트 기록 줄 위에서) 옮기면 그 줄을 새 페이지로 바꿔 써요. 뒤로 가기 한 번에 앞 페이지로 가요.
+    if (window.location.pathname !== '/' || to === viewRef.current || atSheetEntry()) window.history.replaceState({ deskView: to }, '', '/');
     else window.history.pushState({ deskView: to }, '', '/');
     setHandoff(text ? { to, text, at: Date.now(), auto } : null);
     setView(to);

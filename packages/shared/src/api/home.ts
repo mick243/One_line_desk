@@ -21,9 +21,25 @@ export type HomePeriod = (typeof HOME_PERIODS)[number];
 /**
  * 다른 일이면 옮겨 갈 기능 페이지. away는 "자리비움 알리기" 양식이에요(11/3). 11/5부터 홈 답 아래에 바로 펼쳐요.
  * cafe(11/6 3묶음): 사내 카페 주문 문장("2시에 아아 하나 연하게"). 홈 답에 [확인하고 주문하기] 카드가 붙고, 누르면 확인 시트예요(자동 실행 없음).
+ * it-help·onboarding(11/17): IT 오류 문장("와이파이가 안 잡혀요")·신규 입사자 첫 2주 문장("신입인데 첫 주에 뭘 해야 해?").
+ * 홈 답 맨 앞에 그 화면으로 가는 버튼([오류 창 글로 해결 방법 찾기]·[첫 2주에 할 일 보기])이 붙고, 담당 카드가 뒤따라요(읽기만).
  */
-export const HOME_MOVE_TO = ['rooms', 'navi', 'notices', 'board', 'away', 'cafe'] as const;
+export const HOME_MOVE_TO = ['rooms', 'navi', 'notices', 'board', 'away', 'cafe', 'it-help', 'onboarding'] as const;
 export type HomeMoveTo = (typeof HOME_MOVE_TO)[number];
+
+/**
+ * 같은 팀 일정에서 무엇을 물었는지(11/17). 휴가(승인된 날)·회의·자리비움이에요. 서버는 물은 종류만 읽어요(묻지 않은 종류는 조회하지 않아요).
+ * 비어 있으면 종류를 말하지 않은 물음("이번 주 팀 일정")이라 셋 다예요. "누가 없어?"는 휴가와 자리비움이에요.
+ */
+export const TEAM_WHATS = ['leave', 'meeting', 'away'] as const;
+export type TeamWhat = (typeof TEAM_WHATS)[number];
+export const TEAM_WHAT_LABEL: Record<TeamWhat, string> = { leave: '휴가', meeting: '회의', away: '자리비움' };
+
+/** 물은 종류를 정해진 순서로 맞춰요. 셋 다면 가리지 않은 것과 같아서 빈 배열이에요. */
+export function normalizeTeamWhat(what: readonly TeamWhat[] | undefined): TeamWhat[] {
+  const asked = TEAM_WHATS.filter((w) => what?.includes(w));
+  return asked.length === TEAM_WHATS.length ? [] : asked;
+}
 
 /**
  * mine: 내 일 · move: 기능 페이지로 옮기기 · team-schedule: 같은 팀 일정(11/3, 같은 부서만. 팀 전체 또는 같은 팀 한 사람) · unknown: 그 밖
@@ -61,6 +77,8 @@ export const HOME_MOVE_LABEL: Record<HomeMoveTo, string> = {
   board: '같이 채워요',
   away: '자리비움 알리기',
   cafe: '카페',
+  'it-help': 'IT 오류 화면',
+  onboarding: '첫 2주 할 일',
 };
 
 /** 홈 질문을 해석한 구조 값(AI든 낱말 규칙이든 같은 모양) */
@@ -69,11 +87,13 @@ export interface HomeRead {
   period: HomePeriod;
   kinds: readonly HomeKind[];
   moveTo: HomeMoveTo | null;
+  /** 같은 팀 일정에서 물은 종류(11/17, team-schedule일 때만). 없거나 비어 있으면 셋 다예요. */
+  teamWhat?: readonly TeamWhat[];
 }
 
 /**
  * "알아들은 것" 라벨(11/5 시험, AI 보완 2번). 질문 글은 넣지 않고 해석 값만 말로 바꿔요.
- * 예: "이번 주 · 내 일(내 예약·초대받은 회의)", "하려는 일 · 회의실에서 해요", "오늘 · 같은 팀 일정", "모르는 말"
+ * 예: "이번 주 · 내 일(내 예약·초대받은 회의)", "하려는 일 · 회의실에서 해요", "오늘 · 같은 팀 일정", "오늘 · 같은 팀 일정(휴가·자리비움)", "모르는 말"
  */
 export function homeReadLabel(r: HomeRead): string {
   switch (r.intent) {
@@ -84,9 +104,15 @@ export function homeReadLabel(r: HomeRead): string {
       if (r.moveTo === 'away') return `하려는 일 · ${HOME_MOVE_LABEL.away}`;
       // 카페 주문(11/6)은 홈 답에서 카드로 바로 이어져요(확인 시트는 사람이 눌러야 떠요).
       if (r.moveTo === 'cafe') return '하려는 일 · 카페 주문';
+      // IT 오류·첫 2주(11/17)는 그 화면으로 가는 버튼이 답 맨 앞에 붙어요.
+      if (r.moveTo === 'it-help') return '하려는 일 · IT 오류 해결 방법 찾기';
+      if (r.moveTo === 'onboarding') return '하려는 일 · 첫 2주에 할 일 보기';
       return r.moveTo ? `하려는 일 · ${HOME_MOVE_LABEL[r.moveTo]}에서 해요` : '하려는 일';
-    case 'team-schedule':
-      return `${HOME_PERIOD_LABEL[r.period]} · 같은 팀 일정`;
+    case 'team-schedule': {
+      // 물은 종류가 있으면(11/17) 같이 말해요. 그 종류만 읽고 보여 줘요.
+      const what = normalizeTeamWhat(r.teamWhat);
+      return `${HOME_PERIOD_LABEL[r.period]} · 같은 팀 일정${what.length ? `(${what.map((w) => TEAM_WHAT_LABEL[w]).join('·')})` : ''}`;
+    }
     default:
       return '모르는 말';
   }

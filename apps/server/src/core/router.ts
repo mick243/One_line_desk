@@ -20,6 +20,7 @@ import { equipmentIn, parseSlots } from './slots';
 import type { DeskUser } from './user';
 
 // 앞문 라우터 /ask(ADR-02). 공통 검사 → 규칙 → LLM 한 번(구조화 출력) → 확신 계산 → 모듈 읽기.
+// 종류를 정해 물은 담당·공지 물음은 LLM 분류를 부르지 않아요(11/17, 홈 질문 하나의 호출 수 줄이기).
 // 아무것도 저장·게시하지 않아요(ADR-04). 감사 로그에는 모듈 종류·결과만 남겨요(R11).
 
 const ClassifySchema = z.object({
@@ -63,7 +64,10 @@ export class Router {
     const settings = this.ops.get();
     const routable = routableModules(settings);
     const rules = matchRules(text, routable);
-    const classified = await this.classify(text, rules);
+    // 종류를 정해 물은 담당·공지 물음은 분류(게이트웨이 한 번)를 건너뛰어요(11/17). 종류는 이미 정해졌고,
+    // 두 모듈은 슬롯·aiParsed를 읽지 않아요. 회의실·탕비실은 슬롯과 "AI 정리" 표시에 분류 결과를 써서 그대로 불러요.
+    const skipClassify = forcedKind === 'navi' || forcedKind === 'notices';
+    const classified = skipClassify ? { ...classifyByRules(text, rules, this.now()), byModel: false } : await this.classify(text, rules);
 
     let kind: Kind = forcedKind ?? classified.kind;
     if (kind !== 'unknown' && !routable.includes(kind)) kind = 'unknown';
@@ -114,22 +118,7 @@ export class Router {
  * rules는 matchRules가 고른 종류예요. 모델이 없거나 거절하면 rules[0](없으면 unknown)과 규칙 슬롯이에요.
  */
 export async function classifyText(gateway: AiGateway, text: string, rules: RouterModule[], now: number): Promise<Classification & { byModel: boolean }> {
-  const fallback = (): Classification => {
-    const slots = parseSlots(text, now);
-    return {
-      kind: rules[0] ?? 'unknown',
-      ambiguous: rules.length > 1,
-      slots: {
-        date: slots.date ?? null,
-        start: slots.start ?? null,
-        minutes: slots.minutes ?? null,
-        people: slots.people ?? null,
-        equipment: slots.equipment ?? [],
-        floor: slots.floor ?? null,
-        itemName: rules[0] === 'pantry' ? (slots.itemName ?? null) : null,
-      },
-    };
-  };
+  const fallback = (): Classification => classifyByRules(text, rules, now);
   try {
     const out = await gateway.structured({
       module: 'router',
@@ -141,11 +130,31 @@ export async function classifyText(gateway: AiGateway, text: string, rules: Rout
       schema: ClassifySchema,
       fallback,
       effort: 'low',
+      // 실사용 신호(11/17): 모델이 고른 종류가 낱말 규칙의 첫 종류와 같은지만 남겨요(글·슬롯 값 없음).
+      agrees: (o) => o.kind === (rules[0] ?? 'unknown'),
     });
     return { ...out, byModel: gateway.modelBacked };
   } catch {
     return { ...fallback(), byModel: false };
   }
+}
+
+/** 모델 없이 나누기: matchRules가 고른 첫 종류와 낱말 사전 슬롯이에요. */
+function classifyByRules(text: string, rules: RouterModule[], now: number): Classification {
+  const slots = parseSlots(text, now);
+  return {
+    kind: rules[0] ?? 'unknown',
+    ambiguous: rules.length > 1,
+    slots: {
+      date: slots.date ?? null,
+      start: slots.start ?? null,
+      minutes: slots.minutes ?? null,
+      people: slots.people ?? null,
+      equipment: slots.equipment ?? [],
+      floor: slots.floor ?? null,
+      itemName: rules[0] === 'pantry' ? (slots.itemName ?? null) : null,
+    },
+  };
 }
 
 function toSlots(s: Classification['slots']): Slots {

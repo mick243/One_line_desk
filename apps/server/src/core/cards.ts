@@ -13,6 +13,7 @@ export function makeCard(input: {
   wrong?: Card['wrong'];
   variant?: string;
   overview?: Card['overview'];
+  replaces?: string[];
   tail: string;
 }): Card {
   return {
@@ -26,6 +27,7 @@ export function makeCard(input: {
     actions: { ...(input.primary ? { primary: input.primary } : {}), secondary: input.secondary ?? [] },
     ...(input.wrong ? { wrong: input.wrong } : {}),
     ...(input.overview ? { overview: input.overview } : {}),
+    ...(input.replaces?.length ? { replaces: input.replaces } : {}),
     tail: input.tail,
   };
 }

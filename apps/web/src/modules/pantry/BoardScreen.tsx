@@ -6,6 +6,7 @@ import { CardView } from '../../components/CardView';
 import { CheckedInput } from '../../components/CheckedInput';
 import { Sheet } from '../../components/Sheet';
 import type { ScreenProps } from '../types';
+import { dropDraftCard } from './draft-cards';
 import { pantryApi } from './pantry-api';
 
 // S3 같이 채워요 판(F3). 층별 공개 요청판이에요. 15초마다 새로고침해요(실시간 밀어 주기는 다음 2주, M6).
@@ -96,8 +97,20 @@ export function BoardScreen({
       onMoveToNavi(text);
       return;
     }
-    if (action.type === 'post') setText('');
-    setDraft(null);
+    if (action.type === 'navigate') {
+      setDraft(null);
+      await actions.run(action, card);
+      return;
+    }
+    // 한 줄에 품목이 여럿이면 카드가 품목마다 있어요(후보 2). 누른 카드만 치우고 나머지 미리보기는 남겨요.
+    const drop = () => setDraft((now) => dropDraftCard(now, card.id));
+    if (action.type === 'post') {
+      setText('');
+      // 결과(올림·막힘·다시 찾음)가 오면 치워요. 표 상한 같은 오류면 카드를 남겨 표를 거둔 뒤 다시 올릴 수 있어요.
+      await actions.run(action, card, drop);
+      return;
+    }
+    drop();
     await actions.run(action, card);
   }
 

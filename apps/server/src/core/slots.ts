@@ -255,19 +255,106 @@ export function parseTime(text: string, inRange = false): string | undefined {
   return hour <= 23 && minute <= 59 ? `${pad(hour)}:${pad(minute)}` : undefined;
 }
 
-/** "제로콜라 또 넣어 주세요" → "제로콜라". 요청 말투·부사를 걷어 내고 품목 이름만 남겨요. */
+/** 규칙으로 뽑는 품목 이름 하나의 길이 상한 */
+const ITEM_NAME_RULE_MAX = 30;
+
+/** 요청 말투·부사·연락처를 걷어 내요. keepCommas면 쉼표를 남겨 품목 나누기에 써요. */
+function cleanItemText(text: string, keepCommas: boolean): string {
+  return (
+    text
+      // 연락처는 품목 이름이 아니에요. "010-1234-5678 로 연락주시면 컵라면" → "컵라면"(QA-26). 문장 전체를 이름으로 뽑지 않아요.
+      .replace(/(?:\+82[-\s.]?)?0\d{1,2}[-\s.)]?\d{3,4}[-\s.]?\d{4}|\[(?:이메일|IP)\]|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, ' ')
+      .replace(/(?:^|\s)(?:으로|로|에게|께)?\s*연락\s*(?:주시면|주세요|줘요|부탁(?:해요|드려요)?|해\s*주세요|해\s*주시면|바랍니다)/g, ' ')
+      .replace(keepCommas ? /[.!?~]/g : /[.!?~,]/g, ' ')
+      .replace(/탕비실(에|에서|의)?/g, ' ')
+      .replace(/(또|좀|더|다시|많이|조금|제발|혹시)(?=\s|$)/g, ' ')
+      .replace(/(넣어|채워|사다|사|구매해|주문해|갖다|가져다|비치해|놓아|놔)\s*(주세요|줘요|줘|주시면|줄래요|주실\s*수\s*있나요|주시겠어요)/g, ' ')
+      .replace(/(요청|부탁)(이요|해요|드려요|합니다|해)?(?=\s|$)/g, ' ')
+      .replace(/(있으면\s*좋겠어요|필요해요|없어요|다\s*떨어졌어요|떨어졌어요|주세요)/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
+}
+
+/** "제로콜라 또 넣어 주세요" → "제로콜라". 요청 말투·부사를 걷어 내고 품목 이름만 남겨요. 묻기(/ask)는 이름 하나만 써요. */
 export function extractItemName(text: string): string | undefined {
-  const name = text
-    // 연락처는 품목 이름이 아니에요. "010-1234-5678 로 연락주시면 컵라면" → "컵라면"(QA-26). 문장 전체를 이름으로 뽑지 않아요.
-    .replace(/(?:\+82[-\s.]?)?0\d{1,2}[-\s.)]?\d{3,4}[-\s.]?\d{4}|\[(?:이메일|IP)\]|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, ' ')
-    .replace(/(?:^|\s)(?:으로|로|에게|께)?\s*연락\s*(?:주시면|주세요|줘요|부탁(?:해요|드려요)?|해\s*주세요|해\s*주시면|바랍니다)/g, ' ')
-    .replace(/[.!?~,]/g, ' ')
-    .replace(/탕비실(에|에서|의)?/g, ' ')
-    .replace(/(또|좀|더|다시|많이|조금|제발|혹시)(?=\s|$)/g, ' ')
-    .replace(/(넣어|채워|사다|사|구매해|주문해|갖다|가져다|비치해|놓아|놔)\s*(주세요|줘요|줘|주시면|줄래요|주실\s*수\s*있나요|주시겠어요)/g, ' ')
-    .replace(/(요청|부탁)(이요|해요|드려요|합니다|해)?(?=\s|$)/g, ' ')
-    .replace(/(있으면\s*좋겠어요|필요해요|없어요|다\s*떨어졌어요|떨어졌어요|주세요)/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return name && name.length <= 30 ? name : undefined;
+  const name = cleanItemText(text, false);
+  return name && name.length <= ITEM_NAME_RULE_MAX ? name : undefined;
+}
+
+/** 요청 쓰기 칸 한 줄에서 나누는 품목 수 상한 */
+export const ITEM_NAMES_MAX = 3;
+
+// "과"·"와"·"랑"으로 끝나지만 조사가 아닌 낱말. 낱말 끝이 이것이면 나누지 않아요("꿀약과 두 상자").
+const NOT_PARTICLE_ENDINGS = ['사과', '약과', '유과', '한과', '정과', '다과', '파랑', '노랑', '말랑', '몰랑', '사랑', '자랑', '꽃게랑'];
+// "이"로 끝나는 이름. "호랑이랑"은 "호랑 + 이랑"이 아니라 "호랑이 + 랑"이에요.
+const NOUNS_ENDING_I = ['호랑이', '고양이', '원숭이', '부엉이', '송이'];
+
+/** 마지막 글자(한글)에 받침이 있는지. 한글이 아니면 null이에요. */
+function hangulHasFinal(ch: string | undefined): boolean | null {
+  if (!ch) return null;
+  const code = ch.charCodeAt(0);
+  if (code < 0xac00 || code > 0xd7a3) return null;
+  return (code - 0xac00) % 28 !== 0;
+}
+
+/**
+ * 낱말이 "나열 조사"로 끝나면 조사를 뗀 앞부분을 돌려줘요. 아니면 null이에요.
+ * 받침에 맞는 조사만 조사로 봐요: 받침 있음 → 이랑·과, 받침 없음 → 랑·와, 하고는 둘 다. 그래서 "사과 주스"의 "과"는 조사가 아니에요.
+ */
+function stripListParticle(word: string): string | null {
+  if (NOT_PARTICLE_ENDINGS.some((w) => word.endsWith(w))) return null;
+  if (word.endsWith('랑') && NOUNS_ENDING_I.some((n) => word.slice(0, -1).endsWith(n))) return word.length > 1 ? word.slice(0, -1) : null;
+  const tries: [suffix: string, final: boolean | 'any'][] = [
+    ['하고', 'any'],
+    ['이랑', true],
+    ['랑', false],
+    ['과', true],
+    ['와', false],
+  ];
+  for (const [suffix, final] of tries) {
+    if (!word.endsWith(suffix) || word.length <= suffix.length) continue;
+    const stem = word.slice(0, -suffix.length);
+    const has = hangulHasFinal(stem.at(-1));
+    // 영문·숫자로 끝난 말("콜라 500ml랑")도 받침을 몰라서 어느 조사든 받아요.
+    if (final === 'any' || has === null || has === final) return stem;
+  }
+  return null;
+}
+
+/**
+ * 요청 쓰기 칸 한 줄에서 품목 이름을 ITEM_NAMES_MAX개까지 나눠요("제로콜라랑 컵라면 넣어 주세요" → 제로콜라·컵라면).
+ * 나누는 곳: 쉼표, 낱말 "및"·"그리고", 띄어쓰기 앞 낱말 끝의 나열 조사(랑·이랑·하고·와·과).
+ * 품목 이름 안의 글자("호랑이 젤리"·"말랑카우"·"과자"·"와플")는 띄어쓰기 앞 낱말 끝이 아니라서 자르지 않아요.
+ * 조사를 뗀 앞 품목이 한 글자뿐이면 나누지 않아요("노랑 형광펜"·"약과 두 상자"). 같은 이름은 한 번만 넣어요.
+ */
+export function extractItemNames(text: string): string[] {
+  const cleaned = cleanItemText(text, true);
+  const pieces: string[] = [];
+  let current: string[] = [];
+  const flush = () => {
+    const piece = current.join(' ').trim();
+    if (piece) pieces.push(piece);
+    current = [];
+  };
+  for (const chunk of cleaned.split(/(?<!\d)[,，、](?!\d)/)) {
+    const words = chunk.split(/\s+/).filter(Boolean);
+    for (const [i, word] of words.entries()) {
+      if (word === '및' || word === '그리고') {
+        flush();
+        continue;
+      }
+      const stem = i < words.length - 1 ? stripListParticle(word) : null;
+      if (stem !== null && [...current, stem].join(' ').replace(/\s/g, '').length >= 2) {
+        current.push(stem);
+        flush();
+      } else {
+        current.push(word);
+      }
+    }
+    flush();
+  }
+  const out: string[] = [];
+  for (const p of pieces) if (p.length <= ITEM_NAME_RULE_MAX && !out.includes(p)) out.push(p);
+  return out.slice(0, ITEM_NAMES_MAX);
 }

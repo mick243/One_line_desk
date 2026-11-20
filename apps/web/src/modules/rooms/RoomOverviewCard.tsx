@@ -15,14 +15,18 @@ const FIRST_ROWS = 5;
 /** 회의실 채팅이 이 카드에 넘겨주는 것. 채팅 밖(시트 등)에서 그려지면 없어서 [그림으로 보기]를 숨겨요. */
 export const RoomChatContext = createContext<{ showRooms: (show: RoomShowQuery) => void; canEditFacilities: boolean } | null>(null);
 
-export function RoomOverviewCard({ card }: CardViewProps) {
+export function RoomOverviewCard({ card, onAction }: CardViewProps) {
   const chat = useContext(RoomChatContext);
   const [all, setAll] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const overview = card.overview;
   if (!overview) return null;
   const rows = all ? overview.rows : overview.rows.slice(0, FIRST_ROWS);
   const more = overview.rows.length - rows.length;
+  // 홈 답 안의 현황(11/11 QA E1)은 읽기만이에요. 줄을 눌러 자세히(예약)로 가지 않고, 주 버튼이 회의실 탭으로 옮겨요.
+  const readOnly = overview.readOnly === true;
+  const primary = readOnly ? card.actions.primary : undefined;
 
   return (
     <article className={`result-card label-${card.label} room-overview`} aria-label={`${KIND_TITLE[card.kind]} ${card.label}`}>
@@ -36,25 +40,41 @@ export function RoomOverviewCard({ card }: CardViewProps) {
           <ul className='room-rows' aria-label={card.headline}>
             {rows.map((r) => (
               <li key={r.id}>
-                <button
-                  type='button'
-                  className='room-row'
-                  onClick={() => setOpen(r.id)}
-                  aria-label={`${r.name}, ${r.floor}${r.mine ? '(내 층)' : ''}, 정원 ${r.capacity}명, ${statusText(r.status)}${r.repairs ? ', 점검 중인 설비 있음' : ''}. 자세히 보기`}
-                >
-                  <span className='room-row-text'>
-                    <span className='room-row-name'>
-                      <strong>{r.name}</strong>
-                      <span>
-                        {r.floor} · {r.capacity}명
+                {readOnly ? (
+                  <div className='room-row'>
+                    <span className='room-row-text'>
+                      <span className='room-row-name'>
+                        <strong>{r.name}</strong>
+                        <span>
+                          {r.floor} · {r.capacity}명
+                        </span>
+                        {r.mine && <span className='room-floor-mine'>내 층</span>}
+                        {r.repairs && <span className='room-row-repair'>점검 중</span>}
                       </span>
-                      {r.mine && <span className='room-floor-mine'>내 층</span>}
-                      {r.repairs && <span className='room-row-repair'>점검 중</span>}
+                      <span className={`room-status ${r.status.kind}`}>{statusText(r.status)}</span>
                     </span>
-                    <span className={`room-status ${r.status.kind}`}>{statusText(r.status)}</span>
-                  </span>
-                  <Icon name='chevron' size={18} />
-                </button>
+                  </div>
+                ) : (
+                  <button
+                    type='button'
+                    className='room-row'
+                    onClick={() => setOpen(r.id)}
+                    aria-label={`${r.name}, ${r.floor}${r.mine ? '(내 층)' : ''}, 정원 ${r.capacity}명, ${statusText(r.status)}${r.repairs ? ', 점검 중인 설비 있음' : ''}. 자세히 보기`}
+                  >
+                    <span className='room-row-text'>
+                      <span className='room-row-name'>
+                        <strong>{r.name}</strong>
+                        <span>
+                          {r.floor} · {r.capacity}명
+                        </span>
+                        {r.mine && <span className='room-floor-mine'>내 층</span>}
+                        {r.repairs && <span className='room-row-repair'>점검 중</span>}
+                      </span>
+                      <span className={`room-status ${r.status.kind}`}>{statusText(r.status)}</span>
+                    </span>
+                    <Icon name='chevron' size={18} />
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -69,7 +89,26 @@ export function RoomOverviewCard({ card }: CardViewProps) {
         {card.evidence.aiSummarized && <span className='ai-badge'>AI 정리</span>}
         {card.evidence.text}
       </p>
-      {chat && overview.rows.length > 0 && (
+      {primary && (
+        <div className='card-actions'>
+          <button
+            type='button'
+            className='primary'
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onAction(primary, card);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {primary.text}
+          </button>
+        </div>
+      )}
+      {!readOnly && chat && overview.rows.length > 0 && (
         <div className='card-actions'>
           <button type='button' className='secondary' onClick={() => chat.showRooms(overview.show)}>
             그림으로 모든 회의실 보기
@@ -79,7 +118,7 @@ export function RoomOverviewCard({ card }: CardViewProps) {
       <p className='tail'>{card.tail}</p>
 
       {/* 물은 날짜로 열어요. 자세히는 열 때 최신 상태를 다시 불러와요(지난 현황 줄을 눌러도 지금 기준). */}
-      {open && (
+      {open && !readOnly && (
         <RoomDetail
           roomId={open}
           today={overview.today}

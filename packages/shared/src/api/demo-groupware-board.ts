@@ -41,12 +41,14 @@ export interface DemoBoardPostResponse {
    * 한 줄 데스크 공지 사본에 들어갔는지와 알림 대상 상태.
    * pending = 총무 확인 대기, sent = 자동 보내기로 보냄, null = 공지 기능이 꺼져 제안하지 않음
    */
-  copy: { copied: boolean; audience: 'pending' | 'sent' | null };
+  copy: { copied: boolean; audience: 'pending' | 'sent' | null; by?: 'ai' | 'rule' };
 }
 
 /** 화면 문구 */
 export const DEMO_BOARD_TEXT = {
   copied: '한 줄 데스크 공지 사본에 들어갔어요. AI가 알림 대상을 제안했고, 총무가 확인하면 대상자에게 알림이 가요.',
+  /** 낱말 규칙 제안(모델 실패·계약 전, 11/11 QA E3). 자동 보내기가 켜져 있어도 총무 확인 뒤에만 가요. */
+  copiedRules: '한 줄 데스크 공지 사본에 들어갔어요. 공지 글에 나온 부서·층·역할 이름으로 알림 대상을 찾았고, 총무가 확인하면 대상자에게 알림이 가요.',
   copiedAuto: '한 줄 데스크 공지 사본에 들어갔어요. 자동 보내기가 켜져 있어서 AI가 제안한 대상자에게 바로 알림이 갔어요.',
   copiedOff: '한 줄 데스크 공지 사본에 들어갔어요. 공지 기능이 꺼져 있어서 알림 대상은 제안하지 않았어요.',
   notCopied: '한 줄 데스크 공지 사본에 들어가지 않았어요.',

@@ -1,4 +1,4 @@
-import { HOME_MOVE_TO, KINDS, LOAN_KINDS } from '@one-line-desk/shared';
+import { HOME_MOVE_TO, KINDS, LOAN_KINDS, TEAM_WHATS } from '@one-line-desk/shared';
 import { describe, expect, it } from 'vitest';
 import { AiGateway, type LlmProvider, type ProviderResult, type StructuredRequest } from '../core/ai/gateway';
 import type { Queryable } from '../core/db';
@@ -24,8 +24,9 @@ class OracleProvider implements LlmProvider {
 
 function answerOf(c: GoldenCase): unknown {
   if (c.task === 'home') {
-    const [intent, moveTo] = c.expect.split(':');
-    return { intent, period: 'recent', kinds: [], moveTo: moveTo ?? null };
+    const [intent, rest] = c.expect.split(':');
+    if (intent === 'team-schedule') return { intent, period: 'recent', kinds: [], moveTo: null, teamWhat: rest ? rest.split('·') : [] };
+    return { intent, period: 'recent', kinds: [], moveTo: rest ?? null };
   }
   if (c.task === 'room-chat') {
     const [intent, kinds] = c.expect.split(':');
@@ -50,12 +51,16 @@ describe('정답률 표(11/5 시험)', () => {
       expect(new Set(rows.map((r) => r.text)).size, task).toBe(rows.length);
     }
     expect(GOLDEN.length).toBeGreaterThanOrEqual(30);
-    expect(GOLDEN.length).toBeLessThanOrEqual(60);
+    // 11/17: 홈 해석 넓히기(IT 오류·첫 2주·물은 종류) 4문장과 회의실 고장 신고 2문장을 더해 62문장이 돼서 상한을 70으로 올려요.
+    // 상한은 한 번 재는 데 드는 호출 수(시연 모델 [AI로 다시 재기])를 묶어 두는 값이에요.
+    expect(GOLDEN.length).toBeLessThanOrEqual(70);
     for (const g of GOLDEN) {
       if (g.task === 'home') {
-        const [intent, moveTo] = g.expect.split(':') as [string, string | undefined];
+        const [intent, rest] = g.expect.split(':') as [string, string | undefined];
         expect(['mine', 'team-schedule', 'unknown', 'move'], g.text).toContain(intent);
-        if (intent === 'move') expect(HOME_MOVE_TO as readonly string[], g.text).toContain(moveTo);
+        if (intent === 'move') expect(HOME_MOVE_TO as readonly string[], g.text).toContain(rest);
+        if (intent === 'team-schedule') for (const w of rest ? rest.split('·') : []) expect(TEAM_WHATS as readonly string[], g.text).toContain(w);
+        if (intent !== 'move' && intent !== 'team-schedule') expect(rest, g.text).toBeUndefined();
       } else if (g.task === 'room-chat') {
         const [intent, kinds] = g.expect.split(':') as [string, string | undefined];
         expect(CHAT_INTENTS as readonly string[], g.text).toContain(intent);
@@ -75,7 +80,8 @@ describe('정답률 표(11/5 시험)', () => {
     ]);
     // 11/5 처음 48문장: 16·12·10. 같은 날 홈 처음 보는 문장 3개·회의실 "빔프로젝터 남았어?"를 더해 16·13·10이에요.
     // 11/6 사내 카페 홈 문장 4개(주문 둘·커피값·탕비실 채우기)를 더했고 규칙이 넷 다 맞혀서 홈 바닥값을 20으로 올려요.
-    const floor = { home: 20, 'room-chat': 13, router: 10 };
+    // 11/17 홈 4문장(IT 오류 둘·물은 종류 둘)·회의실 고장 신고 2문장을 더했고 규칙이 다 맞혀서 24·15로 올려요.
+    const floor = { home: 24, 'room-chat': 15, router: 10 };
     for (const s of scores) expect(s.rule, s.task).toBeGreaterThanOrEqual(floor[s.task]);
   });
 
@@ -85,7 +91,7 @@ describe('정답률 표(11/5 시험)', () => {
     for (const s of scores) expect(s.ai, s.task).toBe(s.total);
     expect(scores.reduce((a, s) => a + s.aiOnly, 0)).toBe(scores.reduce((a, s) => a + s.total - s.rule, 0));
     const report = renderReport(results, { model: 'claude-test', date: '2026-11-05' });
-    expect(report).toContain('| 홈 채팅(무엇을 하려는지) | 29 |');
+    expect(report).toContain('| 홈 채팅(무엇을 하려는지) | 33 |');
     expect(report).toContain('회의실 TV가 안 켜져요');
     expect(report).toContain('모델: claude-test');
   });

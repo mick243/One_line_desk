@@ -96,7 +96,9 @@ function PostForm({ onPosted }: { onPosted: () => void }) {
           : res.copy.audience === 'sent'
             ? DEMO_BOARD_TEXT.copiedAuto
             : res.copy.audience === 'pending'
-              ? DEMO_BOARD_TEXT.copied
+              ? res.copy.by === 'ai'
+                ? DEMO_BOARD_TEXT.copied
+                : DEMO_BOARD_TEXT.copiedRules
               : DEMO_BOARD_TEXT.copiedOff,
       );
       setTitle('');

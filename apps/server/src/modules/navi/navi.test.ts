@@ -441,9 +441,17 @@ describe('[F1-9·R9] S5 분장표 수정 제안함', () => {
   it('[F1-9] 읽을 수 없는 파일은 "분장표 양식으로 올려 주세요"예요', async () => {
     const t = await setup();
     const staff = await t.loginAs(MOCK.staff);
-    for (const csv of ['그냥 메모예요', '행 ID,업무\nFIN-01,a']) {
-      expect(await staff.call('POST', '/api/navi/chart/preview', { csv })).toMatchObject({ status: 422, body: { message: '분장표 양식으로 올려 주세요' } });
-    }
+    expect(await staff.call('POST', '/api/navi/chart/preview', { csv: '그냥 메모예요' })).toMatchObject({
+      status: 422,
+      body: { message: '분장표 양식으로 올려 주세요' },
+    });
+    // 후보 17(11/17): 꼭 있어야 하는 칸이 없으면 어느 칸인지와 [분장표 파일 받기]를 같이 알려요.
+    expect(await staff.call('POST', '/api/navi/chart/preview', { csv: '행 ID,업무\nFIN-01,a' })).toMatchObject({
+      status: 422,
+      body: {
+        message: '분장표 양식으로 올려 주세요. "담당 팀"·"창구"·"지금 할 일"·"주인 부서" 칸이 없어요. [분장표 파일 받기]로 받은 양식에 맞춰 올려 주세요',
+      },
+    });
   });
 
   it('[F1-9·R9] 파일 다시 올리기: 미리보기는 바꾸지 않고, 반영하면 자기 부서 행만 바뀌고 개정일이 올라가요', async () => {

@@ -1,7 +1,7 @@
 import { checkItemName, previewSentence, sameItemHeadline } from '@one-line-desk/shared';
 import { describe, expect, it } from 'vitest';
 import { CATALOG_FIXTURES } from './fixtures/catalog';
-import { matchCatalogByRule, normalizeName, pairsByRule, sameByRule, similarByRule } from './similarity';
+import { closestCandidates, matchCatalogByRule, normalizeName, pairsByRule, SHOWN_CANDIDATES_MAX, sameByRule, similarByRule } from './similarity';
 
 const catalog = CATALOG_FIXTURES;
 
@@ -41,6 +41,22 @@ describe('같은 상품 이름 규칙(R15 결정적 대안)', () => {
     ];
     expect(similarByRule('제로콜라', candidates, catalog)).toEqual([1, 3]);
     expect(pairsByRule(candidates, catalog)).toEqual([[1, 3]]);
+  });
+});
+
+describe('[후보 20] 같은 상품 비교에 보여 줄 열린 품목(60개 상한)', () => {
+  const filler = Array.from({ length: 70 }, (_, i) => ({ id: i + 1, names: [`가상 비품 ${i + 1}`], catalogItemIds: [] }));
+
+  it('상한 안이면 순서를 바꾸지 않아요', () => {
+    const few = filler.slice(0, 5);
+    expect(closestCandidates('제로콜라', few, [])).toBe(few);
+  });
+
+  it('상한을 넘으면 뒤에 올라온 비슷한 품목(이름 규칙·겹치는 글자)을 앞에 두고 60개로 잘라요', () => {
+    const late = [...filler, { id: 101, names: ['제로 콜라'], catalogItemIds: [] }, { id: 102, names: ['콜라'], catalogItemIds: [] }];
+    const shown = closestCandidates('제로콜라', late, [101]);
+    expect(shown).toHaveLength(SHOWN_CANDIDATES_MAX);
+    expect(shown.slice(0, 2).map((c) => c.id)).toEqual([101, 102]);
   });
 });
 

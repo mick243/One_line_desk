@@ -6,7 +6,7 @@ import type { Me } from '../../api';
 import { ActionHost } from '../../components/ActionHost';
 import { Mine } from '../../screens/Mine';
 import { MyBilling } from './CafePage';
-import { CafeSettle, SettleView } from './CafeSettle';
+import { ALIAS_HINT, CafeSettle, SettleView } from './CafeSettle';
 
 // S7 내 청구 · S9 카페 정산(11/6 2묶음, ADR-29). 화면 문구는 docs/화면설계.md "보안이 보이는 문구" 표 그대로예요.
 
@@ -62,7 +62,10 @@ const settle: CafeSettleResponse = {
     },
   ],
   missed: [],
-  menu: [{ id: 'latte', name: '카페라테', priceWon: 2500, options: ['아이스', '핫'], soldOut: false, active: true }],
+  menu: [
+    { id: 'latte', name: '카페라테', priceWon: 2500, options: ['아이스', '핫'], soldOut: false, active: true, aliases: [], builtinAliases: ['라떼', '라테'] },
+    { id: 'm-grapefruit', name: '자몽에이드', priceWon: 3000, options: [], soldOut: false, active: true, aliases: ['자에', '자몽'], builtinAliases: [] },
+  ],
   salesMonth: '2026-10',
   salesMonthLabel: '10월',
 };
@@ -89,6 +92,15 @@ describe('S9 카페 정산(총무)', () => {
     expect(html).toContain('value="카페라테"');
     expect(html).toContain('value="아이스, 핫"');
     expect(html).toContain('메뉴 더하기');
+  });
+
+  it('[후보16] 메뉴마다 줄임말 칸(총무가 직접 적어요)과 안내, 앱이 원래 알아듣는 말(읽기만)이 보여요', () => {
+    const html = host(<SettleView data={settle} onMonth={() => undefined} />);
+    expect(html).toContain(ALIAS_HINT);
+    expect(html).toContain('aria-label="자몽에이드 줄임말(쉼표로 나눠요)"');
+    expect(html).toContain('value="자에, 자몽"');
+    expect(html).toContain('원래 알아듣는 말: 라떼, 라테');
+    expect(html).toContain('aria-label="새 메뉴 줄임말(쉼표로 나눠요)"');
   });
 });
 

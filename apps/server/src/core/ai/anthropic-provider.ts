@@ -5,9 +5,15 @@ import { type LlmProvider, ProviderFailure, type ProviderResult, type Structured
 // 무보관 계약이 된 모델 하나로 고정해요(ADR-10). 거절 시 다른 모델로 넘기는 fallbacks는 쓰지 않아요.
 // 다른 모델로 넘어가면 "모델 고정"이 깨지기 때문이에요. 거절이면 실패로 다뤄 화면이 다시 시도하게 해요.
 // 무보관 대상이 아닌 기능(Files API·Batch·MCP connector)은 쓰지 않아요.
+/**
+ * 시간 제한(11/11 QA Q7): SDK 기본(10분, 다시 시도 2번)이면 화면이 15초에 포기한 뒤에도 서버가 계속 기다리고 비용을 써요.
+ * Gemini 공급자(30초)보다 짧게 20초, 다시 시도는 한 번이에요(일시적인 429·5xx만 SDK가 다시 해요).
+ */
+export const ANTHROPIC_CLIENT_OPTIONS = { timeout: 20_000, maxRetries: 1 } as const;
+
 export class AnthropicProvider implements LlmProvider {
   readonly name = 'anthropic' as const;
-  private readonly client = new Anthropic();
+  private readonly client = new Anthropic(ANTHROPIC_CLIENT_OPTIONS);
 
   constructor(private readonly model: string) {}
 

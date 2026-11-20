@@ -66,6 +66,20 @@ export function matchesAudience(p: Pick<EmployeeProfile, 'department' | 'floor'>
   return a.departments.includes(p.department) || a.floors.includes(p.floor) || a.roles.some((r) => p.roles.includes(r));
 }
 
+/**
+ * 두 대상 조건이 같은 집합인지(순서·겹침은 안 봐요). 실사용 신호(11/17)에 써요: 모델 제안과 규칙 제안이 같은지,
+ * 총무가 정한 대상이 제안과 같은지. 같음·다름만 남기고 무엇이 달랐는지는 남기지 않아요.
+ */
+export function sameAudience(a: NoticeAudience, b: NoticeAudience): boolean {
+  if (a.everyone || b.everyone) return a.everyone === b.everyone;
+  const same = (x: readonly string[], y: readonly string[]) => {
+    const xs = new Set(x);
+    const ys = new Set(y);
+    return xs.size === ys.size && [...xs].every((v) => ys.has(v));
+  };
+  return same(a.departments, b.departments) && same(a.floors, b.floors) && same(a.roles, b.roles);
+}
+
 /** 직원 명단 한 사람의 역할(IdP 그룹). 알림 대상 역할만 봐요. */
 export const rolesOfProfile = (p: EmployeeProfile): NoticeAudienceRole[] => NOTICE_AUDIENCE_ROLES.filter((r) => p.groups.includes(r));
 
@@ -154,6 +168,15 @@ export function modelInput(title: string, body: string, options: AudienceOptions
 export async function proposeAudience(gateway: AiGateway, notice: { title: string; body: string }, options: AudienceOptions): Promise<AudienceProposal> {
   const ruled = proposeByRules(notice.title, notice.body, options);
   const labelToRole = new Map(options.roles.map((r) => [NOTICE_AUDIENCE_ROLE_LABEL[r], r] as const));
+  /**
+   * 모델 답에서 목록 밖 이름을 버린 대상이에요. 고른 이름이 모두 목록 밖이라 "모두"가 됐으면 모델이 고른 대상이 아니라서 null이에요
+   * (11/11 QA S5). 모델이 everyone을 직접 고른 때만 모델 제안 "모두"예요.
+   */
+  const picked = (out: z.infer<typeof ProposalSchema>): NoticeAudience | null => {
+    const roles = out.roles.map((label) => labelToRole.get(label.trim()) ?? label);
+    const audience = cleanProposal({ ...out, roles }, options);
+    return audience.everyone && !out.everyone ? null : audience;
+  };
   try {
     const out = await gateway.structured({
       module: 'notices',
@@ -170,10 +193,17 @@ export async function proposeAudience(gateway: AiGateway, notice: { title: strin
       }),
       effort: 'low',
       maxTokens: 400,
+      // 실사용 신호(11/17): 모델이 고른 대상 집합이 낱말 규칙 제안과 같은지만 남겨요(부서·층·역할 이름은 남기지 않아요).
+      // 모델이 목록 밖 이름만 내서 쓸 수 없는 답이면 다름이에요.
+      agrees: (o) => {
+        const audience = picked(o);
+        return audience !== null && sameAudience(audience, ruled.audience);
+      },
     });
     if (!gateway.modelBacked) return ruled;
-    const roles = out.roles.map((label) => labelToRole.get(label.trim()) ?? label);
-    const audience = cleanProposal({ ...out, roles }, options);
+    const audience = picked(out);
+    // 모델이 고른 대상이 아니면(목록 밖 이름만) 낱말 규칙 제안으로 돌려서 자동 보내기 없이 총무가 확인해요(11/11 QA S5).
+    if (!audience) return ruled;
     return { audience, evidence: cleanEvidence(out.evidence, notice.title, notice.body), byModel: true };
   } catch {
     // 계약 전(등급 1 거절)이나 모델 실패면 규칙 제안이에요.

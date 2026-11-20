@@ -7,7 +7,23 @@ import { type LlmProvider, ProviderFailure, type ProviderResult, type Structured
 // 결과는 JSON으로만 받아 zod로 다시 검사해요(스키마를 응답 형식으로도 같이 보내요).
 
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com';
-const TIMEOUT_MS = 30_000;
+// 화면은 15초에 포기해요. 그 뒤로 오래 기다리며 비용을 쓰지 않게 Anthropic 공급자와 같은 20초예요(11/11 QA Q7).
+const TIMEOUT_MS = 20_000;
+/**
+ * Gemini 생각(thinking) 토큰도 maxOutputTokens 안에서 세요(11/11 QA E3). 부르는 쪽 maxTokens(64~512)는 답 길이로 정한 값이라
+ * 생각에 다 쓰면 답이 비고(MAX_TOKENS) 낱말 규칙으로 떨어져요. 그래서 생각 몫을 더해 주고, Gemini 3 모델은 생각 단계를 낮춰요.
+ */
+const THINKING_HEADROOM = 2048;
+/** effort → Gemini 3 thinkingLevel. low·medium·high는 Gemini 3 모델이 모두 받아요(minimal은 모델마다 달라 쓰지 않아요). */
+const THINKING_LEVEL = { low: 'low', medium: 'medium', high: 'high' } as const;
+
+/** 생각 설정. thinkingLevel은 Gemini 3 모델만 받아요(2.5는 thinkingBudget이라 보내지 않아요). */
+export function geminiGenerationLimits(model: string, req: Pick<StructuredRequest<unknown>, 'maxTokens' | 'effort'>) {
+  return {
+    maxOutputTokens: (req.maxTokens ?? 4096) + THINKING_HEADROOM,
+    ...(/^gemini-3/.test(model) ? { thinkingConfig: { thinkingLevel: THINKING_LEVEL[req.effort ?? 'low'] } } : {}),
+  };
+}
 
 interface GeminiResponse {
   candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
@@ -34,7 +50,7 @@ export class GeminiProvider implements LlmProvider {
         systemInstruction: { parts: [{ text: req.system }] },
         contents: [{ role: 'user', parts: [{ text: req.input }] }],
         generationConfig: {
-          maxOutputTokens: req.maxTokens ?? 4096,
+          ...geminiGenerationLimits(this.model, req),
           responseMimeType: 'application/json',
           responseJsonSchema: z.toJSONSchema(req.schema, { io: 'output', unrepresentable: 'any' }),
         },

@@ -167,13 +167,15 @@ export function confirmedCard(r: ReservationRow, checkedAt: number): Card {
   });
 }
 
+const otherRoomsCardId = (reservationId: string) => `rooms-other-${reservationId}`;
+
 /**
  * 채팅으로 바로 잡은 뒤 "다른 빈 회의실"(11/5, 처음 쓰는 직원 점검: 후보를 보고 고르고 싶어요).
  * 같은 시간·조건에 비어 있는 다른 회의실을 버튼으로 보여 주고, 누르면 확인 뒤 내 예약을 그 회의실로 옮겨요(같은 시간, 회의실만).
  */
 export function otherRoomsCard(r: ReservationRow, rooms: Pick<RoomRow, 'id' | 'name' | 'floor' | 'capacity'>[]): Card {
   return makeCard({
-    id: `rooms-other-${r.id}`,
+    id: otherRoomsCardId(r.id),
     kind: 'rooms',
     label: '제안',
     headline: '다른 빈 회의실로 바꿀 수 있어요',
@@ -210,6 +212,8 @@ export function cancelledCard(r: ReservationRow, at: number, loans: LoanKind[] =
       ...(loans.length ? [{ name: '같이 빌린 장비', value: `${loans.join('·')} 대여도 취소했어요` }] : []),
     ],
     evidence: { text: `${kstTime(at)}에 취소했어요`, aiSummarized: false },
+    // 같은 대화의 "다른 빈 회의실로 바꾸기" 카드는 취소한 예약 것이라 지워요(11/11 QA E2).
+    replaces: [otherRoomsCardId(r.id)],
     tail: '취소한 기록은 남아요',
   });
 }
@@ -343,8 +347,14 @@ export function stockCard(
   });
 }
 
-/** 회의실 하나의 장비 현황: 쓸 수 있는 설비·점검 중·비품 */
-export function roomEquipmentCard(room: RoomRow, aiSummarized: boolean): Card {
+/**
+ * 고장 신고 답(11/17)에 붙는 버튼: 같은 문장을 담당 찾기로 옮겨요(도움말 카드와 같은 [문의함에서 찾기]). 접수가 아니라 옮기기예요.
+ * 담당 팀은 분장표가 정해서 카드는 팀 이름을 말하지 않아요.
+ */
+const FIND_DESK: CardAction = { type: 'reask', text: '문의함에서 찾기', kind: 'navi' };
+
+/** 회의실 하나의 장비 현황: 쓸 수 있는 설비·점검 중·비품. navi면(고장 신고 답) [문의함에서 찾기]가 붙어요. */
+export function roomEquipmentCard(room: RoomRow, aiSummarized: boolean, o: { navi?: boolean } = {}): Card {
   return makeCard({
     id: `rooms-equipment-${room.id}`,
     kind: 'rooms',
@@ -357,12 +367,13 @@ export function roomEquipmentCard(room: RoomRow, aiSummarized: boolean): Card {
       { name: '비품', value: room.facilities.join(' · ') || '없음' },
     ],
     evidence: { text: '회의실 장부 · 점검 상태는 총무가 바꿔요', aiSummarized },
+    ...(o.navi ? { secondary: [FIND_DESK] } : {}),
     tail: '이동식 장비(빔프로젝터·노트북 등)는 따로 빌릴 수 있어요',
   });
 }
 
-/** 회의실별 장비 현황 한 장. 점검 중인 설비는 "(점검 중)"을 붙여요. */
-export function equipmentOverviewCard(rooms: RoomRow[], aiSummarized: boolean): Card {
+/** 회의실별 장비 현황 한 장. 점검 중인 설비는 "(점검 중)"을 붙여요. navi면(고장 신고 답) [문의함에서 찾기]가 붙어요. */
+export function equipmentOverviewCard(rooms: RoomRow[], aiSummarized: boolean, o: { navi?: boolean } = {}): Card {
   return makeCard({
     id: 'rooms-equipment-all',
     kind: 'rooms',
@@ -373,6 +384,7 @@ export function equipmentOverviewCard(rooms: RoomRow[], aiSummarized: boolean): 
       value: [...r.equipment, ...r.repairs.map((e) => `${e}(점검 중)`)].join(' · ') || '설비 없음',
     })),
     evidence: { text: '회의실 장부 · 점검 상태는 총무가 바꿔요', aiSummarized },
+    ...(o.navi ? { secondary: [FIND_DESK] } : {}),
     tail: '회의실 이름을 넣어 물으면 비품까지 보여 줘요',
   });
 }

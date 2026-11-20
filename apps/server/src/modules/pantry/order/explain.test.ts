@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { AiGateway, type LlmProvider, type ProviderResult, type StructuredRequest } from '../../../core/ai/gateway';
 import type { Queryable } from '../../../core/db';
-import { editedSentence, type ExplainLine, explainLines, hasKoreanNumeral, sentencePasses, templateSentence } from './explain';
+import {
+  editedSentence,
+  type ExplainLine,
+  explainBatches,
+  explainLines,
+  explainMaxTokens,
+  hasKoreanNumeral,
+  sentencePasses,
+  templateSentence,
+} from './explain';
 
 // 주문안 설명 숫자 검사(ADR-08). 숫자가 그 줄 값이 아니거나 한글 수사가 있거나 줄이 빠지면 틀 문장이에요.
 
@@ -98,7 +107,7 @@ describe('[ADR-08] 설명 받기', () => {
     const provider = new ScriptedProvider({ lines: [{ lineId: 'L1', sentence: '2층에서 표 9개로 1위라 최소 몫을 채우려고 넣었어요.' }] });
     const result = await explainLines(new AiGateway(provider, false, noDb), LINES);
     expect(provider.inputs).toEqual([]);
-    expect([...result.values()].map((e) => e.source)).toEqual(['template', 'template', 'template', 'template']);
+    expect([...result.explanations.values()].map((e) => e.source)).toEqual(['template', 'template', 'template', 'template']);
   });
 
   it('LLM에는 줄 ID·품목 이름·층·표 수·금액·이유 코드·순위만 보내요(투표자 없음)', async () => {
@@ -119,14 +128,14 @@ describe('[ADR-08] 설명 받기', () => {
       ],
     });
     const result = await explainLines(new AiGateway(provider, CONTRACT, noDb), LINES);
-    expect(result.get('L1')).toEqual({ sentence: '2층에서 표 9개로 1위라 최소 몫을 채우려고 넣었어요.', source: 'ai' });
-    expect(result.get('L2')).toEqual({ sentence: templateSentence(LINES[1]!), source: 'template' });
-    expect(result.get('L3')).toEqual({ sentence: templateSentence(LINES[2]!), source: 'template' });
-    expect(result.get('L4')).toEqual({ sentence: templateSentence(LINES[3]!), source: 'template' });
-    expect(result.has('L9')).toBe(false);
+    expect(result.explanations.get('L1')).toEqual({ sentence: '2층에서 표 9개로 1위라 최소 몫을 채우려고 넣었어요.', source: 'ai' });
+    expect(result.explanations.get('L2')).toEqual({ sentence: templateSentence(LINES[1]!), source: 'template' });
+    expect(result.explanations.get('L3')).toEqual({ sentence: templateSentence(LINES[2]!), source: 'template' });
+    expect(result.explanations.get('L4')).toEqual({ sentence: templateSentence(LINES[3]!), source: 'template' });
+    expect(result.explanations.has('L9')).toBe(false);
   });
 
-  it('모델 호출이 실패하면 모든 줄이 틀 문장이에요', async () => {
+  it('[후보 20] 모델 호출이 실패하면 모든 줄이 틀 문장이고, 다음에 다시 쓸 줄로 남아요', async () => {
     const failing: LlmProvider = {
       name: 'anthropic',
       async complete() {
@@ -134,12 +143,89 @@ describe('[ADR-08] 설명 받기', () => {
       },
     };
     const result = await explainLines(new AiGateway(failing, CONTRACT, noDb), LINES);
-    expect([...result.values()].every((e) => e.source === 'template')).toBe(true);
+    expect([...result.explanations.values()].every((e) => e.source === 'template')).toBe(true);
+    expect([...result.retry].sort()).toEqual(['L1', 'L2', 'L3', 'L4']);
   });
 
-  it('모델 없이(FakeProvider 대안) 돌면 계약 뒤에도 틀 문장 그대로이고 AI 문장으로 세지 않아요', async () => {
+  it('[후보 20] 모델 없이(FakeProvider 대안) 돌면 계약 뒤에도 부르지 않고 틀 문장으로 끝나요(다시 쓸 줄 없음)', async () => {
     const { FakeProvider } = await import('../../../core/ai/gateway');
     const result = await explainLines(new AiGateway(new FakeProvider(), CONTRACT, noDb), LINES);
-    expect([...result.values()].map((e) => e.source)).toEqual(['template', 'template', 'template', 'template']);
+    expect([...result.explanations.values()].map((e) => e.source)).toEqual(['template', 'template', 'template', 'template']);
+    expect(result.retry.size).toBe(0);
+  });
+
+  it('[후보 20·H1] 계약 전(등급 1 거절)에도 다시 쓸 줄이 없어서 열 때마다 다시 돌지 않아요', async () => {
+    const provider = new ScriptedProvider({ lines: [] });
+    const result = await explainLines(new AiGateway(provider, false, noDb), LINES);
+    expect(provider.inputs).toEqual([]);
+    expect(result.retry.size).toBe(0);
+  });
+
+  it('[후보 20] 하루 호출 상한에 걸리면 틀 문장이고 다음에 다시 써요', async () => {
+    const provider = new ScriptedProvider({ lines: [] });
+    const result = await explainLines(new AiGateway(provider, CONTRACT, noDb, () => 0), LINES);
+    expect(provider.inputs).toEqual([]);
+    expect(result.retry.size).toBe(4);
   });
 });
+
+describe('[후보 20] 줄이 많으면 층별·20줄씩 나눠 보내요', () => {
+  const many: ExplainLine[] = [
+    ...Array.from({ length: 45 }, (_, i): ExplainLine => ({
+      lineId: `L${i + 1}`,
+      itemName: `가상 품목 ${i + 1}`,
+      floor: '2층',
+      votes: 3,
+      amount: 10_000,
+      reason: '표 대비 값',
+      rank: i + 1,
+    })),
+    ...Array.from({ length: 5 }, (_, i): ExplainLine => ({
+      lineId: `L${46 + i}`,
+      itemName: `가상 과자 ${i + 1}`,
+      floor: '5층',
+      votes: 2,
+      amount: 4_000,
+      reason: '층 최소 몫',
+      rank: i + 1,
+    })),
+  ];
+
+  /** 묶음마다 입력·답 길이 상한을 적고, 정해 둔 층에서는 실패해요. 나머지는 줄마다 맞는 문장을 돌려줘요. */
+  class BatchProvider implements LlmProvider {
+    readonly name = 'anthropic' as const;
+    calls: { lineIds: string[]; floors: string[]; maxTokens: number | undefined }[] = [];
+    constructor(private readonly failFloor?: string) {}
+    async complete<T>(req: StructuredRequest<T>): Promise<ProviderResult<T>> {
+      const { lines } = JSON.parse(req.input) as { lines: ExplainLine[] };
+      this.calls.push({ lineIds: lines.map((l) => l.lineId), floors: [...new Set(lines.map((l) => l.floor))], maxTokens: req.maxTokens });
+      if (lines.some((l) => l.floor === this.failFloor)) throw new Error('max_tokens');
+      const out = lines.map((l) => ({ lineId: l.lineId, sentence: `표 ${l.votes}개라 남은 예산으로 넣었어요.` }));
+      return { output: req.schema.parse({ lines: out }), inputTokens: 1, outputTokens: 1 };
+    }
+  }
+
+  it('한 층 45줄 + 다른 층 5줄은 20·20·5·5줄 네 묶음이고, 묶음마다 줄 수에 맞는 답 길이 상한(공급자 기본 4,096 안)을 줘요', async () => {
+    expect(explainBatches(many).map((b) => b.length)).toEqual([20, 20, 5, 5]);
+    const provider = new BatchProvider();
+    const result = await explainLines(new AiGateway(provider, CONTRACT, noDb), many);
+    expect(provider.calls.map((c) => c.lineIds.length).sort((a, b) => b - a)).toEqual([20, 20, 5, 5]);
+    for (const c of provider.calls) {
+      expect(c.floors).toHaveLength(1);
+      expect(c.maxTokens).toBe(explainMaxTokens(c.lineIds.length));
+      expect(c.maxTokens).toBeLessThanOrEqual(4096);
+    }
+    expect(sentLineIdsSorted(provider.calls.flatMap((c) => c.lineIds))).toEqual(sentLineIdsSorted(many.map((l) => l.lineId)));
+    expect([...result.explanations.values()].every((e) => e.source === 'ai')).toBe(true);
+    expect(result.retry.size).toBe(0);
+  });
+
+  it('한 층 묶음만 실패하면 다른 층 문장은 AI 문장으로 남고, 실패한 층 줄만 다시 쓸 줄이에요', async () => {
+    const result = await explainLines(new AiGateway(new BatchProvider('5층'), CONTRACT, noDb), many);
+    expect(many.filter((l) => l.floor === '2층').every((l) => result.explanations.get(l.lineId)?.source === 'ai')).toBe(true);
+    expect([...result.retry].sort()).toEqual(['L46', 'L47', 'L48', 'L49', 'L50']);
+    expect(result.explanations.get('L46')).toEqual({ sentence: templateSentence(many[45]!), source: 'template' });
+  });
+});
+
+const sentLineIdsSorted = (ids: string[]) => [...ids].sort();

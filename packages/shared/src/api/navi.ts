@@ -28,6 +28,16 @@ export interface NaviRowCardRequest {
   rowId: string;
 }
 
+/**
+ * POST /api/navi/rows/card 응답. nextStep은 그 행 "지금 할 일" 칸 원문이에요(후보 8, 11/17). 문의 양식이 받는 곳 행의 것을
+ * 고치지 않고 그대로 보여 줘요(ADR-09). 사람 이름 칸은 분장표에 없어서 오지 않아요(D9).
+ */
+export interface NaviRowCardResponse {
+  status: 'done';
+  card: Card;
+  nextStep: string;
+}
+
 // 분장표 파일 칸(ADR-09). "담당자 이름"처럼 여기에 없는 칸은 가져올 때 버려요(D9).
 export const CHART_COLUMNS = {
   id: '행 ID',
@@ -93,6 +103,11 @@ export interface ChartPreviewResponse {
   unchanged: number;
   /** 파일에 없어서 그대로 두는 우리 부서 행 수(지우지 않아요) */
   untouched: number;
+  /**
+   * 머리 줄 읽은 안내(후보 17, 11/17): "'업무명' 칸을 '업무'로 읽었어요", "정해진 칸 말고 다른 칸 1개는 읽지 않고 버렸어요".
+   * 칸 이름은 우리 낱말 표에 있는 말만 되풀이해요(파일 값·모르는 칸 이름은 싣지 않아요). 없으면 빠져요.
+   */
+  headerNotes?: string[];
 }
 
 export interface ChartApplyResponse {
@@ -119,6 +134,12 @@ export const INQUIRY_STATE_LABEL: Record<InquiryState, string> = {
   rejected: '반려했어요',
 };
 export const INQUIRY_REPLY_MAX = 1000;
+/**
+ * 남은 연차 숫자를 묻는 말("연차 며칠 남았어?", "내 남은 연차 알려 줘", 11/11 QA E4). 홈 답 머리는 [남은 연차 보기]를 가리키고,
+ * 문의하기 답은 남은 연차 카드를 담당 카드보다 앞에 둬요. "휴가 신청 어디서 해요"처럼 숫자를 묻지 않는 말은 담당 카드가 먼저예요.
+ */
+export const LEAVE_BALANCE_ASK = /(남은|잔여)\s*(연차|휴가)|(연차|휴가).{0,8}(며칠|몇\s*(일|개|번)|얼마).{0,6}남|(연차|휴가).{0,4}남았/;
+
 export const LEAVE_REJECT_REASON_MAX = 500;
 /** 한 번에 신청할 수 있는 날 수 */
 export const LEAVE_REQUEST_MAX_DAYS = 30;
@@ -348,6 +369,38 @@ export interface InquiryItem {
   /** 받은 문의함에서 지금 답장·승인·반려를 할 수 있는지 */
   canReply?: boolean;
   canDecide?: boolean;
+  /**
+   * 받은 IT 문의에 맞아 보이는 IT FAQ(후보 15, 11/17). IT FAQ 주인 부서의 받은 문의함에서 일반 문의에만 와요.
+   * 저장된 문의 글에 규칙(오류 코드·낱말)을 열 때마다 돌려 찾고 저장하지 않아요. AI를 부르지 않아요.
+   * reply는 [답장에 FAQ 넣기]가 답장 칸에 채울 글(FAQ 제목과 원문 단계, 1,000자를 넘으면 제목과 IT 오류 화면 안내)이에요. 보내기는 사람이 [답장 보내기]로 해요.
+   */
+  faqHint?: InquiryFaqHint;
+}
+
+export interface InquiryFaqHint {
+  faqId: string;
+  title: string;
+  reply: string;
+  /** 단계가 길어 제목과 안내만 채웠는지 */
+  shortened: boolean;
+}
+
+/** 받은 문의함 FAQ 줄(후보 15). "이 FAQ가 맞아 보여요: <FAQ 제목>" */
+export const INQUIRY_FAQ_HINT_TEXT = '이 FAQ가 맞아 보여요';
+export const INQUIRY_FAQ_FILL_TEXT = '답장에 FAQ 넣기';
+
+/**
+ * [답장에 FAQ 넣기]가 채울 답장 글. FAQ 제목과 원문 단계를 고치지 않고 그대로 넣어요(ADR-09).
+ * 답장 길이 상한(INQUIRY_REPLY_MAX)을 넘으면 제목과 IT 오류 화면 안내만 넣어요.
+ */
+export function inquiryFaqReply(faq: { title: string; steps: readonly string[] }): { reply: string; shortened: boolean } {
+  const head = `IT FAQ "${faq.title}"의 단계를 해 봐 주세요.`;
+  const full = `${head}\n${faq.steps.map((s, i) => `${i + 1}) ${s}`).join('\n')}`;
+  if (full.length <= INQUIRY_REPLY_MAX) return { reply: full, shortened: false };
+  return {
+    reply: `${head}\n단계가 길어서 여기에 다 넣지 못했어요. 앱의 [오류 창 글로 해결 방법 찾기]에서 이 FAQ 제목을 눌러 단계를 그대로 봐 주세요.`,
+    shortened: true,
+  };
 }
 
 /** GET /api/navi/inquiries/inbox · /mine. 받은 문의함은 분장표에 행이 있는 부서만 열려요(enabled). */
@@ -597,6 +650,8 @@ export interface ItFaqPreviewResponse {
   unchanged: number;
   /** 파일에 없어서 그대로 두는 우리 부서 FAQ 수(지우지 않아요) */
   untouched: number;
+  /** 머리 줄 읽은 안내(후보 17, 분장표와 같아요) */
+  headerNotes?: string[];
 }
 
 /** POST /api/navi/it-faq/apply(본문은 ChartApplyRequest와 같아요) */

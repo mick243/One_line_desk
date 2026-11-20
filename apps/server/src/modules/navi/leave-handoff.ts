@@ -480,12 +480,15 @@ export async function leaveStatusCard(ctx: AppContext, user: DeskUser, from: str
     .map((u) => ({ date: u.date, word: useWord(u, workdayHours), label: u.type ? LEAVE_KIND_LABEL[u.type] : '휴가' }));
   const approvals = groupwareLinks(ctx).approvals;
   const first = approved[0];
+  // 본 기간을 밝혀요(11/11 QA E4): "승인된 휴가가 없어요"만 쓰면 남은 연차 카드의 "쓴 연차"와 어긋나 보여요.
+  const today = kstDate(ctx.now());
+  const span = from === today && to === addDays(today, 365) ? '앞으로 1년 안에' : from === to ? `${dayLabel(from)}에` : `${dayLabel(from)}~${dayLabel(to)}에`;
   const headline = !record
     ? ctx.adapters.leave.connected
       ? '근태 기록을 불러오지 못했어요'
       : LEAVE_STATUS_NOT_CONNECTED_TEXT
     : !first
-      ? '근태 기록에 승인된 휴가가 없어요'
+      ? `${span} 승인된 휴가가 없어요`
       : approved.length === 1
         ? `${dayLabel(first.date)} ${first.label} ${first.word}${first.word.endsWith('일)') ? '이' : '가'} 승인됐어요`
         : `승인된 휴가가 ${approved.length}개 있어요`;

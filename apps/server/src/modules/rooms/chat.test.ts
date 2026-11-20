@@ -800,3 +800,117 @@ describe('11/5 처음 쓰는 직원 점검: 후보 바꾸기·길이 안내·매
     expect((await t.db.query('select 1 from room_reservations where plan_id = $1', [sheet.planId])).rows).toHaveLength(3);
   });
 });
+
+describe('고장 신고(11/17): 예약·자동 실행으로 가지 않고 장비 현황과 [문의함에서 찾기]만이에요', () => {
+  const now = Date.parse('2026-10-26T09:00:00+09:00');
+  const BREAKDOWNS = [
+    '회의실 TV가 안 켜져요',
+    '3C 빔프로젝터가 먹통이에요',
+    '5A 화상회의가 안 돼요',
+    '대회의실 마이크 소리가 안 나와요',
+    '회의실 에어컨 고장 났어요',
+    '내일 3시 6명 회의실 화면이 안 나와요 잡아 줘',
+  ];
+
+  it.each(BREAKDOWNS)('규칙: "%s" → 장비 현황(바로 실행 거짓)', (text) => {
+    const it = interpretByRules(text, now);
+    expect(it.intent).toBe('equipment');
+    expect(it.command).toBe(false);
+  });
+
+  it('고장 문장은 예약으로 읽히지 않고 plans.auto·plan·예약·대여가 0건이에요. 카드 머리는 안내이고 담당 팀 이름을 못 박지 않아요', async () => {
+    const t = await setup();
+    t.ctx.ops.patchValues({ rateLimitPerMinute: 10_000 });
+    let autos = 0;
+    const auto = t.ctx.plans.auto.bind(t.ctx.plans);
+    t.ctx.plans.auto = async (...args) => ((autos += 1), auto(...args));
+    const me = await t.loginAs(MOCK.staff);
+    for (const text of BREAKDOWNS) {
+      const out = await chat(me, text);
+      expect(out.changed, text).toBe(false);
+      expect(out.reply, text).not.toContain('빠진 조건');
+      expect(labels(out.cards), text).toEqual(['안내']);
+      expect(out.cards[0]!.actions.secondary, text).toEqual([{ type: 'reask', text: '문의함에서 찾기', kind: 'navi' }]);
+      expect(out.read, text).toEqual({ understood: expect.stringMatching(/^장비 현황 보기/) });
+      expect(JSON.stringify(out), text).not.toMatch(/총무팀|접수|proposalToken|"type":"(fixed|propose)"/);
+      expect((await t.ctx.audit.recent(1))[0], text).toMatchObject({ channel: 'ask', action: 'chat', result: 'breakdown' });
+    }
+    expect(autos).toBe(0);
+    expect(await appReservations(t)).toHaveLength(0);
+    expect(await loans(t)).toHaveLength(0);
+    expect((await t.db.query('select 1 from plans')).rows).toHaveLength(0);
+
+    // 말한 회의실이 있으면 그 회의실 장비(점검 중 칸), 없으면 회의실별 현황(점검 중 표시)이에요.
+    const room = await chat(me, '5A 화상회의가 안 돼요');
+    expect(room.cards[0]!.fields).toContainEqual({ name: '점검 중', value: '화상회의' });
+    const all = await chat(me, '회의실 TV가 안 켜져요');
+    expect(all.cards[0]!.fields).toContainEqual({ name: '회의실 5A · 5층', value: '화상회의(점검 중)' });
+  });
+
+  it('모델이 예약·명령으로 봐도 고장 문장은 쓰지 않아요. 고장이 아닌 장비 질문은 지금처럼 [문의함에서 찾기]가 없어요', async () => {
+    const provider = new ScriptedProvider();
+    const t = await createTestApp({ provider });
+    opened.push(t);
+    await t.modules.find((m) => m.kind === 'rooms')!.seed!();
+    t.ctx.gateway = new AiGateway(provider, true, t.db);
+    t.ctx.ops.patchValues({ rateLimitPerMinute: 10_000 });
+    const me = await t.loginAs(MOCK.staff);
+    for (const intent of CHAT_INTENTS) {
+      provider.reply = { intent, command: true, kinds: [...LOAN_KINDS] };
+      for (const text of BREAKDOWNS) expect((await chat(me, text)).changed, `${intent} · ${text}`).toBe(false);
+    }
+    expect(await appReservations(t)).toHaveLength(0);
+    expect(await loans(t)).toHaveLength(0);
+    provider.reply = undefined;
+    const plain = await chat(me, '회의실 장비 현황 알려 줘');
+    expect(plain.cards[0]!.actions.secondary).toEqual([]);
+  });
+
+  it('담당 찾기가 링크만이면 [문의함에서 찾기] 없이 장비 현황만이에요', async () => {
+    const t = await setup();
+    await t.ctx.ops.setModule('p_op', 'navi', 'link');
+    const out = await chat(await t.loginAs(MOCK.staff), '회의실 TV가 안 켜져요');
+    expect(out.cards[0]!.actions.secondary).toEqual([]);
+    expect(out.reply).toBe('고장은 담당 팀에 알려 주세요. 지금 장비 현황이에요');
+  });
+});
+
+describe('여러 팀 회의: 줄여 말한 팀(11/17)', () => {
+  it('"디자인이랑"은 디자인팀으로 알아봐 바로 잡지 않고 카드에서 확인해요(ADR-28). 조사 없는 "디자인 리뷰"는 여러 팀 회의가 아니에요', async () => {
+    const t = await setup();
+    const me = await t.loginAs(MOCK.dev);
+    const joint = await chat(me, '내일 3시 디자인이랑 회의실 잡아 줘');
+    expect(joint.changed).toBe(false);
+    expect(joint.reply).toContain('디자인팀');
+    expect((await t.ctx.audit.recent(1))[0]).toMatchObject({ action: 'chat', result: 'joint' });
+    expect(await appReservations(t)).toHaveLength(0);
+    expect((await t.db.query('select 1 from plans')).rows).toHaveLength(0);
+    const review = await chat(me, '내일 3시 디자인 리뷰 회의실 찾아 줘');
+    expect(review.reply).not.toContain('디자인팀');
+    expect((await t.ctx.audit.recent(1))[0]).toMatchObject({ action: 'chat', result: 'cards' });
+  });
+});
+
+describe('실사용 신호(11/17): chat-intent는 규칙·모델 같음 값만 넘겨요', () => {
+  it('규칙과 같은 일·장비면 참, 다르면 거짓이에요(참·거짓만)', async () => {
+    const seen: (boolean | undefined)[] = [];
+    const provider: LlmProvider = {
+      name: 'anthropic',
+      async complete<T>(req: StructuredRequest<T>): Promise<ProviderResult<T>> {
+        const out = req.schema.parse(req.fallback());
+        if (req.purpose === 'chat-intent') {
+          seen.push(req.agrees?.(out));
+          seen.push(req.agrees?.(req.schema.parse({ ...(out as object), intent: 'help' })));
+          seen.push(req.agrees?.(req.schema.parse({ ...(out as object), kinds: ['프로젝터'] })));
+        }
+        return { output: out, inputTokens: 1, outputTokens: 1 };
+      },
+    };
+    const t = await createTestApp({ provider });
+    opened.push(t);
+    await t.modules.find((m) => m.kind === 'rooms')!.seed!();
+    t.ctx.gateway = new AiGateway(provider, true, t.db);
+    await chat(await t.loginAs(MOCK.staff), '내일 3시 노트북 빌릴 수 있어?');
+    expect(seen).toEqual([true, false, false]);
+  });
+});

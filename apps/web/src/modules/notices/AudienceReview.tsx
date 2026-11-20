@@ -12,7 +12,7 @@ import { ApiFailure, apiRequest } from '../../api';
 import { useActions, useListVersion } from '../../components/ActionHost';
 
 // 새 공지 알림 대상 확인(11/6 사용자 요청, ADR-09 개정·ADR-16 보강). 총무(역할 facilities)에게만 보여요(서버도 403).
-// AI가 공지 글만 보고 제안한 대상(부서·층·역할 칩)과 서버가 센 대상 수만 보여요. 대상자 이름 목록은 보이지 않아요.
+// AI(또는 낱말 규칙)가 공지 글만 보고 제안한 대상(부서·층·역할 칩)과 서버가 센 대상 수만 보여요. 누가 제안했는지도 보여요(11/11 QA E3). 대상자 이름 목록은 보이지 않아요.
 // [알리기]는 확인 시트 뒤 고정 버튼이에요(두 번 눌러도 한 번). [대상 바꾸기]로 칩을 고치면 수를 다시 세요. [알리지 않기]는 알림 없이 끝내요.
 
 type Options = NoticeAudienceListResponse['options'];
@@ -58,10 +58,10 @@ export function NoticeAudienceReview() {
     <section className='card audience-review' aria-label={NOTICE_AUDIENCE_TEXT.reviewHead}>
       <h2>{NOTICE_AUDIENCE_TEXT.reviewHead}</h2>
       <p className='hint'>{NOTICE_AUDIENCE_TEXT.reviewHint}</p>
-      {data.autoSend && <p className='hint'>자동 보내기가 켜져 있어요. 새 공지는 확인 없이 AI가 제안한 대상자에게 바로 알림이 가요.</p>}
+      {data.autoSend && <p className='hint'>{NOTICE_AUDIENCE_TEXT.autoOn}</p>}
       {pending.length === 0 && <p className='empty'>확인할 새 공지가 없어요.</p>}
       {pending.map((item) => (
-        <ReviewItem key={item.id} item={item} options={data.options} />
+        <ReviewItem key={item.id} item={item} options={data.options} autoSend={data.autoSend} />
       ))}
       {done.length > 0 && (
         <details className='audience-done'>
@@ -85,7 +85,7 @@ export function NoticeAudienceReview() {
   );
 }
 
-export function ReviewItem({ item, options }: { item: NoticeAudienceItem; options: Options }) {
+export function ReviewItem({ item, options, autoSend = false }: { item: NoticeAudienceItem; options: Options; autoSend?: boolean }) {
   const actions = useActions();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<NoticeAudience>(item.audience);
@@ -193,10 +193,15 @@ export function ReviewItem({ item, options }: { item: NoticeAudienceItem; option
             <dd>{count !== null ? `${count}명 · 이름은 보이지 않아요` : (countError ?? '세는 중이에요')}</dd>
           </div>
           <div className='field'>
+            <dt>제안</dt>
+            <dd>{item.byModel ? NOTICE_AUDIENCE_TEXT.byModel : NOTICE_AUDIENCE_TEXT.byRules}</dd>
+          </div>
+          <div className='field'>
             <dt>이유</dt>
             <dd>{item.evidence.length ? `공지에 나온 말: ${item.evidence.map((w) => `“${w}”`).join(' · ')}` : NOTICE_AUDIENCE_TEXT.noEvidence}</dd>
           </div>
         </dl>
+        {autoSend && !item.byModel && <p className='hint'>{NOTICE_AUDIENCE_TEXT.heldRules}</p>}
       </div>
       <p className='evidence'>
         {item.byModel && <span className='ai-badge'>AI 정리</span>}

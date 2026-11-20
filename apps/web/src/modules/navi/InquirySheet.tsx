@@ -7,12 +7,14 @@ import {
   type InquiryRouteBy,
   type InquiryTarget,
   maskLine,
+  type NaviRowCardResponse,
 } from '@one-line-desk/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { isDemoLogin } from '../../api';
+import { apiRequest, isDemoLogin } from '../../api';
 import { useActions } from '../../components/ActionHost';
 import { Sheet } from '../../components/Sheet';
 import { newRequestId } from '../../net';
+import './navi.css';
 
 // 담당 팀에 문의 보내기 양식(ADR-16). 받는 곳은 분장표 행의 담당 팀이에요(담당자 이름은 없어요).
 // [보내기] → 확인 시트(받는 곳·내 이름과 부서가 같이 간다는 것·보관 기간) → 보내요. 글은 보내기 전까지 이 화면 메모리에만 있어요.
@@ -61,6 +63,38 @@ function Field({
   );
 }
 
+/**
+ * 받는 곳 행의 "지금 할 일" 원문(후보 8, 11/17, ADR-09 원문 그대로). 받는 곳을 바꾸면 그 행 것으로 바뀌어요.
+ * 분장표 행을 읽기만 하는 경로(POST /api/navi/rows/card, 행 ID는 본문으로)를 써요. 쓴 글은 보내지 않아요. 대표 창구(행 없음)는 없어요.
+ */
+function useRowNextStep(rowId: string | null): string {
+  const [step, setStep] = useState<{ rowId: string; text: string } | null>(null);
+  useEffect(() => {
+    if (!rowId) return;
+    let alive = true;
+    apiRequest<NaviRowCardResponse>('POST', '/api/navi/rows/card', { rowId })
+      .then((res) => alive && setStep({ rowId, text: res.nextStep ?? '' }))
+      .catch(() => alive && setStep(null));
+    return () => {
+      alive = false;
+    };
+  }, [rowId]);
+  return rowId && step?.rowId === rowId ? step.text : '';
+}
+
+/** 양식 위 "지금 할 일" 칸. 원문을 고치지 않고 그대로 보여 주고, 비어 있으면 아무것도 그리지 않아요. 보내기를 막지 않아요. */
+export function NextStepNote({ text }: { text: string }) {
+  const value = text.trim();
+  if (!value) return null;
+  return (
+    <div className='inquiry-next-step' aria-label='지금 할 일'>
+      <p className='inquiry-label'>지금 할 일</p>
+      <p className='inquiry-text'>{value}</p>
+      <p className='hint'>분장표에 적힌 그대로예요. 여기 적힌 정보가 있으면 문의 내용에 같이 적어 주세요.</p>
+    </div>
+  );
+}
+
 const ROUTE_LINE: Record<InquiryRouteBy, string> = {
   ai: 'AI가 문의 내용을 보고 업무 분장표에서 고른 곳이에요',
   rule: '업무 분장표에서 문의 내용과 맞는 업무로 고른 곳이에요',
@@ -93,6 +127,7 @@ export function InquirySheet({
       )
     : [];
   const picked = target.rowId === action.rowId;
+  const nextStep = useRowNextStep(target.rowId);
   // 같은 양식에서 두 번 눌러도 한 번만 보내요(서버 멱등 키).
   const requestId = useMemo(() => newRequestId(), []);
 
@@ -130,7 +165,7 @@ export function InquirySheet({
   }
 
   return (
-    <Sheet title={`${target.team}에 문의하기`} onClose={onClose}>
+    <Sheet title={`${target.team}에 문의하기`} onClose={onClose} dirty={reason.trim().length > 0 || question.trim() !== initialQuestion.trim()}>
       <p className='inquiry-scope'>
         {target.team}에게 보내져요 · {target.task}
       </p>
@@ -165,6 +200,7 @@ export function InquirySheet({
           )}
         </div>
       )}
+      <NextStepNote text={nextStep} />
       <Field
         label='문의 내용'
         value={question}

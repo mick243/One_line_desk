@@ -123,6 +123,16 @@ function problemCard(p: PriceProblem): Card {
 
 const ids = (lines: OrderParams['lines']) => [...new Set(lines.map((l) => l.menuId))];
 
+/** 가까운 메뉴 묻기 "바닐라라테인가요?"·"카페라테, 바닐라라테 중 하나인가요?"(메뉴 표 이름만) */
+export function nearText(near: string[]): string {
+  return near.length > 1 ? `${near.join(', ')} 중 하나인가요?` : `${near[0]}인가요?`;
+}
+
+/** 홈 채팅 주문 카드 "알아 둘 것": 말한 메뉴 중 몇 개를 못 찾았는지와 가까운 메뉴(수와 메뉴 표 이름만, 사람이 쓴 낱말 없음) */
+export function missedText(missed: number, near: string[]): string {
+  return `말한 메뉴 중 ${missed}개를 찾지 못했어요. ${near.length ? nearText(near) : '빠진 메뉴는 카페에서 골라 주세요'}`;
+}
+
 function slotFullMessage(next: number | null): string {
   return next ? `그 픽업 시간은 꽉 찼어요. 다음 칸(${kstTime(next)})을 골라 주세요` : '그 픽업 시간은 꽉 찼어요. 조금 뒤에 다시 골라 주세요';
 }
@@ -257,9 +267,18 @@ export class CafeDesk {
     const read = await readChatOrder(
       this.ctx.gateway,
       text,
-      menu.map((m) => ({ id: m.id, name: m.name, options: m.options })),
+      menu.map((m) => ({ id: m.id, name: m.name, options: m.options, aliases: m.aliases })),
     );
-    if (!read.lines.length) return [chatInfoCard('menu', '어떤 메뉴인지 알아듣지 못했어요. 카페에서 골라 주세요')];
+    // 못 찾은 메뉴(11/17): 말없이 빼지 않고 수와 메뉴 표의 가까운 이름만 알려요. 사람이 쓴 낱말은 되적지 않아요(R13).
+    const missedNote = read.missed > 0 ? missedText(read.missed, read.near) : null;
+    if (!read.lines.length)
+      return [
+        chatInfoCard(
+          'menu',
+          '어떤 메뉴인지 알아듣지 못했어요. 카페에서 골라 주세요',
+          read.near.length ? [{ name: '알아 둘 것', value: nearText(read.near) }] : [],
+        ),
+      ];
     const much = tooMuch(read.lines);
     if (much) return [chatInfoCard('too-much', much)];
     const cups = read.lines.reduce((n, l) => n + l.qty, 0);
@@ -274,7 +293,7 @@ export class CafeDesk {
           slot: prepared.slot,
           proposalToken: prepared.proposalToken,
           byModel: read.byModel,
-          notes: picked.note ? [picked.note] : [],
+          notes: [missedNote, picked.note].filter((n): n is string => n !== null),
         }),
       ];
     } catch (e) {

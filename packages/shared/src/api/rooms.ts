@@ -203,6 +203,8 @@ export interface RoomOverview {
   today: string;
   rows: RoomOverviewRow[];
   show: RoomShowQuery;
+  /** 홈 답 안에서처럼 줄을 눌러 자세히(예약)로 가지 않는 현황(11/11 QA E1). 카드의 주 버튼이 회의실 탭으로 옮겨요. */
+  readOnly?: boolean;
 }
 
 /** GET /api/rooms/list?date=YYYY-MM-DD. 회의실이 "링크만"이면 회의실 대신 그룹웨어 링크만 와요(R4). */

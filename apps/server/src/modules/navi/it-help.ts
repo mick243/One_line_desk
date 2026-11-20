@@ -17,7 +17,7 @@ import type { Queryable } from '../../core/db';
 import { DeskError } from '../../core/errors';
 import type { DeskUser } from '../../core/user';
 import { demoItFaqs } from './fixtures';
-import { type ItFaqFileRow, itFaqFormatError, parseItFaqFile, toItFaqCsv } from './it-faq-csv';
+import { type ItFaqFileRow, itFaqFormatError, parseItFaqFile, parseItFaqFileWithNotes, toItFaqCsv } from './it-faq-csv';
 import * as repo from './repo';
 import type { ItFaqRow, OwnedItFaq } from './repo';
 import { bigramSet, coverage, keywords, normalize, words } from './text';
@@ -122,6 +122,49 @@ export function rankFaqs(raw: string, faqs: ItFaqRow[]): ScoredFaq[] {
     })
     .filter((s) => s.score >= CANDIDATE_MIN)
     .sort((a, b) => b.score - a.score || a.faq.id.localeCompare(b.faq.id));
+}
+
+// ── 받은 IT 문의에 맞는 FAQ(후보 15, 11/17): 규칙판 ─────────────────────────
+// IT FAQ 주인 부서가 받은 문의함을 열 때, 저장된 문의 글(보낸 사람이 [보내기]한 글)에 위 rankFaqs를 돌려요. AI를 부르지 않아요.
+// - 열 때마다 계산하고 저장하지 않아요. 감사·접속기록에 FAQ·글을 남기지 않아요.
+// - 붙여넣기 화면(match, FOUND_MIN 0.8)보다 문턱이 높아요: 오류 코드가 맞았거나 낱말 점수가 2 이상이고 2등과 같지 않을 때만이에요.
+//   "인터넷이 느려요"(와이파이 FAQ 1점)·"메일 용량"(Outlook FAQ 1점)처럼 낱말 하나만 걸린 것은 보여 주지 않아요.
+// - IT 오류 화면에서 온 문의(itInquiryDraft)는 'IT FAQ "제목"의 단계를 해 봤는데…'로 시작해요. 이미 해 본 그 FAQ는 다시 권하지 않고,
+//   그 머리 줄은 점수에서 빼요(제목 낱말이 그 FAQ 점수를 끌어올리지 않게).
+// - MCP·붙여넣기(match)의 출력은 바꾸지 않아요.
+
+const INQUIRY_FAQ_MIN = 2;
+const TRIED_FAQ = /IT FAQ "([^"\n]{1,80})"의 단계를 해 봤는데 해결되지 않았어요\./g;
+
+/** 문의 글 하나에 맞아 보이는 FAQ 하나. 문턱 아래·동점이면 null이에요. */
+export function suggestFaqForInquiry(text: string, faqs: readonly ItFaqRow[]): ItFaqRow | null {
+  const tried = new Set([...text.matchAll(TRIED_FAQ)].map((m) => m[1]!));
+  const body = text.replace(TRIED_FAQ, ' ');
+  const checked = checkInput(body.slice(0, IT_HELP_TEXT_MAX));
+  const ranked = rankFaqs(
+    checked.text,
+    faqs.filter((f) => !tried.has(f.title)),
+  );
+  const top = ranked[0];
+  if (!top || ranked[1]?.score === top.score) return null;
+  return top.score >= CODE_SCORE || top.score >= INQUIRY_FAQ_MIN ? top.faq : null;
+}
+
+/**
+ * 받은 문의함 FAQ 줄. 그 부서가 IT FAQ 주인 부서일 때 그 부서 FAQ로만 찾아요(부서 이름을 못 박지 않아요).
+ * 주인 부서가 아니면(인사팀 등) 빈 표예요. 휴가 요청은 넘기지 않아요(부르는 쪽이 일반 문의만 넘겨요).
+ */
+export async function inboxFaqHints(q: Queryable, department: string, items: readonly { id: string; question: string }[]): Promise<Map<string, ItFaqRow>> {
+  const out = new Map<string, ItFaqRow>();
+  if (!items.length) return out;
+  const owners = await faqOwners(q);
+  if (!owners.departments.has(department)) return out;
+  const own = owners.faqs.filter((f) => ownsFaq(f, department, owners));
+  for (const item of items) {
+    const faq = suggestFaqForInquiry(item.question, own);
+    if (faq) out.set(item.id, faq);
+  }
+  return out;
 }
 
 // ── IT FAQ 파일 올리기(11/3) ───────────────────────────────────────
@@ -292,9 +335,17 @@ export function createItHelpService(ctx: AppContext) {
 
     /** IT FAQ 미리보기: 바뀌는 FAQ·칸만 보여 줘요. DB는 바꾸지 않아요. */
     async previewFaqs(user: DeskUser, csv: string): Promise<ItFaqPreviewResponse> {
-      const file = parseItFaqFile(csv);
-      const diff = await diffFaqs(ctx.db, user.department, file);
-      return { department: user.department, baseVersion: diff.version, changes: diff.changes, unchanged: diff.unchanged, untouched: diff.untouched };
+      const file = parseItFaqFileWithNotes(csv);
+      const diff = await diffFaqs(ctx.db, user.department, file.rows);
+      return {
+        department: user.department,
+        baseVersion: diff.version,
+        changes: diff.changes,
+        unchanged: diff.unchanged,
+        untouched: diff.untouched,
+        // 머리 줄을 다른 이름으로 읽었으면 사람이 보고 [반영하기]를 눌러요(후보 17).
+        ...(file.headerNotes.length ? { headerNotes: file.headerNotes } : {}),
+      };
     },
 
     /**

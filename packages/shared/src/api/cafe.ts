@@ -119,6 +119,10 @@ export const CAFE_BILLING_LIMITS = {
   menuNameMax: 40,
   optionNameMax: 20,
   maxOptions: 10,
+  /** 메뉴 줄임말(11/17): 글자 수(띄어쓰기 뺀 뒤)와 메뉴마다 개수. DB 검사(620_cafe_menu_alias.sql)와 같은 수예요. */
+  aliasMin: 2,
+  aliasMax: 12,
+  maxAliases: 5,
 } as const;
 
 /** 원 단위 금액 글 "2,500원" */
@@ -351,6 +355,10 @@ export interface CafeSettleLimitRequest {
 /** 총무 메뉴·직원가 관리 한 줄(쓰지 않는 메뉴도 보여요) */
 export interface CafeAdminMenuItem extends CafeMenuItem {
   active: boolean;
+  /** 총무가 적은 줄임말(11/17, 띄어쓰기 없음). 낱말 규칙 주문 해석과 홈 낱말에만 쓰고 모델에는 보내지 않아요. */
+  aliases: string[];
+  /** 앱이 이 이름의 메뉴에 원래 알아듣는 줄임말(읽기만, 고칠 수 없어요). 예: 아메리카노의 "아아". */
+  builtinAliases: string[];
 }
 
 /** GET /api/cafe/settle?month=YYYY-MM(총무만, 카페가 켜져 있을 때만). 열 때마다 접속기록에 남아요. */
@@ -379,4 +387,9 @@ export interface CafeMenuInput {
   options: string[];
   /** 바꾸기에서만: 파는 메뉴인지. 끄면 메뉴에서 빠지고, 이미 연 확인 시트도 실행 때 막혀요. */
   active?: boolean;
+  /**
+   * 줄임말(11/17, 메뉴마다 5개까지, 2~12자). 공통 입력 검사를 지나야 하고, 다른 메뉴의 이름·줄임말·옵션 이름과 겹치거나
+   * 다른 기능 낱말(회의·공지·탕비실·휴가 등)·너무 넓은 말(커피·음료·주문)이면 거부해요. 바꾸기에서 빼면 지금 줄임말 그대로예요.
+   */
+  aliases?: string[];
 }

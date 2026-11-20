@@ -46,7 +46,7 @@ describe('가상 그룹웨어 게시판 → 공지 사본 → 대상 제안 → 
     const res = await haneul.call('POST', '/api/demo/groupware/board/posts', { title: '3층 화장실 공사 안내', body: BODY, requestId: requestId() });
     expect(res.status).toBe(200);
     const posted = res.body as DemoBoardPostResponse;
-    expect(posted.copy).toEqual({ copied: true, audience: 'pending' });
+    expect(posted.copy).toEqual({ copied: true, audience: 'pending', by: 'rule' });
     expect(posted.post).toMatchObject({
       title: '3층 화장실 공사 안내',
       body: BODY,

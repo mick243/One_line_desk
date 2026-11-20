@@ -309,13 +309,18 @@ const parseOptions = (text: string) =>
     .map((o) => o.trim())
     .filter(Boolean);
 
-type Draft = { name: string; price: string; options: string; active: boolean };
+type Draft = { name: string; price: string; options: string; aliases: string; active: boolean };
 const draftOf = (m?: CafeAdminMenuItem): Draft => ({
   name: m?.name ?? '',
   price: m ? String(m.priceWon) : '',
   options: m?.options.join(', ') ?? '',
+  aliases: m?.aliases.join(', ') ?? '',
   active: m?.active ?? true,
 });
+
+/** S9 메뉴 관리 줄임말 안내(11/17, ADR-29 보강). 총무가 직접 적고 AI는 제안하지 않아요. */
+export const ALIAS_HINT =
+  '줄임말은 홈 채팅 주문을 낱말로 알아들을 때 써요(예: 자몽에이드 → 자에). 두 글자 이상, 메뉴마다 5개까지예요. 다른 메뉴와 겹치거나 회의·공지·탕비실·휴가 같은 다른 기능 낱말, 커피·음료·주문처럼 넓은 말은 적을 수 없어요';
 
 function MenuManager({ menu }: { menu: CafeAdminMenuItem[] }) {
   return (
@@ -324,9 +329,10 @@ function MenuManager({ menu }: { menu: CafeAdminMenuItem[] }) {
       <p className='hint'>
         옵션은 쉼표로 나눠 적어요(값은 바뀌지 않아요). 직원가를 바꾸면 이미 연 확인 시트는 실행 때 막혀서 다시 골라요. 품절은 바리스타가 카페 판에서 바꿔요.
       </p>
+      <p className='hint'>{ALIAS_HINT}</p>
       <ul className='cafe-menu-admin'>
         {menu.map((m) => (
-          <MenuEditor key={`${m.id}-${m.name}-${m.priceWon}-${m.options.join('|')}-${m.active}`} item={m} />
+          <MenuEditor key={`${m.id}-${m.name}-${m.priceWon}-${m.options.join('|')}-${m.aliases.join('|')}-${m.active}`} item={m} />
         ))}
         <MenuEditor key={`new-${menu.length}`} />
       </ul>
@@ -349,7 +355,7 @@ function MenuEditor({ item }: { item?: CafeAdminMenuItem }) {
     if (!valid || busy) return;
     setBusy(true);
     setError(null);
-    const body = { name: draft.name, priceWon: price, options: parseOptions(draft.options) };
+    const body = { name: draft.name, priceWon: price, options: parseOptions(draft.options), aliases: parseOptions(draft.aliases) };
     try {
       if (item) await apiRequest('PUT', `/api/cafe/menu/${item.id}`, { ...body, active: draft.active });
       else await apiRequest('POST', '/api/cafe/menu', body);
@@ -390,6 +396,12 @@ function MenuEditor({ item }: { item?: CafeAdminMenuItem }) {
         value={draft.options}
         onChange={(e) => setDraft({ ...draft, options: e.target.value })}
       />
+      <input
+        aria-label={`${label} 줄임말(쉼표로 나눠요)`}
+        placeholder='줄임말(예: 자에, 자몽)'
+        value={draft.aliases}
+        onChange={(e) => setDraft({ ...draft, aliases: e.target.value })}
+      />
       {item && (
         <label className='cafe-active'>
           <input type='checkbox' checked={draft.active} onChange={(e) => setDraft({ ...draft, active: e.target.checked })} />
@@ -399,6 +411,7 @@ function MenuEditor({ item }: { item?: CafeAdminMenuItem }) {
       <button type='button' className='secondary small' disabled={!valid || !changed || busy} onClick={() => void save()}>
         {busy ? '저장하는 중' : item ? '저장하기' : '메뉴 더하기'}
       </button>
+      {item && item.builtinAliases.length > 0 && <p className='hint cafe-alias-builtin'>{`원래 알아듣는 말: ${item.builtinAliases.join(', ')}`}</p>}
       {error && (
         <p className='lock-line' role='alert'>
           {error}

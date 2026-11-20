@@ -15,6 +15,7 @@ import {
   type InquiryListResponse,
   type InquiryReplyRequest,
   type InquiryRequest,
+  inquiryFaqReply,
   isWorkWeekday,
   kstDate,
   LEAVE_REJECT_REASON_MAX,
@@ -45,6 +46,7 @@ import { DeskError } from '../../core/errors';
 import type { DeskUser } from '../../core/user';
 import { GENERAL_TASK } from './cards';
 import { GENERAL_DESK } from './fixtures';
+import { inboxFaqHints } from './it-help';
 import { HALF_DAY, leaveRequestBalance, needsSickNote, sickUsage } from './leave';
 import { calendarOf, leavePolicy } from './leave-numbers';
 import * as repo from './repo';
@@ -55,7 +57,7 @@ import { feedbackDay } from './service';
 // - 사람이 확인 시트에서 [보내기]를 누른 글만 저장해요(고정 버튼 + 멱등 키). 묻기 문장과 달리 받는 팀이 읽어야 하는 글이에요.
 // - 보낸 사람의 이름·부서는 받는 팀이 답하려고 봐요. 확인 시트에서 미리 알려요.
 // - 알림에는 글을 넣지 않고 "새 문의가 왔어요 · 업무 이름"만 넣어요. 글은 받은 문의함에서 부서를 확인한 뒤 보여 줘요.
-// - LLM은 부르지 않아요.
+// - LLM은 부르지 않아요. 받은 IT 문의의 FAQ 제안(후보 15, 11/17)도 규칙(it-help.ts rankFaqs)이고 저장하지 않아요.
 // 10/30 휴가 요청·답장(ADR-24): 휴가 요청은 쓸 날을 같이 보내고, 받은 팀이 [승인]·[반려](사유 필수)해요. 승인하면 근태 기록에 들어가요.
 //   받은 팀은 그 요청을 보낸 사람의 남은 연차를 그 요청 안에서만 봐요(서버 규칙 계산, 저장 안 함). 답장은 받은 팀이 보내고 7일 보관해요.
 // 11/1 공가: 휴가 요청에 종류(연차·공가)가 붙어요. 공가는 정해진 사유 코드가 꼭 있고, 연차에서 빠지지 않아서 남은 연차를 보여 주지 않아요.
@@ -390,7 +392,21 @@ export function createInquiryService(ctx: AppContext) {
     async inbox(user: DeskUser): Promise<InquiryListResponse> {
       const owners = ctx.services.navi ? await ctx.services.navi.ownerDepartments() : new Set<string>();
       if (!owners.has(user.department) && user.department !== GENERAL_DESK.team) return { enabled: false, items: [] };
-      return { enabled: true, items: await withReplies(await repo.inquiriesOfDepartment(ctx.db, user.department, since()), 'inbox') };
+      const rows = await repo.inquiriesOfDepartment(ctx.db, user.department, since());
+      const items = await withReplies(rows, 'inbox');
+      // 후보 15(11/17): IT FAQ 주인 부서면 일반 문의에 맞아 보이는 FAQ를 붙여요. 규칙만이고 열 때마다 계산해요(저장·AI 없음).
+      const hints = await inboxFaqHints(
+        ctx.db,
+        user.department,
+        rows.filter((r) => r.kind === 'general').map((r) => ({ id: r.id, question: r.question })),
+      );
+      return {
+        enabled: true,
+        items: items.map((it) => {
+          const faq = hints.get(it.id);
+          return faq ? { ...it, faqHint: { faqId: faq.id, title: faq.title, ...inquiryFaqReply(faq) } } : it;
+        }),
+      };
     },
 
     /** 내 문의: 내가 보낸 문의와 처리 상태·답장·반려 사유 */

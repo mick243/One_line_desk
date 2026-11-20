@@ -13,10 +13,11 @@ import {
 } from '@one-line-desk/shared';
 import type { EmployeeProfile } from '../../adapters/types';
 import type { AppContext } from '../../context';
+import { SIGNAL_FOLD_MIN } from '../../core/ai/gateway';
 import { DeskError } from '../../core/errors';
 import { pseudonymize } from '../../core/pseudonym';
 import type { DeskUser } from '../../core/user';
-import { type AudienceOptions, matchesAudience, optionsOf, proposeAudience, rolesOfProfile } from './audience';
+import { type AudienceOptions, matchesAudience, optionsOf, proposeAudience, rolesOfProfile, sameAudience } from './audience';
 import * as repo from './audience-repo';
 
 // 새 공지 알림 대상(11/6 사용자 요청, ADR-09 개정·ADR-16 보강).
@@ -25,6 +26,8 @@ import * as repo from './audience-repo';
 //    공지 한 건에 한 번만 가요(줄 잠금 + 상태 + 멱등 키). [알리지 않기]는 알림 없이 끝내요.
 // 3) 자동 보내기 스위치(noticeAutoSend, 기본 끔)를 켜면 확인 없이 제안대로 보내요. 맞는 사람이 없으면 확인으로 돌려요.
 // 대상 수는 서버가 세서 수만 내보내요. 이름 목록·누구에게 갔는지는 화면·API·DB(이 표)·감사 로그에 없어요.
+// 4) 실사용 신호(11/17): 총무가 [알리기]로 정한 대상이 제안과 달랐는지(고침 여부)만 줄에 남겨요. 무엇을 고쳤는지는 남기지 않고,
+//    운영 표에는 모델 제안·낱말 규칙 제안별 정한 수·고친 수만 나가요(10건이 안 되면 접어요). 감사 로그는 그대로예요.
 
 /** 시스템이 한 일(새 공지 제안·자동 보내기)의 감사 로그 주체 */
 const SYSTEM_ACTOR = 'system';
@@ -35,6 +38,28 @@ const NEW_LIMIT = 20;
 const CONTROL = /[\u0000-\u001F\u007F]/g;
 
 const cleanTitle = (title: string) => title.replace(CONTROL, ' ').trim().slice(0, NOTICE_TITLE_MAX_LENGTH);
+
+/** 제안한 쪽(모델·낱말 규칙)별로 총무가 정한 수·고친 수. 정한 수가 SIGNAL_FOLD_MIN보다 적으면 folded이고 숫자 칸이 없어요. */
+export interface AudienceEditStat {
+  by: 'model' | 'rules';
+  folded: boolean;
+  /** 총무가 [알리기]로 대상을 정한 수(자동 보내기·[알리지 않기]는 세지 않아요) */
+  decided?: number;
+  /** 그중 제안과 다른 대상으로 보낸 수 */
+  edited?: number;
+}
+
+/**
+ * 총무가 공지 알림 대상 제안을 고친 비율을 볼 수(11/17, 운영 표). 최근 7일 줄에서 수만 세요. 이름·대상 값·누가 정했는지는 없어요.
+ * 정한 수가 10건이 안 되는 쪽은 접어요(작은 묶음으로 누가 무엇을 고쳤는지 짐작하지 못하게). 정한 것이 없는 쪽은 줄이 없어요.
+ */
+export async function audienceEdits(ctx: Pick<AppContext, 'db' | 'now'>): Promise<AudienceEditStat[]> {
+  const rows = await repo.countEdits(ctx.db, recordCutoff(ctx.now()));
+  return rows.map((r) => {
+    const by = r.byModel ? ('model' as const) : ('rules' as const);
+    return r.decided < SIGNAL_FOLD_MIN ? { by, folded: true } : { by, folded: false, decided: r.decided, edited: r.edited };
+  });
+}
 
 export function createAudienceService(ctx: AppContext) {
   /** 재직자 명단(부서마다). 서버 안에서 조건 대조·수 세기에만 써요. */
@@ -82,7 +107,7 @@ export function createAudienceService(ctx: AppContext) {
      * 새 공지 사본이 들어왔을 때(공지 서비스 ingest가 불러요). 트랜잭션 밖에서 AI를 부른 뒤, 제안 줄과 알림을 한 트랜잭션으로 넣어요.
      * 공지 기능이 켬이 아니면 제안하지 않아요(null). 이미 제안한 공지면 그대로예요.
      */
-    async onNewNotice(notice: { id: string; title: string; body: string }): Promise<'pending' | 'sent' | null> {
+    async onNewNotice(notice: { id: string; title: string; body: string }): Promise<{ state: 'pending' | 'sent'; byModel: boolean } | null> {
       if (ctx.ops.get().modules.notices !== 'on') return null;
       const people = await roster().catch(() => [] as EmployeeProfile[]);
       const proposal = await proposeAudience(ctx.gateway, notice, optionsOf(people));
@@ -109,14 +134,14 @@ export function createAudienceService(ctx: AppContext) {
             { pseudonymId: SYSTEM_ACTOR, channel: 'write', module: 'notices', action: 'notice-audience-auto', result: `sent:${ids.length}` },
             q,
           );
-          return 'sent';
+          return { state: 'sent' as const, byModel: proposal.byModel };
         }
         await ctx.notify.toRole(q, 'facilities', { module: 'notices', title: NOTICE_AUDIENCE_TEXT.notifyReview, page: 'notices' });
         await ctx.audit.record(
           { pseudonymId: SYSTEM_ACTOR, channel: 'write', module: 'notices', action: 'notice-audience-propose', result: proposal.byModel ? 'model' : 'rules' },
           q,
         );
-        return 'pending';
+        return { state: 'pending' as const, byModel: proposal.byModel };
       });
     },
 
@@ -164,7 +189,9 @@ export function createAudienceService(ctx: AppContext) {
           const ids = recipients(people, audience);
           if (!ids.length) throw new DeskError('no-recipients', 400, '조건에 맞는 재직자가 없어요. 대상을 바꿔 주세요');
           await ctx.notify.toUsers(q, ids, { module: 'notices', title: NOTICE_AUDIENCE_TEXT.notifyTarget, page: 'notices' });
-          await repo.decideAudience(q, id, { state: 'sent', audience, sentCount: ids.length, at: now });
+          // 고침 여부(11/17): 정한 대상이 제안(줄에 있던 조건)과 다른 집합인지만 남겨요. 같은 조건을 다시 보내면 고친 게 아니에요.
+          const edited = chosen !== null && !sameAudience(chosen, row.audience);
+          await repo.decideAudience(q, id, { state: 'sent', audience, sentCount: ids.length, edited, at: now });
           return { id, state: 'sent' as const, sent: ids.length };
         },
       });
@@ -181,7 +208,8 @@ export function createAudienceService(ctx: AppContext) {
           const row = await repo.lockAudience(q, id, recordCutoff(now));
           if (!row) throw new DeskError('not-found', 404, '그 공지를 찾지 못했어요. 7일이 지나 지워졌을 수 있어요');
           if (row.state !== 'pending') throw new DeskError('already-decided', 409, '이미 처리한 공지예요');
-          await repo.decideAudience(q, id, { state: 'skipped', audience: row.audience, sentCount: 0, at: now });
+          // [알리지 않기]는 대상을 정한 게 아니라서 고침 여부를 남기지 않아요(null).
+          await repo.decideAudience(q, id, { state: 'skipped', audience: row.audience, sentCount: 0, edited: null, at: now });
           return { id, state: 'skipped' as const, sent: 0 };
         },
       });
@@ -204,6 +232,9 @@ export function createAudienceService(ctx: AppContext) {
       // 나에게 온 공지를 먼저 보여요(알림을 누르고 들어오면 맨 위에 있어요).
       return { items: [...items.filter((i) => i.forMe), ...items.filter((i) => !i.forMe)] };
     },
+
+    /** 총무가 제안을 고친 수(운영 표, 수만). */
+    edits: (): Promise<AudienceEditStat[]> => audienceEdits(ctx),
 
     /** 7일 지난 제안·확인 줄을 지워요(모듈 retention). */
     async purge(): Promise<void> {

@@ -11,6 +11,13 @@ export interface IndexedNotice {
   terms: string[];
 }
 
+/** 이미 들어간 공지 id(운영 자료 넣기 미리보기, 11/11 QA Q8). id 칸만 읽어요. */
+export async function existingNoticeIds(q: Queryable, ids: readonly string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const { rows } = await q.query<{ id: string }>('select id from notices where id = any($1::text[])', [ids]);
+  return new Set(rows.map((r) => r.id));
+}
+
 export async function countNotices(q: Queryable): Promise<number> {
   const { rows } = await q.query<{ n: number }>('select count(*)::int as n from notices');
   return rows[0]?.n ?? 0;

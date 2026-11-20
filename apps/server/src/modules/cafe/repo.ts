@@ -18,6 +18,8 @@ export interface MenuRow {
   options: string[];
   soldOut: boolean;
   sort: number;
+  /** 총무가 적은 줄임말(11/17, 띄어쓰기 없음). 낱말 규칙 주문 해석·홈 낱말에만 써요. */
+  aliases: string[];
 }
 
 /** 주문 행 items 칸의 한 줄. 주문한 때의 메뉴 이름·직원가가 남아요. */
@@ -60,7 +62,7 @@ export async function countMenu(q: Queryable): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
-export async function insertMenu(q: Queryable, items: Omit<MenuRow, 'soldOut'>[]): Promise<void> {
+export async function insertMenu(q: Queryable, items: Omit<MenuRow, 'soldOut' | 'aliases'>[]): Promise<void> {
   for (const m of items) {
     await q.query('insert into cafe_menu (id, name, price_won, options, sort) values ($1, $2, $3, $4, $5) on conflict (id) do nothing', [
       m.id,
@@ -72,7 +74,7 @@ export async function insertMenu(q: Queryable, items: Omit<MenuRow, 'soldOut'>[]
   }
 }
 
-const MENU_COLUMNS = 'id, name, price_won as "priceWon", options, sold_out as "soldOut", sort';
+const MENU_COLUMNS = 'id, name, price_won as "priceWon", options, sold_out as "soldOut", sort, aliases';
 const ADMIN_MENU_COLUMNS = `${MENU_COLUMNS}, active`;
 
 /** 파는 메뉴(active)만, 정한 순서대로 */
@@ -250,23 +252,31 @@ export async function nextMenuSort(q: Queryable): Promise<number> {
   return rows[0]?.n ?? 10;
 }
 
-export async function addMenu(q: Queryable, m: { id: string; name: string; priceWon: number; options: string[]; sort: number }): Promise<AdminMenuRow | null> {
+/** 메뉴 더하기·바꾸기는 이 잠금을 먼저 잡아요. 두 총무가 같은 줄임말을 동시에 적어도 겹침 검사가 한 번에 하나씩 돌아요. */
+export async function lockMenu(q: Queryable): Promise<void> {
+  await q.query('select pg_advisory_xact_lock(hashtext($1))', ['cafe:menu']);
+}
+
+export async function addMenu(
+  q: Queryable,
+  m: { id: string; name: string; priceWon: number; options: string[]; aliases: string[]; sort: number },
+): Promise<AdminMenuRow | null> {
   const { rows } = await q.query<AdminMenuRow>(
-    `insert into cafe_menu (id, name, price_won, options, sort) values ($1, $2, $3, $4, $5) on conflict (id) do nothing returning ${ADMIN_MENU_COLUMNS}`,
-    [m.id, m.name, m.priceWon, m.options, m.sort],
+    `insert into cafe_menu (id, name, price_won, options, aliases, sort) values ($1, $2, $3, $4, $5, $6) on conflict (id) do nothing returning ${ADMIN_MENU_COLUMNS}`,
+    [m.id, m.name, m.priceWon, m.options, m.aliases, m.sort],
   );
   return rows[0] ?? null;
 }
 
-/** 이름·직원가·옵션·파는지 바꾸기. 품절은 바리스타가 따로 바꿔요. */
+/** 이름·직원가·옵션·파는지·줄임말 바꾸기. 품절은 바리스타가 따로 바꿔요. */
 export async function updateMenu(
   q: Queryable,
   id: string,
-  m: { name: string; priceWon: number; options: string[]; active: boolean },
+  m: { name: string; priceWon: number; options: string[]; active: boolean; aliases: string[] },
 ): Promise<AdminMenuRow | null> {
   const { rows } = await q.query<AdminMenuRow>(
-    `update cafe_menu set name = $2, price_won = $3, options = $4, active = $5 where id = $1 returning ${ADMIN_MENU_COLUMNS}`,
-    [id, m.name, m.priceWon, m.options, m.active],
+    `update cafe_menu set name = $2, price_won = $3, options = $4, active = $5, aliases = $6 where id = $1 returning ${ADMIN_MENU_COLUMNS}`,
+    [id, m.name, m.priceWon, m.options, m.active, m.aliases],
   );
   return rows[0] ?? null;
 }

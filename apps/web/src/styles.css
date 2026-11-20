@@ -876,14 +876,36 @@ div.mine > .screen-head {
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
+/* 손잡이: 아래로 끌어 닫아요(11/11 QA P1). 보이는 막대는 40×4px 그대로이고, 손가락이 닿는 칸은 더 넓어요. */
 .sheet .handle {
+  width: 64px;
+  height: 24px;
+  margin: -10px 0 calc(var(--space-2xs) - 10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  touch-action: none;
+  cursor: grab;
+}
+.sheet .handle::before {
+  content: '';
   width: 40px;
   height: 4px;
-  margin-bottom: var(--space-2xs);
   border-radius: var(--radius-pill);
   background: var(--color-paper-3);
   box-shadow: var(--press-groove);
-  align-self: center;
+}
+/* 쓴 글이 있는 양식을 닫으려 할 때 한 번 묻는 줄 */
+.sheet-discard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding-top: var(--space-xs);
+  border-top: 1px solid var(--color-rule);
+}
+.sheet-discard p {
+  margin: 0;
 }
 .sheet > h2 {
   margin: 0;

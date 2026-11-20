@@ -256,6 +256,18 @@ export async function insertCatalogItem(q: Queryable, c: CatalogRow): Promise<vo
   ]);
 }
 
+/**
+ * 운영자 카탈로그 파일 가져오기(npm run ops:data -- catalog, 11/11 QA Q8): id로 새로 넣거나 고쳐요.
+ * 지우는 길은 없어요. 요청 카드·주문안 줄이 품목을 가리켜서, 파일에 없는 품목도 그대로 남아요.
+ */
+export async function upsertCatalogItem(q: Queryable, c: CatalogRow): Promise<void> {
+  await q.query(
+    `insert into pantry_catalog (id, name, unit_price, pack_unit, aliases) values ($1, $2, $3, $4, $5)
+     on conflict (id) do update set name = excluded.name, unit_price = excluded.unit_price, pack_unit = excluded.pack_unit, aliases = excluded.aliases`,
+    [c.id, c.name, c.unitPrice, c.packUnit, c.aliases],
+  );
+}
+
 interface FloorSettingRow {
   floor: string;
   minShareWon: number;

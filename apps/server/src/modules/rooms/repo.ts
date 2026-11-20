@@ -74,6 +74,34 @@ export async function fillRoomDetails(q: Queryable, rooms: LedgerRoom[]): Promis
   }
 }
 
+/** 운영자 회의실 파일 가져오기(npm run ops:data -- rooms, 11/11 QA Q8)가 비교하는 값. 점검 중인 설비를 빼지 않은 장부 값 그대로예요. */
+export interface RoomImportRow {
+  id: string;
+  name: string;
+  floor: string;
+  capacity: number;
+  equipment: string[];
+  facilities: string[];
+}
+
+export async function roomsForImport(q: Queryable): Promise<RoomImportRow[]> {
+  const { rows } = await q.query<RoomImportRow>('select id, name, floor, capacity, equipment, facilities from rooms order by id');
+  return rows;
+}
+
+/**
+ * 운영자 가져오기: id로 새로 넣거나 고쳐요. 사진 주소(photo_url)는 건드리지 않아요(새 방은 비어 있어요).
+ * 지우는 길은 없어요. 파일에 없는 방은 예약·설비 상태와 함께 그대로 남아요.
+ */
+export async function upsertRoom(q: Queryable, r: RoomImportRow): Promise<void> {
+  await q.query(
+    `insert into rooms (id, name, floor, capacity, equipment, facilities) values ($1, $2, $3, $4, $5, $6)
+     on conflict (id) do update set name = excluded.name, floor = excluded.floor, capacity = excluded.capacity,
+       equipment = excluded.equipment, facilities = excluded.facilities`,
+    [r.id, r.name, r.floor, r.capacity, r.equipment, r.facilities],
+  );
+}
+
 // 점검 중인 설비(room_facility_status)는 equipment에서 빼고 repairs로 따로 줘요(ADR-19).
 const REPAIRING = "select s.facility from room_facility_status s where s.room_id = r.id and s.status = 'repair'";
 const ROOM_COLUMNS = `r.id, r.name, r.floor, r.capacity,

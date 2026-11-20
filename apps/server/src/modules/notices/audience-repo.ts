@@ -1,8 +1,8 @@
 import type { NoticeAudience, NoticeAudienceRole, NoticeAudienceState } from '@one-line-desk/shared';
 import type { Queryable } from '../../core/db';
 
-// notice_audience 표(220_notices_audience.sql)만 읽고 써요. 공지 제목·게시일·링크는 같은 모듈의 notices 표에서 붙여요.
-// 사람 칸은 없어요(누가 확인했는지·누구에게 갔는지 없음).
+// notice_audience 표(220_notices_audience.sql, 고침 여부 칸은 230_notices_audience_edited.sql)만 읽고 써요.
+// 공지 제목·게시일·링크는 같은 모듈의 notices 표에서 붙여요. 사람 칸은 없어요(누가 확인했는지·누구에게 갔는지 없음).
 
 export interface AudienceRow {
   id: string;
@@ -123,13 +123,18 @@ export async function lockAudience(q: Queryable, id: string, since: number): Pro
   return rows[0] ? toRow(rows[0]) : null;
 }
 
+/**
+ * 총무가 정한 결과를 남겨요. edited(11/17, 230_notices_audience_edited.sql): [알리기]로 정한 대상이 제안과 달랐는지예요.
+ * 정한 대상이 제안 칸을 덮어써서, 고쳤는지는 이 칸에만 남아요(무엇을 고쳤는지는 없어요). [알리지 않기]는 null이에요.
+ */
 export async function decideAudience(
   q: Queryable,
   id: string,
-  next: { state: 'sent' | 'skipped'; audience: NoticeAudience; sentCount: number; at: number },
+  next: { state: 'sent' | 'skipped'; audience: NoticeAudience; sentCount: number; edited: boolean | null; at: number },
 ): Promise<void> {
   await q.query(
-    `update notice_audience set state = $2, everyone = $3, departments = $4::text[], floors = $5::text[], roles = $6::text[], sent_count = $7, decided_at = $8
+    `update notice_audience set state = $2, everyone = $3, departments = $4::text[], floors = $5::text[], roles = $6::text[], sent_count = $7, decided_at = $8,
+            edited = $9
       where id = $1::bigint and state = 'pending'`,
     [
       id,
@@ -140,8 +145,23 @@ export async function decideAudience(
       next.audience.roles,
       next.sentCount,
       new Date(next.at).toISOString(),
+      next.edited,
     ],
   );
+}
+
+/**
+ * 총무가 [알리기]로 대상을 정한 수와 그중 제안을 고친 수(11/17). 모델 제안·낱말 규칙 제안을 따로 세요. 수만 읽어요.
+ * 보관 기간(since 이후에 만든 것) 안의 줄만이에요. 자동 보내기·[알리지 않기]·확인 대기(edited null)는 세지 않아요.
+ */
+export async function countEdits(q: Queryable, since: number): Promise<{ byModel: boolean; decided: number; edited: number }[]> {
+  const { rows } = await q.query<{ by_model: boolean; decided: number; edited: number }>(
+    `select by_model, count(*)::int as decided, count(*) filter (where edited)::int as edited
+       from notice_audience where edited is not null and created_at >= $1 group by by_model order by by_model desc`,
+    [new Date(since).toISOString()],
+  );
+  // 실제 PostgreSQL은 셈을 글자로 돌려줄 수 있어서 숫자로 바꿔요.
+  return rows.map((r) => ({ byModel: r.by_model, decided: Number(r.decided), edited: Number(r.edited) }));
 }
 
 /** 7일(RECORD_KEEP_DAYS) 지난 줄을 지워요. */

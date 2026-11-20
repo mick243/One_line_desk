@@ -1,6 +1,6 @@
 import type { AppContext } from '../../context';
 import type { DeskModule } from '../../core/module';
-import { createAudienceService } from './audience-service';
+import { audienceEdits, createAudienceService } from './audience-service';
 import { ALLOWED_BOARDS } from './fixtures';
 import { registerNoticeRoutes } from './routes';
 import { createNoticesService } from './service';
@@ -21,8 +21,12 @@ export function createNoticesModule(ctx: AppContext): DeskModule {
     // 게시판 사본 갱신(11/6): 새 공지면 색인에 넣고 알림 대상을 제안해요. 이미 있거나 허용 밖이면 아무것도 하지 않아요.
     async ingest(n) {
       if (!(await notices.ingest(n))) return { copied: false, audience: null };
-      return { copied: true, audience: await audience.onNewNotice(n) };
+      const proposed = await audience.onNewNotice(n);
+      // 누가 제안했는지(11/11 QA E3): 게시판 완료 문구가 낱말 규칙 제안을 "AI가 제안"이라고 하지 않게 해요.
+      return proposed ? { copied: true, audience: proposed.state, by: proposed.byModel ? 'ai' : 'rule' } : { copied: true, audience: null };
     },
+    // 실사용 신호(11/17): 총무가 정한 수·고친 수만(운영 표).
+    audienceEdits: () => audienceEdits(ctx),
   };
 
   return {
