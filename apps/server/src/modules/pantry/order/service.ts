@@ -28,6 +28,8 @@ import {
 // LLM 호출은 트랜잭션 밖에서 하고, 결과(숫자 검사를 지난 문장)만 저장해요.
 
 const MAX_AMOUNT = 2_000_000_000;
+/** 모델 호출 실패로 설명을 다시 쓰는 횟수 상한(처음 포함). 넘으면 남은 줄은 틀 문장으로 굳혀요. */
+export const MAX_EXPLAIN_TRIES = 3;
 /** 표 프로그램이 한글을 깨뜨리지 않게 CSV 앞에 붙이는 UTF-8 BOM */
 const BOM = String.fromCharCode(0xfeff);
 const STALE_MESSAGE = '주문안을 만든 뒤 판의 묶음이 바뀌었어요. 주문안을 다시 만들어 주세요';
@@ -91,6 +93,12 @@ function csvCell(value: string | number): string {
 }
 
 export class OrderService {
+  /**
+   * 주문안마다 설명을 다시 쓴 횟수(서버 메모리, 굳히면 지워요). 늘 실패하는 줄 때문에 열 때마다 모델을 부르지 않게 해요.
+   * 서버를 다시 띄우면 처음부터 세요. 주문안 ID와 숫자만 있어요.
+   */
+  private readonly explainTries = new Map<string, number>();
+
   constructor(private readonly ctx: AppContext) {}
 
   private ensureOn(): void {
@@ -133,21 +141,34 @@ export class OrderService {
     return this.view(planId);
   }
 
-  /** 줄 표가 먼저 나오고 설명 문장은 뒤에 채워요(화면설계 S4 로딩). 숫자 검사에 걸린 줄은 틀 문장이에요. */
+  /**
+   * 줄 표가 먼저 나오고 설명 문장은 뒤에 채워요(화면설계 S4 로딩). 숫자 검사에 걸린 줄은 틀 문장이에요.
+   * 모델 호출이 실패한 묶음이 있으면 주문안을 "설명 끝"으로 굳히지 않아서, 다음에 열 때 아직 틀 문장인 줄만 다시 써요(후보 20).
+   * 이미 AI 문장이 된 줄과 총무가 고친 줄은 다시 보내지 않아요. 같은 주문안을 MAX_EXPLAIN_TRIES번 불러도 실패하면 틀 문장으로 굳혀요.
+   */
   async explain(user: DeskUser, planId: string): Promise<OrderPlanView> {
     this.ensureOn();
     const plan = await findPlan(this.ctx.db, planId);
     if (!plan) throw notFound();
     if (plan.status !== 'draft' || plan.explained) return this.view(planId);
 
-    const lines = (await listLines(this.ctx.db, planId)).filter((l) => !l.edited);
-    const explained = await explainLines(this.ctx.gateway, lines.map(toExplainLine));
-    const byLineNo = new Map(lines.map((l) => [l.lineNo, explained.get(lineIdOf(l.lineNo)) ?? { sentence: templateSentence(l), source: 'template' as const }]));
+    const lines = (await listLines(this.ctx.db, planId)).filter((l) => !l.edited && l.explanationSource === 'template');
+    const { explanations, retry } = await explainLines(this.ctx.gateway, lines.map(toExplainLine));
+    const tries = (this.explainTries.get(planId) ?? 0) + 1;
+    const settled = retry.size === 0 || tries >= MAX_EXPLAIN_TRIES;
+    if (settled) this.explainTries.delete(planId);
+    else this.explainTries.set(planId, tries);
+    // 다시 쓸 줄은 이미 틀 문장이라 저장하지 않아요. 나머지(AI 문장·검사에 걸려 굳힌 틀 문장)만 저장해요.
+    const byLineNo = new Map(
+      lines
+        .filter((l) => settled || !retry.has(lineIdOf(l.lineNo)))
+        .map((l) => [l.lineNo, explanations.get(lineIdOf(l.lineNo)) ?? { sentence: templateSentence(l), source: 'template' as const }]),
+    );
     await this.ctx.fixed.run(user, {
       module: 'pantry',
       action: 'order.explain',
       run: async (q) => {
-        await saveExplanations(q, planId, byLineNo);
+        await saveExplanations(q, planId, byLineNo, { settled });
       },
     });
     return this.view(planId);

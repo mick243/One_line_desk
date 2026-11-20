@@ -1,5 +1,6 @@
 import {
   type ChartApplyRequest,
+  type ChartPreviewResponse,
   type ChartUploadRequest,
   INQUIRY_QUESTION_MAX,
   INQUIRY_REASON_MAX,
@@ -24,6 +25,7 @@ import {
   NAVI_ROW_ID_PATTERN,
   type LeaveStartResponse,
   type NaviRowCardRequest,
+  type NaviRowCardResponse,
   type OnboardingResponse,
   kstDate,
 } from '@one-line-desk/shared';
@@ -31,6 +33,7 @@ import type { FastifyInstance } from 'fastify';
 import { accessFrom } from '../../core/access-record';
 import type { AppContext } from '../../context';
 import { DeskError } from '../../core/errors';
+import { parseChartFile } from './chart-csv';
 import type { InquiryService } from './inquiries';
 import type { ItHelpService } from './it-help';
 import { findLeaveRequestRow, leaveCheckForLink, leaveLinkAction, myLeaveCalendar } from './leave';
@@ -67,10 +70,13 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
         body: { type: 'object', required: ['rowId'], additionalProperties: false, properties: { rowId: { type: 'string', pattern: NAVI_ROW_ID_PATTERN } } },
       },
     },
-    async (req) => {
+    async (req): Promise<NaviRowCardResponse> => {
       assertNotOff();
       // status를 같이 줘서 동점 카드의 업무 칩(고정 버튼)이 결과 카드로 바로 보여 줘요.
-      return { status: 'done' as const, card: await navi.rowCard(req.body.rowId) };
+      const card = await navi.rowCard(req.body.rowId);
+      // 후보 8(11/17): 문의 양식이 받는 곳 행의 "지금 할 일" 원문을 그대로 보여 주려고 같이 줘요(고치지 않음, 사람 이름 칸 없음).
+      const [row] = await repo.findRows(ctx.db, [req.body.rowId]);
+      return { status: 'done' as const, card, nextStep: row?.nextStep ?? '' };
     },
   );
 
@@ -200,9 +206,12 @@ export function registerNaviRoutes(app: FastifyInstance, ctx: AppContext, navi: 
         },
       },
     },
-    async (req) => {
+    async (req): Promise<ChartPreviewResponse> => {
       assertNotOff();
-      return navi.previewChart(req.deskUser!, req.body.csv);
+      const res = await navi.previewChart(req.deskUser!, req.body.csv);
+      // 머리 줄을 다른 이름으로 읽었으면 그 안내를 같이 줘요(후보 17). 사람이 보고 확인 시트에서 [반영하기]를 눌러요.
+      const { headerNotes } = parseChartFile(req.body.csv);
+      return headerNotes.length ? { ...res, headerNotes } : res;
     },
   );
 

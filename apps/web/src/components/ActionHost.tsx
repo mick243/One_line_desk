@@ -279,10 +279,20 @@ function resultCards(res: PlanConfirmResponse): Card[] {
   return res.cards;
 }
 
-/** 목록에서 id 카드를 결과 카드로 바꿔요. 이미 목록에 있는 카드는 겹쳐 넣지 않아요. */
+/**
+ * 목록에서 id 카드를 결과 카드로 바꿔요. 같은 카드를 두 번 넣지 않아요.
+ * 결과 카드와 id가 같은 카드가 목록 다른 자리에 있으면 그 자리에서 새 카드로 바꿔요(11/11 QA E2: [바꾸기] 뒤 확정 카드가 새 회의실로).
+ * 결과 카드의 replaces가 가리킨 카드는 지워요(취소한 예약의 [바꾸기] 카드).
+ */
 export function replaceCard(list: Card[], id: string, next: Card[]): Card[] {
-  const kept = new Set(list.filter((c) => c.id !== id).map((c) => c.id));
-  return list.flatMap((c) => (c.id === id ? next.filter((n) => !kept.has(n.id)) : [c]));
+  const fresh = new Map(next.map((n) => [n.id, n]));
+  const gone = new Set(next.flatMap((n) => n.replaces ?? []));
+  const elsewhere = new Set(list.filter((c) => c.id !== id && !gone.has(c.id)).map((c) => c.id));
+  return list.flatMap((c) => {
+    if (c.id === id) return next.filter((n) => !elsewhere.has(n.id));
+    if (gone.has(c.id)) return [];
+    return [fresh.get(c.id) ?? c];
+  });
 }
 
 function isOutcome(res: unknown): res is PlanConfirmResponse {

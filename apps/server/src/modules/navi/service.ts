@@ -10,6 +10,7 @@ import {
   type ChartPreviewResponse,
   type ChartRowSummary,
   GRADE,
+  LEAVE_BALANCE_ASK,
   INQUIRY_WEEK_MIN,
   type InquiryRouteBy,
   type InquiryTarget,
@@ -31,7 +32,7 @@ import type { DeskUser } from '../../core/user';
 import { type ChartRow, parseChart, parseChartFile, toCsv } from './chart-csv';
 import { askHereCard, chooseRowCard, GENERAL_TASK, IT_HELP_GUIDE, naviCard, ONBOARDING_GUIDE, withGuides } from './cards';
 import { demoChartCsv, GENERAL_DESK } from './fixtures';
-import { findLeaveRequestRow, myLeaveCard } from './leave';
+import { findLeaveRequestRow, MY_LEAVE_CARD_ID, myLeaveCard } from './leave';
 import * as repo from './repo';
 import type { StoredRow } from './repo';
 import { bigramSet, coverage, GENERIC_WORDS, keywords } from './text';
@@ -129,6 +130,8 @@ export async function pickRow(gateway: AppContext['gateway'], text: string, cand
       fallback,
       effort: 'low',
       maxTokens: 64,
+      // 실사용 신호(11/17): 모델이 고른 행이 규칙의 단독 1등(없으면 none)과 같은지만 참·거짓으로 돌려줘요.
+      agrees: (o) => (o.choice === 'none' ? null : Number(o.choice) - 1) === deterministicPick(candidates),
     });
     return { index: out.choice === 'none' ? null : Number(out.choice) - 1, ai: gateway.modelBacked };
   } catch {
@@ -236,8 +239,9 @@ async function diffChart(q: Queryable, department: string, fileRows: ChartRow[],
 }
 
 // 첫날·입사 같은 말이면 첫 2주 할 일로, IT 오류 같은 말이면 IT 오류 화면으로 가는 버튼을 붙여요(11/1 QA M9).
-const ONBOARDING_WORDS = /(첫\s?날|첫\s?주|처음\s?(왔|와|출근|입사)|입사|신입|온보딩|새로\s?왔)/;
-const IT_ERROR_WORDS = /(오류|에러|error|0x[0-9a-f]{4}|실패|안\s?(돼|됨|되|열려|켜져)|접속이?\s?안)/i;
+// 11/17: "와이파이가 안 잡혀요"·"VPN이 자꾸 끊겨요"·"첫 출근"처럼 흔한 말을 더해요(홈 해석 넓히기와 같이).
+const ONBOARDING_WORDS = /(첫\s?날|첫\s?주|첫\s?2\s?주|첫\s?출근|처음\s?(왔|와|출근|입사)|입사|신입|온보딩|새로\s?(왔|들어왔))/;
+const IT_ERROR_WORDS = /(오류|에러|error|0x[0-9a-f]{4}|실패|안\s?(돼|됨|되|열려|열리|켜져|잡혀|잡히|들어가져)|접속이?\s?안|연결이?\s?안|끊겨|끊기|먹통)/i;
 
 /** 메모리에 둔 분장표. 행 순서는 DB(id 순)와 같아요. */
 interface ChartSnapshot {
@@ -370,7 +374,8 @@ export function createNaviService(ctx: AppContext) {
       const guides = guidesFor(input.text, snapshot);
       const withLeave = (card: Card, row?: StoredRow): Card[] => {
         const guided = withGuides(card, [...guides.onboarding, ...(!row || guides.itRows.has(row.id) ? guides.it(row) : [])]);
-        return leave ? [guided, leave] : [guided];
+        // 남은 연차 숫자를 물었으면 숫자 카드가 맨 앞이에요(11/11 QA E4: 담당 카드 아래에 있어 스크롤해야 보였어요).
+        return leave ? (leave.id === MY_LEAVE_CARD_ID && LEAVE_BALANCE_ASK.test(input.text) ? [leave, guided] : [guided, leave]) : [guided];
       };
       const candidates = rankRows(input.text, rows);
       // 분장표 말로는 못 찾았어도 연차·공가 카드가 붙으면 받을 곳(휴가 신청 행)은 정해진 거예요.

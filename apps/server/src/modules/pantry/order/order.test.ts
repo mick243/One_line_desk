@@ -1,9 +1,10 @@
 import { ORDER_MESSAGES, type OrderConfirmResponse, type OrderCurrentResponse, type OrderPlanView } from '@one-line-desk/shared';
 import { afterEach, describe, expect, it } from 'vitest';
-import { AiGateway, type LlmProvider, type ProviderResult, type StructuredRequest } from '../../../core/ai/gateway';
+import { AiGateway, FakeProvider, type LlmProvider, ProviderFailure, type ProviderResult, type StructuredRequest } from '../../../core/ai/gateway';
 import { createTestApp, MOCK } from '../../../testing';
 import { listOpenBundles } from '../bundles';
 import { editedSentence, templateSentence } from './explain';
+import { MAX_EXPLAIN_TRIES } from './service';
 
 // 주문안 경로 시험(F3 세부 11~14, ADR-08, R1·R16). 가상 품목·가명 투표자(p_…)만 써요.
 
@@ -60,8 +61,24 @@ afterEach(async () => {
   close = undefined;
 });
 
-async function setup(opts: { contract?: boolean } = {}) {
-  const provider = new ScriptedProvider();
+/** 정해 둔 층의 묶음(또는 모든 묶음)에서 모델 호출이 실패하는 모의 모델(답 길이 상한에 걸린 것처럼). */
+class FlakyProvider extends ScriptedProvider {
+  failFloors = new Set<string>();
+  failAll = false;
+  override async complete<T>(req: StructuredRequest<T>): Promise<ProviderResult<T>> {
+    const { lines } = JSON.parse(req.input) as { lines: Line[] };
+    if (this.failAll || lines.some((l) => this.failFloors.has(l.floor))) {
+      this.inputs.push(req.input);
+      throw new ProviderFailure('max_tokens', '모델 답이 길이 상한에 걸렸어요');
+    }
+    return super.complete(req);
+  }
+}
+
+const sentLineIds = (inputs: string[]) => inputs.flatMap((input) => (JSON.parse(input) as { lines: Line[] }).lines.map((l) => l.lineId));
+
+async function setup(opts: { contract?: boolean; provider?: ScriptedProvider } = {}) {
+  const provider = opts.provider ?? new ScriptedProvider();
   const t = await createTestApp({ provider });
   close = t.close;
   // 품목 이름은 등급 1이라 무보관 계약 확인 뒤에만 모델로 가요(H1). AI 문장을 보는 시험만 계약을 확인한 게이트웨이로 바꿔 끼워요.
@@ -146,15 +163,78 @@ describe('주문안 경로', { timeout: 30_000 }, () => {
     expect(line(explained, 'L3')).toMatchObject({ explanation: templateSentence(line(plan, 'L3')), explanationSource: 'template' });
     expect(line(explained, 'L4')).toMatchObject({ explanation: templateSentence(line(plan, 'L4')), explanationSource: 'template' });
 
-    // LLM 입력: 줄 ID·품목 이름·층·표 수·금액·이유 코드·순위뿐이에요.
-    const sent = JSON.parse(t.provider.inputs[0]!) as { lines: Record<string, unknown>[] };
-    expect(sent.lines).toHaveLength(6);
-    for (const l of sent.lines) expect(Object.keys(l).sort()).toEqual(['amount', 'floor', 'itemName', 'lineId', 'rank', 'reason', 'votes']);
-    expect(t.provider.inputs[0]).not.toMatch(/p_[a-z]/);
+    // LLM 입력: 줄 ID·품목 이름·층·표 수·금액·이유 코드·순위뿐이에요. 층마다 한 번씩 나눠 보내요(후보 20).
+    expect(t.provider.inputs).toHaveLength(2);
+    const sent = t.provider.inputs.map((input) => (JSON.parse(input) as { lines: Record<string, unknown>[] }).lines);
+    expect(sent.map((lines) => [...new Set(lines.map((l) => l.floor))])).toEqual([['2층'], ['3층']]);
+    expect(sent.flat()).toHaveLength(6);
+    for (const l of sent.flat()) expect(Object.keys(l).sort()).toEqual(['amount', 'floor', 'itemName', 'lineId', 'rank', 'reason', 'votes']);
+    expect(t.provider.inputs.join('\n')).not.toMatch(/p_[a-z]/);
 
     // 두 번 불러도 다시 묻지 않아요.
     await t.facilities.call('POST', `/api/pantry/order/plans/${plan.planId}/explain`);
-    expect(t.provider.inputs).toHaveLength(1);
+    expect(t.provider.inputs).toHaveLength(2);
+  });
+
+  it('[후보 20] 한 층 묶음의 모델 호출이 실패하면 설명 끝으로 굳히지 않고, 다시 열면 아직 틀 문장인 줄만 다시 보내요(AI 문장 줄은 그대로)', async () => {
+    const provider = new FlakyProvider();
+    provider.failFloors.add('3층');
+    const t = await setup({ contract: true, provider });
+    const plan = await t.create(60_000);
+    const url = `/api/pantry/order/plans/${plan.planId}/explain`;
+
+    const first = (await t.facilities.call('POST', url)).body as OrderPlanView;
+    expect(first.explained).toBe(false);
+    expect(line(first, 'L1')).toMatchObject({ explanation: '2층에서 표 4개로 층 안 1위라 먼저 넣었어요.', explanationSource: 'ai' });
+    for (const id of ['L4', 'L5', 'L6'])
+      expect(line(first, id)).toMatchObject({ explanation: templateSentence(line(plan, id)), explanationSource: 'template' });
+    expect(t.provider.inputs).toHaveLength(2);
+
+    // 다시 열면 AI 문장인 L1은 보내지 않아요. 이번에는 모두 답해서 굳혀요.
+    provider.failFloors.clear();
+    const before = t.provider.inputs.length;
+    const second = (await t.facilities.call('POST', url)).body as OrderPlanView;
+    expect(sentLineIds(t.provider.inputs.slice(before))).toEqual(['L2', 'L3', 'L4', 'L5', 'L6']);
+    expect(second.explained).toBe(true);
+    expect(line(second, 'L1')).toMatchObject({ explanationSource: 'ai' });
+
+    // 굳힌 뒤에는 다시 부르지 않아요.
+    const settled = t.provider.inputs.length;
+    await t.facilities.call('POST', url);
+    expect(t.provider.inputs).toHaveLength(settled);
+  });
+
+  it(`[후보 20] 모든 묶음이 계속 실패하면 ${MAX_EXPLAIN_TRIES}번째에 틀 문장으로 굳혀서 그 뒤로는 부르지 않아요`, async () => {
+    const provider = new FlakyProvider();
+    provider.failAll = true;
+    const t = await setup({ contract: true, provider });
+    const plan = await t.create(60_000);
+    const url = `/api/pantry/order/plans/${plan.planId}/explain`;
+    const states: boolean[] = [];
+    for (let i = 0; i < MAX_EXPLAIN_TRIES; i++) states.push(((await t.facilities.call('POST', url)).body as OrderPlanView).explained);
+    expect(states).toEqual([...Array.from({ length: MAX_EXPLAIN_TRIES - 1 }, () => false), true]);
+    const calls = t.provider.inputs.length;
+    const after = (await t.facilities.call('POST', url)).body as OrderPlanView;
+    expect(t.provider.inputs).toHaveLength(calls);
+    expect(after.lines.every((l) => l.explanationSource === 'template')).toBe(true);
+    // 실패 종류만 비용 표에 남아요.
+    const { rows } = await t.db.query<{ fail_kind: string; n: number }>(
+      "select fail_kind, count(*)::int as n from ai_usage where purpose = 'order-explain' group by fail_kind",
+    );
+    expect(rows).toEqual([{ fail_kind: 'max_tokens', n: calls }]);
+  });
+
+  it('[후보 20] 실제 모델이 없으면(가짜 공급자, 계약 뒤) 부르지 않고 한 번에 틀 문장으로 굳혀요', async () => {
+    const t = await createTestApp({ provider: new FakeProvider() });
+    close = t.close;
+    t.ctx.gateway = new AiGateway(new FakeProvider(), true, t.db);
+    await t.db.exec(SEED);
+    const facilities = await t.loginAs(MOCK.facilities);
+    const plan = (await facilities.call('POST', '/api/pantry/order/plans', { budget: 60_000 })).body as OrderPlanView;
+    const explained = (await facilities.call('POST', `/api/pantry/order/plans/${plan.planId}/explain`)).body as OrderPlanView;
+    expect(explained.explained).toBe(true);
+    expect(explained.lines.every((l) => l.explanationSource === 'template')).toBe(true);
+    expect((await t.db.query("select count(*)::int as n from ai_usage where purpose = 'order-explain'")).rows[0]).toEqual({ n: 0 });
   });
 
   it('[R1] 줄을 바꿔 예산을 넘으면 "예산을 넘었어요"로 확정이 잠기고, 고친 줄은 "총무가 고침" + 틀 문장이에요(이유 코드는 그대로)', async () => {

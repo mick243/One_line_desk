@@ -162,11 +162,15 @@ export async function listLines(q: Queryable, planId: string): Promise<LineRow[]
   return rows.map(toLine);
 }
 
-/** AI 설명을 넣어요. 그사이 총무가 고친 줄은 건드리지 않아요. */
+/**
+ * AI 설명을 넣어요. 그사이 총무가 고친 줄은 건드리지 않아요.
+ * settled면 주문안을 "설명 끝"(explained)으로 굳혀요. 모델 호출이 실패한 줄이 남았으면 굳히지 않아 다음에 열 때 다시 써요.
+ */
 export async function saveExplanations(
   q: Queryable,
   planId: string,
   explanations: ReadonlyMap<number, { sentence: string; source: 'ai' | 'template' }>,
+  opts: { settled: boolean },
 ): Promise<void> {
   for (const [lineNo, e] of explanations) {
     await q.query('update pantry_order_lines set explanation = $3, explanation_source = $4 where plan_id = $1 and line_no = $2 and not edited', [
@@ -176,7 +180,7 @@ export async function saveExplanations(
       e.source,
     ]);
   }
-  await q.query("update pantry_order_plans set explained = true where id = $1 and status = 'draft'", [planId]);
+  if (opts.settled) await q.query("update pantry_order_plans set explained = true where id = $1 and status = 'draft'", [planId]);
 }
 
 export async function updateLine(

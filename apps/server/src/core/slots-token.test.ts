@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ProposalTokens } from './proposal-token';
-import { equipmentIn, extractItemName, parseDate, parseSlots, parseTime, repeatedSlots } from './slots';
+import { equipmentIn, extractItemName, extractItemNames, parseDate, parseSlots, parseTime, repeatedSlots } from './slots';
 
 const NOW = Date.parse('2026-10-26T09:00:00+09:00');
 
@@ -126,6 +126,52 @@ describe('슬롯 뽑기', () => {
     ['[이메일] 로 연락 부탁해요 녹차 티백', '녹차 티백'],
   ])('%s → %s', (text, item) => {
     expect(extractItemName(text)).toBe(item);
+  });
+});
+
+describe('[후보 2] 요청 쓰기 칸 한 줄에서 품목 나누기(낱말 규칙)', () => {
+  it.each([
+    ['제로콜라랑 컵라면 넣어 주세요', ['제로콜라', '컵라면']],
+    ['컵라면이랑 녹차 티백 채워 주세요', ['컵라면', '녹차 티백']],
+    ['커피믹스하고 종이컵 요청', ['커피믹스', '종이컵']],
+    ['과자와 음료수 넣어 주세요', ['과자', '음료수']],
+    ['와플과 우유 사다 주세요', ['와플', '우유']],
+    ['바나나, 생수, 원두 채워 주세요', ['바나나', '생수', '원두']],
+    ['녹차 및 보리차 넣어 주세요', ['녹차', '보리차']],
+    ['제로콜라 두 개랑 컵라면', ['제로콜라 두 개', '컵라면']],
+    ['오이랑 당근', ['오이', '당근']],
+    ['사과랑 배 넣어 주세요', ['사과', '배']],
+    ['호랑이랑 컵라면', ['호랑이', '컵라면']],
+    ['호랑이 젤리랑 말랑카우 넣어 주세요', ['호랑이 젤리', '말랑카우']],
+  ])('나눠요: %s → %j', (text, items) => {
+    expect(extractItemNames(text)).toEqual(items);
+  });
+
+  it.each([
+    ['호랑이 젤리 넣어 주세요', ['호랑이 젤리']],
+    ['말랑카우 채워 주세요', ['말랑카우']],
+    ['과자 넣어 주세요', ['과자']],
+    ['와플 요청', ['와플']],
+    ['사과 주스 넣어 주세요', ['사과 주스']],
+    ['꿀약과 두 상자', ['꿀약과 두 상자']],
+    ['약과 두 상자', ['약과 두 상자']],
+    ['노랑 형광펜', ['노랑 형광펜']],
+    ['꽃게랑 과자', ['꽃게랑 과자']],
+    ['제로콜라랑컵라면', ['제로콜라랑컵라면']],
+    ['코카콜라 제로 1,500ml', ['코카콜라 제로 1,500ml']],
+    ['제로콜라 또 넣어 주세요', ['제로콜라']],
+  ])('쪼개지면 안 되는 이름: %s → %j', (text, items) => {
+    expect(extractItemNames(text)).toEqual(items);
+  });
+
+  it('4개 이상이면 앞의 3개까지만, 같은 이름은 한 번만이에요', () => {
+    expect(extractItemNames('바나나, 생수, 원두, 종이컵, 녹차')).toEqual(['바나나', '생수', '원두']);
+    expect(extractItemNames('생수랑 생수랑 원두')).toEqual(['생수', '원두']);
+    expect(extractItemNames('채워 주세요')).toEqual([]);
+  });
+
+  it('연락처는 나누기 전에 빼요', () => {
+    expect(extractItemNames('010-1234-5678 로 연락주시면 컵라면하고 생수')).toEqual(['컵라면', '생수']);
   });
 });
 

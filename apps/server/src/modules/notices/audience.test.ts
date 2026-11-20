@@ -11,7 +11,8 @@ import { AiGateway, type LlmProvider, type ProviderResult, type StructuredReques
 import { pseudonymize } from '../../core/pseudonym';
 import type { NoticeCopy } from '../../core/services';
 import { createTestApp, MOCK } from '../../testing';
-import { cleanProposal, matchesAudience, modelInput, optionsOf, proposeByRules } from './audience';
+import { cleanProposal, matchesAudience, modelInput, optionsOf, proposeByRules, sameAudience } from './audience';
+import type { AudienceEditStat } from './audience-service';
 
 // 새 공지 알림 대상(11/6 사용자 요청, ADR-09 개정·ADR-16 보강).
 // AI는 공지 글만 보고 대상을 제안하고, 총무가 [알리기]를 눌러야 조건에 맞는 재직자 각자에게 내용 없는 알림이 가요.
@@ -128,7 +129,7 @@ describe('대상 제안: 계약 전 규칙(공지 글의 낱말)', () => {
 
   it('계약 전에는 모델을 부르지 않고 규칙으로 제안해요(AI 정리 없음)', async () => {
     const t = await setup();
-    expect(await t.ctx.services.notices!.ingest!(DEV_CHECK())).toEqual({ copied: true, audience: 'pending' });
+    expect(await t.ctx.services.notices!.ingest!(DEV_CHECK())).toEqual({ copied: true, audience: 'pending', by: 'rule' });
     const items = (await list(await t.loginAs(MOCK.facilities))).items;
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
@@ -182,13 +183,24 @@ describe('대상 제안: 모델(무보관 계약 확인 뒤)', () => {
     expect(JSON.stringify(item)).not.toMatch(/가상 (직원|총무|인사|운영자)|mock\||@corp\.example/);
   });
 
-  it('모델이 목록 밖 이름만 내면 모두로 제안해요', async () => {
+  it('[QA S5 시험] 모델이 목록 밖 이름만 내면 모델 제안이 아니라 낱말 규칙 제안이고, 자동 보내기가 켜져 있어도 총무 확인을 기다려요', async () => {
     const provider = new RecordingProvider({ everyone: false, departments: ['마케팅팀'], floors: [], roles: [], evidence: [] });
     const t = await setup({ provider });
-    await t.ctx.services.notices!.ingest!(DEV_CHECK());
+    const op = await t.loginAs(MOCK.operator);
+    expect((await op.call('PUT', '/api/ops/flag', { flag: 'noticeAutoSend', value: true })).status).toBe(200);
+    expect(await t.ctx.services.notices!.ingest!(DEV_CHECK())).toEqual({ copied: true, audience: 'pending', by: 'rule' });
+    expect((await targetNotifications(t)).size).toBe(0);
     const item = (await list(await t.loginAs(MOCK.facilities))).items[0]!;
-    expect(item.audience.everyone).toBe(true);
-    expect(item.count).toBe(17);
+    // 모델이 고르지 않은 "모두"로 바뀌지 않아요. 공지 글에 나온 개발팀(낱말 규칙)이에요.
+    expect(item).toMatchObject({ state: 'pending', auto: false, byModel: false, audience: { everyone: false, departments: ['개발팀'] } });
+  });
+
+  it('모델이 everyone을 직접 고르면 모델 제안 "모두"예요', async () => {
+    const provider = new RecordingProvider({ everyone: true, departments: [], floors: [], roles: [], evidence: [] });
+    const t = await setup({ provider });
+    expect(await t.ctx.services.notices!.ingest!(DEV_CHECK())).toEqual({ copied: true, audience: 'pending', by: 'ai' });
+    const item = (await list(await t.loginAs(MOCK.facilities))).items[0]!;
+    expect(item).toMatchObject({ byModel: true, audience: { everyone: true }, count: 17 });
   });
 });
 
@@ -326,13 +338,13 @@ describe('자동 보내기 스위치(운영, 기본 끔)', () => {
     const provider = new RecordingProvider({ everyone: false, departments: [], floors: ['3층'], roles: [], evidence: ['3층 화장실'] });
     const t = await setup({ provider });
     expect(t.ctx.ops.get().noticeAutoSend).toBe(false);
-    expect(await t.ctx.services.notices!.ingest!(DEV_CHECK())).toEqual({ copied: true, audience: 'pending' });
+    expect(await t.ctx.services.notices!.ingest!(DEV_CHECK())).toEqual({ copied: true, audience: 'pending', by: 'ai' });
     expect((await targetNotifications(t)).size).toBe(0);
 
     const op = await t.loginAs(MOCK.operator);
     expect((await op.call('PUT', '/api/ops/flag', { flag: 'noticeAutoSend', value: true })).status).toBe(200);
     const roof = notice('3층 화장실 공사 안내', '3층 화장실은 11월 9일 하루 쓸 수 없어요. 문의는 총무팀으로 해 주세요.');
-    expect(await t.ctx.services.notices!.ingest!(roof)).toEqual({ copied: true, audience: 'sent' });
+    expect(await t.ctx.services.notices!.ingest!(roof)).toEqual({ copied: true, audience: 'sent', by: 'ai' });
     const got = await targetNotifications(t);
     expect([...got.keys()].sort()).toEqual(['mock|emp-001', 'mock|emp-009', 'mock|emp-010', 'mock|emp-013'].map((s) => pseudo(t, s)).sort());
     const items = (await list(await t.loginAs(MOCK.facilities))).items;
@@ -345,6 +357,7 @@ describe('자동 보내기 스위치(운영, 기본 끔)', () => {
     expect(await t.ctx.services.notices!.ingest!(notice('팀장 리더십 교육', '팀장은 11월 18일 리더십 교육을 들어 주세요.'))).toEqual({
       copied: true,
       audience: 'pending',
+      by: 'ai',
     });
   });
 
@@ -354,7 +367,7 @@ describe('자동 보내기 스위치(운영, 기본 끔)', () => {
     const op = await t.loginAs(MOCK.operator);
     expect((await op.call('PUT', '/api/ops/flag', { flag: 'noticeAutoSend', value: true })).status).toBe(200);
     const roof = notice('3층 화장실 공사 안내', '3층 화장실은 11월 9일 하루 쓸 수 없어요. 문의는 총무팀으로 해 주세요.');
-    expect(await t.ctx.services.notices!.ingest!(roof)).toEqual({ copied: true, audience: 'pending' });
+    expect(await t.ctx.services.notices!.ingest!(roof)).toEqual({ copied: true, audience: 'pending', by: 'rule' });
     expect((await targetNotifications(t)).size).toBe(0);
     const item = (await list(await t.loginAs(MOCK.facilities))).items.find((i) => i.notice.id === roof.id)!;
     expect(item).toMatchObject({ state: 'pending', auto: false, byModel: false });
@@ -396,5 +409,120 @@ describe('보관 7일', () => {
     expect((await list(again)).items).toEqual([]);
     expect((await again.call('POST', `/api/notices/audience/${id}/send`, {})).status).toBe(404);
     expect(((await again.call('GET', '/api/notices/new')).body as NewNoticesResponse).items).toEqual([]);
+  });
+});
+
+// 실사용 신호(11/17): 모델 대상이 규칙 제안과 같은지(ai_usage.agree)와 총무가 제안을 고쳤는지(notice_audience.edited)를
+// 같음·다름 코드로만 남겨요. 무엇을 고쳤는지·대상 이름·공지 글은 이 칸들과 운영 표·감사 로그에 없어요.
+describe('실사용 신호: 모델·규칙 견줌과 총무 고침 여부(수만)', () => {
+  const FLOOR3 = { everyone: false, departments: [], floors: ['3층'], roles: [] };
+  const DEV_ONLY = { everyone: false, departments: ['개발팀'], floors: [], roles: [] };
+  /** 본문에 카나리 글자가 든 개발팀 공지. 낱말 규칙 제안은 개발팀이에요. */
+  const canaryNotice = () =>
+    notice('개발팀 노트북 보안 점검 안내', '개발팀은 11월 12일까지 노트북 보안 점검을 받아 주세요. EDIT-CANARY 문의는 정보보안팀으로 해 주세요.');
+  type Session = Awaited<ReturnType<TestApp['loginAs']>>;
+  const idOf = async (s: Session, noticeId: string) => (await list(s)).items.find((i) => i.notice.id === noticeId)!.id;
+  const send = (s: Session, id: string, audience?: object) => s.call('POST', `/api/notices/audience/${id}/send`, audience ? { audience } : {});
+  const editedOf = async (t: TestApp) =>
+    (await t.db.query<{ notice_id: string; edited: boolean | null }>('select notice_id, edited from notice_audience order by id')).rows;
+  const opsEdits = async (t: TestApp) =>
+    ((await (await t.loginAs(MOCK.operator)).call('GET', '/api/ops/settings')).body as { noticeAudienceEdits: AudienceEditStat[] }).noticeAudienceEdits;
+
+  it('대상 집합이 같은지는 순서·겹침을 보지 않고, "모두"는 모두끼리만 같아요', () => {
+    expect(sameAudience({ ...DEV_ONLY, floors: ['3층', '5층'] }, { ...DEV_ONLY, floors: ['5층', '3층', '5층'] })).toBe(true);
+    expect(sameAudience(DEV_ONLY, FLOOR3)).toBe(false);
+    expect(sameAudience(DEV_ONLY, { ...DEV_ONLY, roles: ['team-lead'] })).toBe(false);
+    expect(sameAudience({ everyone: true, departments: [], floors: [], roles: [] }, { everyone: true, departments: [], floors: [], roles: [] })).toBe(true);
+    expect(sameAudience({ everyone: true, departments: [], floors: [], roles: [] }, DEV_ONLY)).toBe(false);
+  });
+
+  it('[실사용 신호-공지 대상] 모델 대상이 낱말 규칙 제안과 같은지만 비용 줄에 남고, 대상 이름·공지 글은 없어요', async () => {
+    const t = await setup({ provider: new RecordingProvider({ ...DEV_ONLY, roles: [], evidence: ['개발팀'] }) });
+    await t.ctx.services.notices!.ingest!(canaryNotice());
+    // 모델이 다른 대상(3층)을 골랐어요.
+    t.ctx.gateway = new AiGateway(new RecordingProvider({ ...FLOOR3, evidence: [] }), true, t.db);
+    await t.ctx.services.notices!.ingest!(canaryNotice());
+    // 모델이 목록 밖 이름만 내서 쓸 수 없는 답이면 다름이에요(제안은 낱말 규칙으로 돌아가요).
+    t.ctx.gateway = new AiGateway(new RecordingProvider({ everyone: false, departments: ['마케팅팀'], floors: [], roles: [], evidence: [] }), true, t.db);
+    expect(await t.ctx.services.notices!.ingest!(canaryNotice())).toMatchObject({ audience: 'pending', by: 'rule' });
+    const rows = (await t.db.query<{ agree: boolean | null }>("select agree from ai_usage where purpose = 'notice-audience' order by id")).rows;
+    expect(rows.map((r) => r.agree)).toEqual([true, false, false]);
+    expect(JSON.stringify((await t.db.query('select * from ai_usage')).rows)).not.toMatch(/EDIT-CANARY|개발팀|마케팅팀|3층|보안 점검/);
+    // 운영 표에는 목적별 수만 가고, 10건이 안 돼서 접혀요.
+    const op = await t.loginAs(MOCK.operator);
+    const usage = (await op.call('GET', '/api/ops/settings')).body as { aiUsage: { module: string; agreement: unknown[] }[] };
+    expect(usage.aiUsage.find((u) => u.module === 'notices')?.agreement).toEqual([{ purpose: 'notice-audience', folded: true }]);
+  });
+
+  it('[실사용 신호-고침] 제안 그대로 보내면 false, 다른 대상이면 true, 같은 대상을 다시 고르면 false, [알리지 않기]·확인 대기는 null이에요', async () => {
+    const t = await setup();
+    const ns = [canaryNotice(), canaryNotice(), canaryNotice(), canaryNotice(), canaryNotice()];
+    for (const n of ns) await t.ctx.services.notices!.ingest!(n);
+    const seoyeon = await t.loginAs(MOCK.facilities);
+    expect((await send(seoyeon, await idOf(seoyeon, ns[0]!.id))).status).toBe(200);
+    expect((await send(seoyeon, await idOf(seoyeon, ns[1]!.id), FLOOR3)).status).toBe(200);
+    expect((await send(seoyeon, await idOf(seoyeon, ns[2]!.id), { ...DEV_ONLY, departments: ['개발팀', '개발팀'] })).status).toBe(200);
+    expect((await seoyeon.call('POST', `/api/notices/audience/${await idOf(seoyeon, ns[3]!.id)}/skip`)).status).toBe(200);
+    expect(await editedOf(t)).toEqual([
+      { notice_id: ns[0]!.id, edited: false },
+      { notice_id: ns[1]!.id, edited: true },
+      { notice_id: ns[2]!.id, edited: false },
+      { notice_id: ns[3]!.id, edited: null },
+      { notice_id: ns[4]!.id, edited: null },
+    ]);
+    // 고친 줄에는 정한 대상과 고침 여부만 있어요. 공지 글은 없고, 감사 로그는 동작·결과·수뿐이에요(고침 여부·대상 값 없음).
+    expect(JSON.stringify((await t.db.query('select * from notice_audience')).rows)).not.toContain('EDIT-CANARY');
+    const audit = (
+      await t.db.query<{ action: string; result: string }>(
+        "select action, result from audit_log where module = 'notices' and action like 'notice-audience-s%' order by id",
+      )
+    ).rows;
+    expect(audit).toEqual([
+      { action: 'notice-audience-send', result: 'sent:4' },
+      { action: 'notice-audience-send', result: 'sent:4' },
+      { action: 'notice-audience-send', result: 'sent:4' },
+      { action: 'notice-audience-skip', result: 'skipped' },
+    ]);
+    expect(JSON.stringify((await t.db.query('select * from audit_log')).rows)).not.toMatch(/EDIT-CANARY|개발팀|3층|edited/);
+  });
+
+  it('[실사용 신호-자동] 자동 보내기로 나간 건은 사람이 정한 게 아니라 고침 여부가 null이고 정한 수에 들어가지 않아요', async () => {
+    const t = await setup({ provider: new RecordingProvider({ ...FLOOR3, evidence: ['3층'] }) });
+    const op = await t.loginAs(MOCK.operator);
+    expect((await op.call('PUT', '/api/ops/flag', { flag: 'noticeAutoSend', value: true })).status).toBe(200);
+    expect(await t.ctx.services.notices!.ingest!(notice('3층 화장실 공사 안내', '3층 화장실은 11월 9일 하루 쓸 수 없어요.'))).toMatchObject({
+      audience: 'sent',
+    });
+    expect((await editedOf(t)).map((r) => r.edited)).toEqual([null]);
+    expect(await opsEdits(t)).toEqual([]);
+  });
+
+  it('[실사용 신호-운영 표] 운영 설정 응답은 모델 제안·낱말 규칙 제안별 정한 수·고친 수만 주고, 10건이 안 되면 접고, 7일 뒤 없어져요', async () => {
+    const t = await setup();
+    const ns = Array.from({ length: 11 }, () => canaryNotice());
+    for (const n of ns) await t.ctx.services.notices!.ingest!(n);
+    let seoyeon = await t.loginAs(MOCK.facilities);
+    // 낱말 규칙 제안 9건을 정하고(3건 고침), 1건은 [알리지 않기]예요(세지 않아요).
+    for (let i = 0; i < 9; i += 1) expect((await send(seoyeon, await idOf(seoyeon, ns[i]!.id), i < 3 ? FLOOR3 : undefined)).status).toBe(200);
+    expect((await seoyeon.call('POST', `/api/notices/audience/${await idOf(seoyeon, ns[9]!.id)}/skip`)).status).toBe(200);
+    expect(await opsEdits(t)).toEqual([{ by: 'rules', folded: true }]);
+    seoyeon = await t.loginAs(MOCK.facilities);
+    expect((await send(seoyeon, await idOf(seoyeon, ns[10]!.id))).status).toBe(200);
+    // 모델 제안 1건은 따로 세요(10건이 안 돼서 접혀요).
+    t.ctx.gateway = new AiGateway(new RecordingProvider({ ...DEV_ONLY, evidence: ['개발팀'] }), true, t.db);
+    const byModel = canaryNotice();
+    expect(await t.ctx.services.notices!.ingest!(byModel)).toMatchObject({ by: 'ai' });
+    seoyeon = await t.loginAs(MOCK.facilities);
+    expect((await send(seoyeon, await idOf(seoyeon, byModel.id), FLOOR3)).status).toBe(200);
+    const edits = await opsEdits(t);
+    expect(edits).toEqual([
+      { by: 'model', folded: true },
+      { by: 'rules', folded: false, decided: 10, edited: 3 },
+    ]);
+    expect(JSON.stringify(edits)).not.toMatch(/EDIT-CANARY|개발팀|3층|N-7/);
+    // 줄이 7일 뒤 지워지면 수도 없어져요.
+    t.advance(8 * 24 * 60 * 60 * 1000);
+    await t.runRetention();
+    expect(await opsEdits(t)).toEqual([]);
   });
 });

@@ -27,6 +27,11 @@ export interface ServerConfig {
   /** MCP 접근·갱신 토큰을 봉인하는 비밀 값. 세션 비밀과 따로 둬요. */
   mcpTokenSecret: string;
   databaseUrl: string | undefined;
+  /**
+   * 마이그레이션 전용 DB 주소(소유자 계정, 11/11 QA Q5). npm run db:migrate(배포 release_command)만 써요. 앱은 늘 databaseUrl(앱 계정)로 붙어요.
+   * 없으면 db:migrate도 databaseUrl을 써요(개발·시연). 운영에서 계정을 나누면 앱 계정은 표를 만들거나 TRUNCATE하지 못해요(db/roles/app-grants.sql).
+   */
+  migrateDatabaseUrl: string | undefined;
   noRetentionContractConfirmed: boolean;
   aiProvider: AiProviderName;
   aiModel: string;
@@ -192,6 +197,8 @@ function productionProblems(env: NodeJS.ProcessEnv, config: ServerConfig, runtim
       problems.push('시연 배포가 DATABASE_URL을 써요. 시연 전용 DB가 맞으면 DESK_DEMO_DATABASE=true를 넣고, 운영 DB면 DESK_MOCK_LOGIN을 지워 주세요');
   } else {
     if (!config.databaseUrl) problems.push('DATABASE_URL이 없어요(운영은 PostgreSQL만 써요)');
+    if (config.migrateDatabaseUrl && config.migrateDatabaseUrl === config.databaseUrl)
+      problems.push('DESK_MIGRATE_DATABASE_URL이 DATABASE_URL과 같아요. 앱 계정과 소유자(마이그레이션) 계정을 나눠 주세요(회사추가절차 2번)');
     // 비우면 접속기록(ADR-20)의 접속지가 모두 관문 주소가 돼요. 관문 없이 직접 받는 구성이면 none을 적어서 일부러 정했다고 남겨요(B4).
     if (!env.TRUST_PROXY) problems.push('TRUST_PROXY가 없어요. 관문 주소를 넣고, 관문 없이 직접 받으면 none을 넣어 주세요(접속기록 접속지)');
     if (config.idp.kind !== 'keycloak') problems.push('DESK_IDP가 없어요(운영은 회사 IdP로만 로그인해요)');
@@ -268,6 +275,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, runtime: Runtim
     proposalSecret: secret('PROPOSAL_SECRET', 'dev-only-proposal-secret-change-me-000'),
     mcpTokenSecret: secret('MCP_TOKEN_SECRET', 'dev-only-mcp-token-secret-change-me-000'),
     databaseUrl: env.DATABASE_URL || undefined,
+    migrateDatabaseUrl: env.DESK_MIGRATE_DATABASE_URL || undefined,
     noRetentionContractConfirmed: env.NO_RETENTION_CONTRACT_CONFIRMED === 'true',
     aiProvider: aiProviderOf(env.DESK_AI_PROVIDER),
     aiModel: env.DESK_AI_MODEL ?? defaultModel(aiProviderOf(env.DESK_AI_PROVIDER)),

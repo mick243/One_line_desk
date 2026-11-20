@@ -252,3 +252,30 @@
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
 }
+
+/* 문의 양식 위 "지금 할 일" 원문(후보 8, 11/17). 받는 곳 행의 분장표 칸 그대로예요. */
+.inquiry-next-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  border-left: 2px solid var(--color-rule-2);
+  padding-left: var(--space-sm);
+}
+.inquiry-next-step p {
+  margin: 0;
+}
+/* 받은 문의함 FAQ 줄(후보 15, 11/17) */
+.inquiry-faq-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  margin: var(--space-xs) 0 0;
+}
+.inquiry-faq-hint p {
+  margin: 0;
+}
+/* 분장표·IT FAQ 미리보기 머리 줄 안내(후보 17, 11/17) */
+.chart-header-notes {
+  margin: 0 0 var(--space-xs);
+}

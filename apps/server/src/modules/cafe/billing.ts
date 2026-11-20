@@ -24,6 +24,7 @@ import type { AccessEntry } from '../../core/access-record';
 import type { Queryable } from '../../core/db';
 import { DeskError } from '../../core/errors';
 import type { DeskUser } from '../../core/user';
+import { assertNoClash, builtinAliasesFor, cleanAliases } from './alias';
 import { linesOf, slotLabel, spendCard } from './cards';
 import * as repo from './repo';
 
@@ -76,7 +77,7 @@ function randomText(letters: string, length: number): string {
 const featureOff = () => new DeskError('feature-off', 409, '지금은 이 기능이 꺼져 있어요');
 
 /** 메뉴 이름·옵션 다듬기와 검사. 공통 입력 검사(ADR-11)에 걸리면 내용 없이 거부해요. */
-function cleanMenu(input: CafeMenuInput): { name: string; priceWon: number; options: string[] } {
+function cleanMenu(input: CafeMenuInput): { name: string; priceWon: number; options: string[]; aliases: string[] | null } {
   const name = input.name.trim();
   const options = input.options.map((o) => o.trim());
   if (!name || name.length > CAFE_BILLING_LIMITS.menuNameMax)
@@ -92,7 +93,8 @@ function cleanMenu(input: CafeMenuInput): { name: string; priceWon: number; opti
   if ([name, ...options].some(blocked)) throw new DeskError('locked', 400, '올릴 수 없는 글자가 있어요');
   if (!Number.isInteger(input.priceWon) || input.priceWon < 0 || input.priceWon > CAFE_BILLING_LIMITS.maxPriceWon)
     throw new DeskError('bad-menu', 400, `직원가는 0~${wonText(CAFE_BILLING_LIMITS.maxPriceWon)} 사이로 적어 주세요`);
-  return { name, priceWon: input.priceWon, options };
+  // 줄임말(11/17): 빠졌으면 null(바꾸기는 지금 것 그대로, 더하기는 없음)이에요. 겹침 검사는 메뉴 잠금 안에서 해요.
+  return { name, priceWon: input.priceWon, options, aliases: input.aliases === undefined ? null : cleanAliases(input.aliases, name) };
 }
 
 const adminItem = (m: repo.AdminMenuRow): CafeAdminMenuItem => ({
@@ -102,6 +104,8 @@ const adminItem = (m: repo.AdminMenuRow): CafeAdminMenuItem => ({
   options: m.options,
   soldOut: m.soldOut,
   active: m.active,
+  aliases: m.aliases,
+  builtinAliases: builtinAliasesFor(m.name),
 });
 
 /** CSV 칸. 스프레드시트 수식으로 읽히지 않게 =·+·-·@로 시작하는 글자 앞에 '를 붙여요. */
@@ -430,14 +434,16 @@ export class CafeBilling {
     return spendCard({ monthWon, limitWon, leftWon: Math.max(0, limitWon - monthWon), unpaid });
   }
 
-  /** 메뉴 더하기(고정 버튼, 총무). 이름·옵션은 공통 입력 검사를 지나야 해요. 감사 로그에는 이름·값이 없어요. */
+  /** 메뉴 더하기(고정 버튼, 총무). 이름·옵션·줄임말은 공통 입력 검사를 지나야 해요. 감사 로그에는 이름·값·줄임말이 없어요. */
   async addMenu(user: DeskUser, input: CafeMenuInput): Promise<CafeAdminMenuItem> {
     const m = cleanMenu(input);
     return this.ctx.fixed.run(user, {
       module: 'cafeteria',
       action: 'menu-add',
       async run(q) {
-        const row = await repo.addMenu(q, { id: `m-${randomText(MENU_ID_LETTERS, 8)}`, ...m, sort: await repo.nextMenuSort(q) });
+        await repo.lockMenu(q);
+        const aliases = assertNoClash(null, m.name, m.aliases ?? [], await repo.listAllMenu(q));
+        const row = await repo.addMenu(q, { id: `m-${randomText(MENU_ID_LETTERS, 8)}`, ...m, aliases, sort: await repo.nextMenuSort(q) });
         if (!row) throw new DeskError('in-progress', 409, '지금 더하지 못했어요. 다시 눌러 주세요');
         return adminItem(row);
       },
@@ -447,6 +453,8 @@ export class CafeBilling {
   /**
    * 메뉴 이름·직원가·옵션·파는지 바꾸기(고정 버튼, 총무). 값이 바뀌면 이미 연 확인 시트는 실행 때 "본 값 = 실행 값" 검사로 막혀요(1묶음).
    * 쓰지 않게 하면 메뉴에서 빠져요(지난 주문·청구서에는 주문한 때 이름·값이 남아 있어요).
+   * 줄임말(11/17, ADR-29 보강): 총무가 직접 적어요(AI 제안 없음). 같은 고정 버튼·같은 감사 동작(menu-update)이고 줄임말 글은 감사 로그에 넣지 않아요.
+   * 메뉴 잠금 안에서 다른 메뉴의 이름·줄임말·옵션 이름과 겹치는지 봐요. 본문에 줄임말이 없으면 지금 것 그대로예요.
    */
   async updateMenu(user: DeskUser, id: string, input: CafeMenuInput): Promise<CafeAdminMenuItem> {
     const m = cleanMenu(input);
@@ -454,7 +462,13 @@ export class CafeBilling {
       module: 'cafeteria',
       action: 'menu-update',
       async run(q) {
-        const row = await repo.updateMenu(q, id, { ...m, active: input.active ?? true });
+        await repo.lockMenu(q);
+        const all = await repo.listAllMenu(q);
+        const before = all.find((x) => x.id === id);
+        if (!before) throw new DeskError('not-found', 404, '없는 메뉴예요');
+        // 이름만 바꾸면 지금 줄임말을 새 이름으로 다시 봐요(새 이름과 같은 줄임말은 빠져요).
+        const aliases = assertNoClash(id, m.name, m.aliases ?? cleanAliases(before.aliases, m.name), all);
+        const row = await repo.updateMenu(q, id, { ...m, aliases, active: input.active ?? true });
         if (!row) throw new DeskError('not-found', 404, '없는 메뉴예요');
         return adminItem(row);
       },

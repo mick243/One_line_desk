@@ -78,6 +78,9 @@ export { computeLeave, HALF_DAY } from './leave-numbers';
  * 올해(달력 연도) 병가 쓴 날(11/3). 근태 기록의 병가(type 'sick')만 세고 예정도 넣어요. 반차는 0.5일이에요.
  * limitDays는 운영 값 sickLeaveYearDays이고 0이면 한도 없음(null)이에요. 저장하지 않고 부를 때마다 계산해요(ADR-18).
  */
+/** 본인 연차 카드(남은 연차·남의 연차 안내·5인 미만 사업장). 문의함 답에서 맨 앞에 와요(11/11 QA E4). */
+export const MY_LEAVE_CARD_ID = 'navi-my-leave';
+
 export function sickUsage(record: LeaveRecord, today: string, limitDays: number): SickLeaveUsage {
   const year = Number(today.slice(0, 4));
   const used = record.uses
@@ -222,16 +225,32 @@ export function readExplicitHalfPart(text: string): HalfPart | null {
 }
 const RUN_DAYS = '월화수목금';
 
+// 가까운 날 말(후보 6, 11/17): "오늘·내일·모레·글피". 연차·반차 질문에서만 읽어요(opts.nearDays).
+// - "내일부터 3일", "오늘 기준", "모레까지"처럼 기간의 끝·기준으로 쓴 말은 날로 읽지 않아요(일수는 지금처럼 따로 세요).
+// - "내일모레"(붙여 쓴 말)는 모레 하루예요. "내일이랑 모레"·"내일 모레"는 이틀이에요.
+// - "내일배움카드"·"내일채움공제"·"오늘날"은 날이 아니에요. 줄임말 "낼"은 "연차 낼게"(내다)와 겹쳐서 읽지 않아요.
+const NEAR_NOT_A_DAY = '(?!\\s*(?:부터|까지|기준))';
+const NEAR_DAYS: readonly [RegExp, number][] = [
+  [new RegExp(`내일모레${NEAR_NOT_A_DAY}`), 2],
+  [new RegExp(`글피${NEAR_NOT_A_DAY}`), 3],
+  [new RegExp(`모레${NEAR_NOT_A_DAY}`), 2],
+  [new RegExp(`내일(?!배움|채움)${NEAR_NOT_A_DAY}`), 1],
+  [new RegExp(`오늘(?!날)${NEAR_NOT_A_DAY}`), 0],
+];
+
 /**
  * 말로 한 쓰려는 날을 날짜 목록으로 바꿔요. 읽은 말은 글에서 지워서, "11월 3일"의 3일을 일수로 세지 않게 해요.
  * 달·일 범위("11월 3일부터 5일까지", "12월 24~26일"), 달·일, "다음 주 내내", 주+요일·요일 묶음("이번 주 목금", "월화수"), 요일들("월요일이랑 금요일"), 달만("12월에", "다음 달에").
  * 11/6 휴가 정확도: 주말과 함께 법정 공휴일·회사 휴일(운영 설정)도 빼고, 뺀 쉬는 날을 알려 줘요.
  * 11/6 사용자 결정: 쉬는 요일·공휴일은 근무 달력(cal)을 따라요(주말 근무자의 토요일은 일하는 날, 공휴일을 쉬지 않는 회사는 공휴일도 세요).
+ * 후보 6(11/17): opts.nearDays면 "오늘·내일·모레·글피"도 읽어요(연차·반차만). 읽은 날은 다른 날짜 말과 같은 범위·근무 달력·쉬는 날 검사를 지나요.
+ * 병가·공가·경조는 넘기지 않아서 지금 그대로예요(오늘·내일·모레는 readSickDates·readEventDates가 따로 읽어요).
  */
 export function readPlanDates(
   text: string,
   today: string,
   cal: Partial<WorkCalendar> = {},
+  opts: { nearDays?: boolean } = {},
 ): { dates: string[]; weekendSkipped: number; holidaysSkipped: SkippedHoliday[]; monthStart: string | null; rest: string } {
   let rest = text;
   const raw: string[] = [];
@@ -273,6 +292,8 @@ export function readPlanDates(
   take(/([월화수목금토일])(?:요일|욜)/, (m) => {
     raw.push(addDays(today, (WEEKDAYS.indexOf(m[1] as Weekday) - weekdayOf(today) + 7) % 7));
   });
+  // 가까운 날 말(연차·반차만): "내일 연차", "모레 오후 반차", "글피 쉬고 싶어"
+  if (opts.nearDays) for (const [re, offset] of NEAR_DAYS) take(re, () => raw.push(addDays(today, offset)));
 
   let monthStart: string | null = null;
   take(/(이번|다음|담)\s*달/, (m) => {
@@ -310,7 +331,9 @@ export function ruleLeaveQuestion(text: string, today: string, cal: Partial<Work
   const negations = [...text.matchAll(NEGATION)];
   const last = negations.at(-1);
   const negated = last ? text.slice(0, last.index) : '';
-  const { dates, weekendSkipped, holidaysSkipped, monthStart, rest } = readPlanDates(last ? text.slice(last.index! + last[0].length) : text, today, cal);
+  const { dates, weekendSkipped, holidaysSkipped, monthStart, rest } = readPlanDates(last ? text.slice(last.index! + last[0].length) : text, today, cal, {
+    nearDays: true,
+  });
   let t = rest;
 
   // 시간으로 말한 양(11/6): 반반차·"N시간"을 먼저 읽고 지워요. 날·반차로 세지 않아요.
@@ -431,7 +454,7 @@ function planLabel(full: number, half: number, hours: number, workdayHours: numb
 /** 남의 연차를 물었을 때. 남의 연차는 찾지 않고 숫자도 보여 주지 않아요. */
 function otherPersonCard(): Card {
   return makeCard({
-    id: 'navi-my-leave',
+    id: MY_LEAVE_CARD_ID,
     kind: 'navi',
     label: '안내',
     headline: '남의 연차는 볼 수 없어요',
@@ -661,7 +684,7 @@ type LeaveMissing = 'not-connected' | 'not-found';
 /** 5인 미만 사업장이고 근태 숫자가 없을 때(11/6 사용자 결정). 앱은 법정 연차를 세지 않아서 숫자 없이 까닭만 보여요. */
 function smallWorkplaceCard(apply: CardAction | null | undefined): Card {
   return makeCard({
-    id: 'navi-my-leave',
+    id: MY_LEAVE_CARD_ID,
     kind: 'navi',
     label: '안내',
     headline: '남은 연차를 보여 드릴 수 없어요',
@@ -699,7 +722,7 @@ export function leaveCard(
   if (!record) {
     const notConnected = opts.missing === 'not-connected';
     return makeCard({
-      id: 'navi-my-leave',
+      id: MY_LEAVE_CARD_ID,
       kind: 'navi',
       label: '안내',
       headline: notConnected ? '남은 연차를 보여 드릴 수 없어요' : '남은 연차를 불러오지 못했어요',
@@ -738,7 +761,7 @@ export function leaveCard(
   const app = balance.app;
   const fiscal = balance.basis === 'fiscal-year' ? ' (회계연도 기준)' : '';
   return makeCard({
-    id: 'navi-my-leave',
+    id: MY_LEAVE_CARD_ID,
     kind: 'navi',
     label: '안내',
     headline: `남은 연차는 ${days(balance.remaining)}이에요`,

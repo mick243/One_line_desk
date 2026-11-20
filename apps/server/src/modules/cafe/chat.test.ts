@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AiGateway, FakeProvider, type LlmProvider, type ProviderResult, type StructuredRequest } from '../../core/ai/gateway';
 import { interpretByRules } from '../../core/home';
 import { createTestApp, MOCK } from '../../testing';
-import { linesByRules, menuWords, pickupByRules } from './chat';
+import { linesByRules, menuWords, modelInput, pickupByRules, readByRules, sameOrder } from './chat';
 import { CAFE_MENU_FIXTURES } from './fixtures';
 
 // F4 사내 카페 3묶음(11/6, PRD F4-1·F4-13, ADR-29·ADR-10·ADR-18·ADR-27): 홈 채팅 주문과 "이번 달 커피값".
@@ -25,15 +25,16 @@ const WORDS = menuWords(MENU);
 
 /** 게이트웨이가 공급자에 넘긴 입력을 적어 두는 시험용 공급자. 목적마다 정해 둔 답을 줘요(없으면 부른 쪽 대안). */
 class RecordingProvider implements LlmProvider {
-  readonly inputs: { purpose: string; input: string; system: string; grade: number }[] = [];
+  readonly inputs: { purpose: string; input: string; system: string; grade: number; maxTokens?: number; agree?: boolean }[] = [];
   constructor(
     readonly name: 'fake' | 'anthropic',
     private readonly answers: Record<string, unknown> = {},
   ) {}
   async complete<T>(req: StructuredRequest<T>): Promise<ProviderResult<T>> {
-    this.inputs.push({ purpose: req.purpose, input: req.input, system: req.system, grade: req.grade });
     const out = req.purpose in this.answers ? this.answers[req.purpose] : req.fallback();
-    return { output: req.schema.parse(out), inputTokens: 1, outputTokens: 1 };
+    const output = req.schema.parse(out);
+    this.inputs.push({ purpose: req.purpose, input: req.input, system: req.system, grade: req.grade, maxTokens: req.maxTokens, agree: req.agrees?.(output) });
+    return { output, inputTokens: 1, outputTokens: 1 };
   }
 }
 
@@ -190,6 +191,8 @@ describe('[F4-1] 홈 채팅 주문', () => {
           { menu: '없는 메뉴', qty: 1, options: [] },
         ],
         pickup: '13:40',
+        missed: 0,
+        near: [],
       },
     });
     const { staff } = await setup({ contract: true, provider });
@@ -202,6 +205,8 @@ describe('[F4-1] 홈 채팅 주문', () => {
       { name: '메뉴', value: '카페라테(아이스) × 2' },
       { name: '합계', value: '5,000원' },
       { name: '픽업', value: '13:40–13:50' },
+      // 모델이 목록 밖 이름을 items에 넣으면 버리고 못 찾은 수에 더해요(11/17).
+      { name: '알아 둘 것', value: '말한 메뉴 중 1개를 찾지 못했어요. 빠진 메뉴는 카페에서 골라 주세요' },
     ]);
     expect(card.evidence.aiSummarized).toBe(true);
     expect(provider.inputs.map((i) => [i.purpose, i.grade])).toEqual([
@@ -222,7 +227,7 @@ describe('[F4-1] 홈 채팅 주문', () => {
     const lines: string[] = [];
     const provider = new RecordingProvider('anthropic', {
       'home-ask': { intent: 'move', period: 'recent', kinds: [], moveTo: 'cafe' },
-      'chat-order': { items: [{ menu: '아메리카노', qty: 1, options: ['아이스'] }], pickup: null },
+      'chat-order': { items: [{ menu: '아메리카노', qty: 1, options: ['아이스'] }], pickup: null, missed: 0, near: [] },
     });
     const { t, staff } = await setup({ contract: true, provider, lines });
     const canary = '카나리카페QZ7';
@@ -335,5 +340,93 @@ describe('[F4-13] "이번 달 커피값 얼마야?"', () => {
     expect(res.cards[0]).toMatchObject({ id: 'cafe-spend', evidence: { aiSummarized: false } });
     expect(provider.inputs.map((i) => [i.purpose, i.input])).toEqual([['home-ask', '나 이번 달에 카페에서 얼마나 썼지?']]);
     for (const secret of ['5,000', '5000', '500,000', '원']) expect(JSON.stringify(provider.inputs.map((i) => i.input))).not.toContain(secret);
+  });
+});
+
+describe('[후보1] 못 찾은 메뉴를 말없이 빼지 않고 알려 줘요(11/17, ADR-29·ADR-10·R13)', () => {
+  const NOT_FOUND = '말한 메뉴 중 1개를 찾지 못했어요. 빠진 메뉴는 카페에서 골라 주세요';
+
+  it('[후보1] 낱말 규칙: 잔 수 말이 든 메뉴 없는 조각을 못 찾은 메뉴로 세고, 가까운 메뉴는 메뉴 표 이름만이에요', () => {
+    expect(readByRules('아아 하나랑 자허블 하나', MENU)).toEqual({ lines: [{ menuId: 'americano', qty: 1, options: ['아이스'] }], missed: 1, near: [] });
+    expect(readByRules('아아 하나 자허블 하나', MENU)).toMatchObject({ lines: [{ menuId: 'americano', qty: 1 }], missed: 1 });
+    expect(readByRules('라떼 하나, 바닐라라뗴 두 잔', MENU)).toEqual({ lines: [{ menuId: 'latte', qty: 1, options: [] }], missed: 1, near: ['바닐라라테'] });
+    // 잔 수·옵션·부탁 말만 있는 조각과 시각은 못 찾은 메뉴가 아니에요.
+    for (const text of [
+      '2시에 아아 하나 연하게',
+      '라떼, 두 잔',
+      '녹차라떼 하나, 뜨아 하나',
+      '아이스 아메리카노 두 잔이랑 따뜻한 라떼 하나',
+      '바닐라라떼 3잔 샷 추가해 줘',
+      '아아 하나, 연하게 해 줘',
+      '아이스티 하나랑 아이스티 하나',
+    ])
+      expect(readByRules(text, MENU), text).toMatchObject({ missed: 0, near: [] });
+  });
+
+  it('[후보1·ADR-29 시험] 낱말 규칙 길(계약 전): 한 잔이 빠지면 카드 "알아 둘 것"에 안내가 붙어요. 사람이 쓴 낱말(카나리)은 카드·응답에 없고 자동 실행은 없어요', async () => {
+    const { t, staff } = await setup();
+    const canary = '카나리자허블QZ8';
+    const res = await staff.call('POST', '/api/home/ask', { text: `아아 하나랑 ${canary} 하나` });
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body)).not.toContain(canary);
+    expect(JSON.stringify(res.body)).not.toContain('자허블');
+    const card = (res.body as HomeAskResponse).cards[0]!;
+    expect(card).toMatchObject({ label: '제안', evidence: { aiSummarized: false } });
+    expect(card.fields).toEqual([
+      { name: '메뉴', value: '아메리카노(아이스) × 1' },
+      { name: '합계', value: '2,000원' },
+      { name: '픽업', value: '13:10–13:20' },
+      { name: '알아 둘 것', value: NOT_FOUND },
+    ]);
+    expect(proposeOf(card).text).toBe('확인하고 주문하기');
+    expect(await counts(t)).toEqual({ orders: 0, plans: 0 });
+  });
+
+  it('[후보1·ADR-29 시험] 모델 길: 못 찾은 수와 가까운 메뉴(메뉴 표 안)만 붙고, 목록 밖 이름은 버려요. 카나리는 응답에 없고 자동 실행은 없어요', async () => {
+    const canary = '카나리메뉴QZ9';
+    const provider = new RecordingProvider('anthropic', {
+      'home-ask': { intent: 'move', period: 'recent', kinds: [], moveTo: 'cafe' },
+      // 모델이 가까운 이름에 목록 밖 값(사람이 쓴 낱말)을 섞어도 버리고, 띄어 쓴 이름은 메뉴 표 이름으로 맞춰요.
+      'chat-order': { items: [{ menu: '아메리카노', qty: 1, options: ['아이스'] }], pickup: null, missed: 1, near: [canary, '바닐라 라테'] },
+    });
+    const { t, staff } = await setup({ contract: true, provider });
+    const res = await staff.call('POST', '/api/home/ask', { text: `아아 하나랑 ${canary} 하나` });
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body)).not.toContain(canary);
+    const card = (res.body as HomeAskResponse).cards[0]!;
+    expect(card.evidence.aiSummarized).toBe(true);
+    expect(card.fields).toContainEqual({ name: '메뉴', value: '아메리카노(아이스) × 1' });
+    expect(card.fields).toContainEqual({ name: '알아 둘 것', value: '말한 메뉴 중 1개를 찾지 못했어요. 바닐라라테인가요?' });
+    expect(await counts(t)).toEqual({ orders: 0, plans: 0 });
+    // 늘어난 출력에 맞춘 길이 상한, 모델이 읽은 메뉴·잔 수가 낱말 규칙과 같다는 견줌(참·거짓만)
+    const call = provider.inputs.find((i) => i.purpose === 'chat-order')!;
+    expect(call).toMatchObject({ maxTokens: 512, agree: true });
+    expect(call.system).toContain('missed');
+  });
+
+  it('[후보1] 하나도 못 찾으면 "알아듣지 못했어요" 안내에 가까운 메뉴 후보가 붙어요(주문 버튼 없음). 목록 밖 후보는 버려요', async () => {
+    const provider = new RecordingProvider('anthropic', {
+      'home-ask': { intent: 'move', period: 'recent', kinds: [], moveTo: 'cafe' },
+      'chat-order': { items: [], pickup: null, missed: 1, near: ['녹차라테', '말차프라페'] },
+    });
+    const { t, staff } = await setup({ contract: true, provider });
+    const card = (await home(staff, '자몽 허니 블랙티 하나 주세요')).cards[0]!;
+    expect(card).toMatchObject({
+      label: '안내',
+      headline: '어떤 메뉴인지 알아듣지 못했어요. 카페에서 골라 주세요',
+      fields: [{ name: '알아 둘 것', value: '녹차라테인가요?' }],
+      actions: { primary: { type: 'navigate', to: 'cafe' } },
+    });
+    expect(JSON.stringify(card)).not.toContain('말차프라페');
+    expect(JSON.stringify(card)).not.toContain('자몽');
+    expect(await counts(t)).toEqual({ orders: 0, plans: 0 });
+  });
+
+  it('[후보1] 견줌 함수는 메뉴·잔 수만 봐요(옵션은 보지 않아요). 모델 입력에는 질문 글과 메뉴 이름·옵션 이름뿐이에요', () => {
+    expect(sameOrder([{ menuId: 'latte', qty: 2, options: ['아이스'] }], [{ menuId: 'latte', qty: 2, options: [] }])).toBe(true);
+    expect(sameOrder([{ menuId: 'latte', qty: 2, options: [] }], [{ menuId: 'latte', qty: 1, options: [] }])).toBe(false);
+    expect(sameOrder([{ menuId: 'latte', qty: 1, options: [] }], [])).toBe(false);
+    const input = modelInput('라떼 하나', [{ id: 'latte', name: '카페라테', options: ['아이스'], aliases: ['카라테'] }]);
+    expect(input).toBe('메뉴:\n- 카페라테 (옵션: 아이스)\n문장: 라떼 하나');
   });
 });

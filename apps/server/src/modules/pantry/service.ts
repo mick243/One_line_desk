@@ -206,12 +206,22 @@ export function createBoardService(ctx: AppContext) {
     return [cards.previewCard({ name, proposalToken: propose(user, draft), limitFull: snap.myCount >= snap.limit, aiSummarized: nameByAi })];
   }
 
-  /** S3 요청 쓰기 칸(POST /api/pantry/draft). 글은 공통 검사를 지나 가린 뒤예요. 등급 1이라 무보관 계약 전에는 이름 규칙으로 뽑아요(H1). */
+  /**
+   * S3 요청 쓰기 칸(POST /api/pantry/draft). 글은 공통 검사를 지나 가린 뒤예요. 등급 1이라 무보관 계약 전에는 이름 규칙으로 뽑아요(H1).
+   * 한 줄에 품목이 여럿이면(3개까지) 품목마다 미리보기 카드(같은 상품이면 +1 카드)를 따로 줘요. 아무것도 저장하지 않고(읽기 전용, ADR-04),
+   * 사람이 품목마다 [올리기]를 따로 눌러요. 이름 검사·표 상한(R14)은 품목마다 게시 순간에 다시 봐요.
+   */
   async function draftFromText(user: DeskUser, text: string): Promise<Card[]> {
     const extracted = await extractDraft(ctx.gateway, text);
     if (!extracted.pantryRequest) return [cards.moveToNaviCard(ctx.ops.get().modules.navi !== 'on', extracted.viaAi)];
-    if (!extracted.itemName) return [cards.noNameCard(false, extracted.viaAi)];
-    return draftForName(user, extracted.itemName, extracted.viaAi);
+    if (extracted.itemNames.length === 0) return [cards.noNameCard(false, extracted.viaAi)];
+    if (extracted.itemNames.length === 1) return draftForName(user, extracted.itemNames[0]!, extracted.viaAi);
+    const out: Card[] = [];
+    for (const [i, name] of extracted.itemNames.entries()) {
+      // 화면이 카드 ID로 카드를 그리고 하나씩 치워요. 두 품목이 같은 묶음을 가리켜도 ID가 겹치지 않게 품목 순번을 붙여요(사람과 무관한 값).
+      for (const card of await draftForName(user, name, extracted.viaAi)) out.push({ ...card, id: `${card.id}-item${i + 1}` });
+    }
+    return out;
   }
 
   /**

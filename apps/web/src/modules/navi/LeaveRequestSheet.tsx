@@ -189,7 +189,7 @@ export function LeaveRequestSheet({ action, onClose, filledNote }: { action: Lea
   }
 
   return (
-    <Sheet title={official ? '공가 신청하기' : sick ? '병가 신청하기' : '휴가 신청하기'} onClose={onClose}>
+    <Sheet title={official ? '공가 신청하기' : sick ? '병가 신청하기' : '휴가 신청하기'} onClose={onClose} dirty={reason.trim().length > 0}>
       <p className='inquiry-scope'>
         {action.team}에 보내져요 · {action.task}
       </p>

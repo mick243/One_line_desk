@@ -42,6 +42,8 @@ export function OrderPanel(_props: ScreenProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<OrderConfirmResponse | null>(null);
+  // 이번에 설명 쓰기를 한 번 해 본 주문안. 일부 줄을 못 써 서버가 "설명 끝"으로 굳히지 않았어도(후보 20) "쓰는 중"에 머물지 않게 해요.
+  const [tried, setTried] = useState<string | null>(null);
 
   // 줄 표가 먼저 나오고 설명 문장은 뒤에 채워져요(화면설계 S4 로딩).
   const fillExplanations = useCallback(async (p: OrderPlanView) => {
@@ -51,6 +53,8 @@ export function OrderPanel(_props: ScreenProps) {
       setPlan((now) => (now?.planId === filled.planId ? filled : now));
     } catch (e) {
       setNotice(messageOf(e));
+    } finally {
+      setTried(p.planId);
     }
   }, []);
 
@@ -120,6 +124,8 @@ export function OrderPanel(_props: ScreenProps) {
   }
 
   const singleFloor = (plan?.floors.length ?? 0) <= 1;
+  const explaining = plan !== null && plan.status === 'draft' && !plan.explained && tried !== plan.planId;
+  const explainLeft = plan !== null && plan.status === 'draft' && !plan.explained && tried === plan.planId;
   const lockReasons = plan?.warnings.filter((w) => w.locks) ?? [];
   const included = plan?.lines.filter((l) => l.included) ?? [];
 
@@ -165,10 +171,12 @@ export function OrderPanel(_props: ScreenProps) {
             </p>
           )}
 
+          {wide && explainLeft && <p className='hint'>{ORDER_MESSAGES.explainLeft}</p>}
+
           {plan.lines.length === 0 ? (
             <p className='empty'>지금 주문안에 넣을 열린 요청이 없어요.</p>
           ) : wide ? (
-            <LineTable plan={plan} singleFloor={singleFloor} editable={plan.status === 'draft'} onEdit={edit} />
+            <LineTable plan={plan} singleFloor={singleFloor} editable={plan.status === 'draft'} explaining={explaining} onEdit={edit} />
           ) : (
             <FloorTotals floors={plan.floors} warnings={plan.warnings} singleFloor={singleFloor} />
           )}
@@ -255,11 +263,14 @@ function LineTable({
   plan,
   singleFloor,
   editable,
+  explaining,
   onEdit,
 }: {
   plan: OrderPlanView;
   singleFloor: boolean;
   editable: boolean;
+  /** 설명을 쓰는 중(첫 시도 전·중). 일부 줄을 못 써 다시 열 때 쓸 주문안은 지금 문장(틀 문장)을 보여 줘요. */
+  explaining: boolean;
   onEdit: (line: OrderLine, change: { quantity: number } | 'remove') => Promise<void>;
 }) {
   return (
@@ -285,7 +296,7 @@ function LineTable({
           {plan.lines
             .filter((l) => l.floor === f.floor)
             .map((l) => (
-              <LineRow key={l.lineId} line={l} pending={!plan.explained && !l.edited && plan.status === 'draft'} editable={editable} onEdit={onEdit} />
+              <LineRow key={l.lineId} line={l} pending={explaining && !l.edited} editable={editable} onEdit={onEdit} />
             ))}
         </tbody>
       ))}

@@ -346,12 +346,27 @@ describe('MCP 휴가 준비 링크(11/6 A안)', () => {
 });
 
 describe('상태 묻기(11/6 A안): 승인된 휴가는 근태 기록, 결재 중인 것은 결재함', () => {
+  it('[QA E4 시험] "연차 며칠 남았어?"는 홈 머리가 [남은 연차 보기]를 가리키고(홈에는 숫자 없음), 문의함에서는 남은 연차 카드가 맨 앞이에요', async () => {
+    const t = await setup();
+    const haneul = await t.loginAs(MOCK.staff);
+    const res = await home(haneul, '연차 며칠 남았어?');
+    expect(res.headline).toBe('[남은 연차 보기]를 누르면 남은 연차를 바로 계산해요');
+    expect(res.links).toEqual([{ text: '남은 연차 보기', to: 'navi', handoff: '내 남은 연차 알려 줘', auto: true }]);
+    // 홈 답에는 연차 숫자가 없어요(ADR-27).
+    expect(JSON.stringify(res)).not.toMatch(/남은 연차는|연차 [\d.]+일/);
+    // [남은 연차 보기]가 옮긴 문장: 남은 연차 카드가 담당 카드보다 앞이에요.
+    const cards = await askNavi(haneul, '내 남은 연차 알려 줘');
+    expect(cards[0]!.id).toBe('navi-my-leave');
+    expect(cards[0]!.headline).toMatch(/^남은 연차는 [\d.]+일이에요$/);
+  });
+
   it('"내 휴가 신청 어떻게 됐어?" → 근태 기록의 승인된 휴가와 [결재함 열기]', async () => {
     const t = await setup();
     const doyun = await t.loginAs(MOCK.dev);
     const before = await home(doyun, '내 휴가 신청 어떻게 됐어?');
     const empty = before.cards.find((c) => c.id === 'navi-leave-status')!;
-    expect(before.headline).toBe('근태 기록에 승인된 휴가가 없어요');
+    // 본 기간을 밝혀요(11/11 QA E4). 때를 말하지 않았으면 오늘부터 1년이에요.
+    expect(before.headline).toBe('앞으로 1년 안에 승인된 휴가가 없어요');
     expect(field(empty, '결재 중인 신청')).toBe('결재 진행 상황은 그룹웨어 결재함에서 봐요');
     expect(empty.actions.primary).toEqual({ type: 'link', text: '결재함 열기', href: 'http://localhost:5190/demo/groupware/inbox' });
 

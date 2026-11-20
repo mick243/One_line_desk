@@ -71,6 +71,8 @@ export const OPS_VALUE_RANGE: Record<keyof OpsValues, readonly [number, number]>
   smallWorkplace: [0, 1],
   // 법정 공휴일을 쉬는 날로 보는지(11/6 사용자 결정, 0 일하는 날 · 1 쉬는 날). 회사 휴일은 값과 상관없이 쉬어요.
   publicHolidaysOff: [0, 1],
+  // 하루 AI 호출 상한(11/11 QA Q7). 0은 AI 끔(규칙만)이에요.
+  aiDailyCalls: [0, 100_000],
 };
 
 export const NAVI_OFF_ONLY_STANDALONE = '문의함은 공지·회의실이 모두 꺼진 같이 채워요 단독 모드에서만 끌 수 있어요';

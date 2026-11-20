@@ -1,6 +1,6 @@
 import { checkInput, IT_FAQ_COLUMNS, IT_FAQ_LIST_SEPARATOR, type ItFaqColumn, NAVI_ROW_ID_PATTERN } from '@one-line-desk/shared';
 import { DeskError } from '../../core/errors';
-import { parseCsv } from './chart-csv';
+import { headerNotesOf, parseCsv, readHeader } from './chart-csv';
 import type { ItFaqRow } from './repo';
 
 // IT FAQ 파일 가져오기(11/3). 분장표 파일(chart-csv.ts)과 같은 방식이에요.
@@ -29,8 +29,16 @@ const ERROR_CODE = /^[0-9A-Za-z]{3,16}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 
-const squash = (s: string) => s.normalize('NFC').replace(/\s+/g, '');
-const HEADER_TO_COLUMN = new Map<string, ItFaqColumn>(Object.entries(IT_FAQ_COLUMNS).map(([key, label]) => [squash(label), key as ItFaqColumn]));
+/** IT FAQ 칸마다 더 받는 머리 줄 이름(후보 17, 분장표와 같은 낱말 표 방식). 사람 이름 칸("작성자" 등)은 없어요. */
+export const IT_FAQ_HEADER_ALIASES: Record<ItFaqColumn, readonly string[]> = {
+  id: ['FAQ ID', 'FAQ 번호', 'FAQ 코드'],
+  title: ['FAQ 제목', '질문', '증상', '문제'],
+  aliases: ['별칭', '동의어', '검색어', '키워드'],
+  errorCodes: ['오류 번호', '에러 코드', 'error code'],
+  steps: ['해결 방법', '조치 방법', '해결 단계', '조치', '답변'],
+  revisedOn: ['수정일', '변경일', '갱신일', '최종 수정일'],
+  rowId: ['분장표 행', '문의 행 ID', '분장표 행 ID', '문의 업무'],
+};
 
 const list = (value: string, sep: string | RegExp) => [
   ...new Set(
@@ -43,11 +51,18 @@ const list = (value: string, sep: string | RegExp) => [
 
 /** IT FAQ CSV를 행으로 바꿔요. 양식이 아니면 "IT FAQ 양식으로 올려 주세요"로 거부해요. */
 export function parseItFaqFile(text: string): ItFaqFileRow[] {
+  return parseItFaqFileWithNotes(text).rows;
+}
+
+/** parseItFaqFile과 같고, 머리 줄 읽은 안내(후보 17)도 같이 줘요. */
+export function parseItFaqFileWithNotes(text: string): { rows: ItFaqFileRow[]; headerNotes: string[] } {
   const table = parseCsv(text);
   if (!table || table.length < 2) throw itFaqFormatError();
-  const header = table[0]!.map((h) => HEADER_TO_COLUMN.get(squash(h)));
-  for (const col of REQUIRED) if (!header.includes(col)) throw itFaqFormatError();
-  if (new Set(header.filter(Boolean)).size !== header.filter(Boolean).length) throw itFaqFormatError();
+  const read = readHeader(table[0]!, IT_FAQ_COLUMNS, IT_FAQ_HEADER_ALIASES, REQUIRED);
+  const header = read.columns;
+  if (read.missing.length)
+    throw itFaqFormatError(`${read.missing.map((m) => `"${m}"`).join('·')} 칸이 없어요. [IT FAQ 파일 받기]로 받은 양식에 맞춰 올려 주세요`);
+  if (read.duplicate) throw itFaqFormatError(`"${read.duplicate}" 칸으로 읽히는 칸이 둘 있어요. 하나만 남겨 주세요`);
   if (table.length - 1 > MAX_ROWS) throw itFaqFormatError();
 
   const seen = new Set<string>();
@@ -83,7 +98,7 @@ export function parseItFaqFile(text: string): ItFaqFileRow[] {
     seen.add(row.id);
     rows.push(row);
   }
-  return rows;
+  return { rows, headerNotes: headerNotesOf(read) };
 }
 
 function validate(row: ItFaqFileRow, label: string): void {

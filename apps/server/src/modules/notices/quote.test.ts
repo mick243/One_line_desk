@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { AiGateway } from '../../core/ai/gateway';
+import { AiGateway, FakeProvider, type LlmProvider } from '../../core/ai/gateway';
+import { createTestDb } from '../../core/db/test-db';
 import { MOCK_BOARD, NOTICE_BODY_CANARY } from './fixtures';
 import { pickByRules, quoteFor, sentencesOf } from './quote';
 
@@ -42,5 +43,36 @@ describe('공지 원문 한 줄', () => {
       byModel: false,
     });
     expect(await quoteFor(gateway(1), '아무거나', '제목', NOTICE_BODY_CANARY)).toBeNull();
+  });
+
+  it('[실사용 신호-원문 한 줄] 모델이 고른 문장이 낱말 규칙이 고른 문장과 같은지만 비용 줄에 남아요(질문·문장·번호 없음)', async () => {
+    const db = await createTestDb();
+    try {
+      const picking = (pick: number): LlmProvider => ({
+        name: 'anthropic',
+        async complete(r) {
+          return { output: r.schema.parse({ pick }), inputTokens: 1, outputTokens: 1 };
+        },
+      });
+      const question = 'QUOTE-CANARY 건강검진 언제까지야?';
+      // 규칙은 날짜가 든 1번 문장을 골라요.
+      expect(pickByRules(question, sentencesOf(body))).toBe(0);
+      await quoteFor(new AiGateway(picking(1), true, db), question, '하반기 건강검진 일정 안내', body);
+      await quoteFor(new AiGateway(picking(2), true, db), question, '하반기 건강검진 일정 안내', body);
+      // 없는 번호는 규칙 문장으로 대신하지만, 모델 답은 규칙과 달랐어요.
+      await quoteFor(new AiGateway(picking(9), true, db), question, '하반기 건강검진 일정 안내', body);
+      // 가짜 공급자는 규칙 답을 그대로 돌려줘서 견주지 않아요.
+      await quoteFor(new AiGateway(new FakeProvider(), true, db), question, '하반기 건강검진 일정 안내', body);
+      const rows = (await db.query<{ purpose: string; agree: boolean | null }>('select purpose, agree from ai_usage order by id')).rows;
+      expect(rows).toEqual([
+        { purpose: 'notice-quote', agree: true },
+        { purpose: 'notice-quote', agree: false },
+        { purpose: 'notice-quote', agree: false },
+        { purpose: 'notice-quote', agree: null },
+      ]);
+      expect(JSON.stringify((await db.query('select * from ai_usage')).rows)).not.toMatch(/QUOTE-CANARY|건강검진|복지몰/);
+    } finally {
+      await db.close();
+    }
   });
 });

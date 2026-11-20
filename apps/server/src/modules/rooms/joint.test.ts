@@ -23,6 +23,7 @@ type Session = Awaited<ReturnType<TestApp['loginAs']>>;
 const JIWOO = 'mock|emp-008';
 const YUNA = 'mock|emp-012';
 const SEOJUN = 'mock|emp-006';
+const DAY = 24 * 60 * 60 * 1000;
 
 const opened: TestApp[] = [];
 afterEach(async () => {
@@ -55,6 +56,27 @@ async function reserveJoint(doyun: Session) {
 }
 
 describe('여러 팀 회의(ADR-28)', () => {
+  it('[QA S1 시험] 2주 뒤 회의의 고르기 요청은 8일이 지나도 남고, 회의가 끝나고 7일 지나면 예약과 함께 지워져요', async () => {
+    const t = await setup();
+    const doyun = await t.loginAs(MOCK.dev);
+    const out = await chat(doyun, '11월 9일 3시 디자인팀이랑 회의실 잡아 줘');
+    const action = out.cards.find((c) => c.actions.primary?.type === 'propose')!.actions.primary as Extract<CardAction, { type: 'propose' }>;
+    const sheet = (await doyun.call('POST', '/api/plans', { proposalToken: action.proposalToken })).body as PlanCreateResponse;
+    if (sheet.status !== 'sheet') throw new Error('확인 시트가 아니에요');
+    expect(((await doyun.call('POST', `/api/plans/${sheet.planId}/confirm`)).body as PlanConfirmResponse).status).toBe('done');
+    const count = async () => Number((await t.db.query<{ n: number }>('select count(*)::int as n from room_joint_requests')).rows[0]!.n);
+    const opened = await count();
+    expect(opened).toBeGreaterThan(0);
+    t.advance(8 * DAY);
+    await t.runRetention();
+    expect(await count()).toBe(opened);
+    expect(await requests(await t.loginAs(JIWOO))).toHaveLength(1);
+    // 11월 9일 회의가 끝나고 7일 넘게 지나면(11월 17일 뒤) 예약과 함께 지워져요.
+    t.advance(15 * DAY);
+    await t.runRetention();
+    expect(await count()).toBe(0);
+  });
+
   it('말한 팀까지 더해 짐작하고, 확인 시트에 고르기 요청이 적혀 있고, 예약하면 팀마다 팀장에게 요청이 가요', async () => {
     const t = await setup();
     const doyun = await t.loginAs(MOCK.dev);

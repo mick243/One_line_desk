@@ -32,6 +32,12 @@ const MENU_BODY = {
     maxItems: CAFE_BILLING_LIMITS.maxOptions,
     items: { type: 'string', minLength: 1, maxLength: CAFE_BILLING_LIMITS.optionNameMax + 10 },
   },
+  // 줄임말(11/17): 총무가 직접 적어요. 글자·겹침·다른 기능 낱말 검사는 서버(alias.ts)가 다시 해요.
+  aliases: {
+    type: 'array',
+    maxItems: CAFE_BILLING_LIMITS.maxAliases,
+    items: { type: 'string', minLength: 1, maxLength: CAFE_BILLING_LIMITS.aliasMax + 10 },
+  },
 } as const;
 
 export function registerCafeRoutes(app: FastifyInstance, ctx: AppContext, desk: CafeDesk): void {
@@ -170,7 +176,7 @@ export function registerCafeRoutes(app: FastifyInstance, ctx: AppContext, desk: 
     desk.billing.decideMissed(req.deskUser!, req.params.id, 'kept', accessFrom(req)),
   );
 
-  // 메뉴·직원가 관리(고정 버튼): 더하기·바꾸기(이름·직원가·옵션·파는지). 품절은 바리스타가 카페 판에서 바꿔요.
+  // 메뉴·직원가 관리(고정 버튼): 더하기·바꾸기(이름·직원가·옵션·파는지·줄임말). 품절은 바리스타가 카페 판에서 바꿔요.
   app.post<{ Body: CafeMenuInput }>(
     '/api/cafe/menu',
     {

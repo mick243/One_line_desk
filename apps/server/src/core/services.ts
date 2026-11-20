@@ -14,6 +14,7 @@ import type {
   NoticeHit,
   RoomQuery,
   RoomSearchResult,
+  DemoBoardPostResponse,
 } from '@one-line-desk/shared';
 import type { DeskUser } from './user';
 
@@ -33,6 +34,11 @@ export interface RoomsService {
   home?: RoomsHomeRead;
   /** 홈 "같은 팀 일정"(11/3)이 쓰는 같은 팀 회의 읽기. rooms 모듈이 채워요. */
   team?: RoomsTeamRead;
+  /**
+   * 홈 답 안의 회의실 현황 카드(11/11 QA E1: "지금 빈 회의실 있어?"). 회의실 채팅의 현황 카드와 같고 읽기만이에요.
+   * 예약자·회의 제목은 없어요(ADR-06). 회의실이 '켬'이 아니면 null이에요.
+   */
+  overview?(user: DeskUser, text: string): Promise<Card | null>;
 }
 
 /** 같은 팀 사람의 회의 한 칸. 누구(가명 ID)·시간·회의실 이름만이에요. 회의 제목·참석자·부른 사람은 없어요. */
@@ -92,8 +98,14 @@ export interface NoticesService {
    * 게시판 사본 갱신(11/6 새 공지 알림 대상, ADR-09 개정): 새 공지 한 건을 공지 사본에 넣고, 새로 들어왔으면 AI가 알림 대상을 제안해요.
    * 본문은 DB에 두지 않아요. audience: pending = 총무 확인 대기, sent = 자동 보내기로 보냄, null = 공지 기능이 꺼져 제안하지 않음.
    * 허용 밖 게시판·이미 있는 공지면 copied가 거짓이에요. 시연 가상 게시판(routes/demo-groupware-board.ts)이 불러요.
+   * by는 제안한 쪽이에요(ai = 모델이 실제로 고름, rule = 낱말 규칙). 제안하지 않았으면 없어요.
    */
-  ingest?(notice: NoticeCopy): Promise<{ copied: boolean; audience: 'pending' | 'sent' | null }>;
+  ingest?(notice: NoticeCopy): Promise<DemoBoardPostResponse['copy']>;
+  /**
+   * 실사용 신호(11/17): 총무가 공지 알림 대상 제안을 [알리기]로 정한 수와 그중 고친 수(모델 제안·낱말 규칙 제안 따로).
+   * 수만이에요(대상 이름·누가 없음). 10건이 안 되면 접혀요. 운영 표(/api/ops/settings)가 불러요.
+   */
+  audienceEdits?(): Promise<{ by: 'model' | 'rules'; folded: boolean; decided?: number; edited?: number }[]>;
 }
 
 /** 게시판 사본 한 건(제목·게시일·원문 링크·본문). 본문은 색인·제안에만 쓰고 DB에 두지 않아요. */

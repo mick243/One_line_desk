@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { ProviderFailure, type StructuredRequest } from './gateway';
-import { GeminiProvider } from './gemini-provider';
+import { GeminiProvider, geminiGenerationLimits } from './gemini-provider';
 
 // Gemini 공급자(11/3): 요청 모양, 답 검사, 실패를 오류 본문 없이 다루는지 봐요. 실제 네트워크는 부르지 않아요.
 
@@ -45,6 +45,17 @@ describe('Gemini 공급자', () => {
     expect(body.generationConfig.responseJsonSchema).toMatchObject({ type: 'object' });
     // 도구는 보내지 않아요(LLM에는 쓰기 도구가 없어요).
     expect(body).not.toHaveProperty('tools');
+  });
+
+  it('[QA E3] 생각 토큰이 답 길이를 다 먹지 않게, 답 길이에 생각 몫을 더하고 Gemini 3 모델은 생각 단계를 effort로 낮춰요', async () => {
+    const { impl, calls } = fakeFetch(() => ok('{"kind":"rooms","sure":true}'));
+    await new GeminiProvider('gemini-3.6-flash', 'k', undefined, impl).complete({ ...req(), maxTokens: 64, effort: 'low' });
+    const body = JSON.parse(String(calls[0]!.init.body));
+    expect(body.generationConfig.maxOutputTokens).toBeGreaterThan(64 + 1000);
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'low' });
+    // Gemini 3이 아닌 모델에는 thinkingLevel을 보내지 않아요(2.5는 다른 칸이라 400이 날 수 있어요).
+    expect(geminiGenerationLimits('gemini-2.5-flash', { maxTokens: 64 })).not.toHaveProperty('thinkingConfig');
+    expect(geminiGenerationLimits('gemini-3.6-flash', { effort: 'high' }).thinkingConfig).toEqual({ thinkingLevel: 'high' });
   });
 
   it('막힘·빈 답·JSON 아님·모양 틀림은 다른 모델로 넘기지 않고 실패예요', async () => {

@@ -84,6 +84,8 @@ export async function quoteFor(gateway: AiGateway, question: string, title: stri
       fallback: () => ({ pick: ruled + 1 }),
       effort: 'low',
       maxTokens: 50,
+      // 실사용 신호(11/17): 모델이 고른 문장이 낱말 규칙이 고른 문장과 같은지만 남겨요(문장·번호는 남기지 않아요).
+      agrees: (o) => sentences[o.pick - 1] === sentences[ruled],
     });
     const i = out.pick - 1;
     if (i >= 0 && i < sentences.length) return { sentence: sentences[i]!, byModel: gateway.modelBacked };

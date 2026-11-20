@@ -20,7 +20,8 @@ function filled(id = 't-abc123'): Record<string, string> {
   return {
     ...env,
     PUBLIC_BASE_URL: 'https://desk.example-corp.test',
-    DATABASE_URL: 'postgres://desk@db.internal/desk',
+    DATABASE_URL: 'postgres://desk_app@db.internal/desk',
+    DESK_MIGRATE_DATABASE_URL: 'postgres://desk_owner@db.internal/desk',
     TRUST_PROXY: '10.0.3.11',
     DESK_IDP_ISSUER: 'https://idp.example-corp.test/realms/desk',
     DESK_IDP_CLIENT_SECRET: 'c'.repeat(40),
@@ -50,7 +51,12 @@ describe('회사 한 벌(ADR-23)', () => {
     const env = parseEnvFile(tenantEnvTemplate('t-abc123'));
     const problems = checkTenantEnv(env);
     expect(problems).toEqual(
-      expect.arrayContaining(['PUBLIC_BASE_URL 값을 채워 주세요', 'DATABASE_URL 값을 채워 주세요', 'DESK_IDP_CLIENT_SECRET 값을 채워 주세요']),
+      expect.arrayContaining([
+        'PUBLIC_BASE_URL 값을 채워 주세요',
+        'DATABASE_URL 값을 채워 주세요',
+        'DESK_MIGRATE_DATABASE_URL 값을 채워 주세요',
+        'DESK_IDP_CLIENT_SECRET 값을 채워 주세요',
+      ]),
     );
     expect(problems.join('\n')).not.toContain(env.SESSION_SECRET!);
     expect(problems.join('\n')).not.toContain(PLACEHOLDER);
@@ -62,6 +68,10 @@ describe('회사 한 벌(ADR-23)', () => {
     expect(checkTenantEnv({ ...filled(), NODE_ENV: 'development' })).toContain('회사 한 벌은 NODE_ENV=production이어야 해요');
     // 운영 검사(config.ts)에 걸리는 것도 그대로 알려요.
     expect(checkTenantEnv({ ...filled(), TRUST_PROXY: '10.0.0.0/8' }).join('\n')).toContain('너무 넓어요');
+    // [QA Q5] 앱 계정과 소유자(마이그레이션) 계정이 같으면 나눈 뜻이 없어서 멈춰요.
+    expect(checkTenantEnv({ ...filled(), DESK_MIGRATE_DATABASE_URL: 'postgres://desk_app@db.internal/desk' }).join('\n')).toContain(
+      'DESK_MIGRATE_DATABASE_URL이 DATABASE_URL과 같아요',
+    );
   });
 
   it('틀과 fly.toml에는 회사 이름 자리가 없고, 운영은 늘 켜진 한 대·배포 전 마이그레이션이에요', () => {

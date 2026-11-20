@@ -11,6 +11,7 @@ import {
   kstDate,
   personNameWords,
   type TeamEntry,
+  type TeamWhat,
 } from '@one-line-desk/shared';
 import type { EmployeeProfile, LeaveRecord } from '../adapters/types';
 import type { AppContext } from '../context';
@@ -36,6 +37,38 @@ const ABSENT_WORDS =
   /휴가|연차|반차|월차|병가|공가|부재|결근|쉬(?!운)|쉰다|쉴|안\s?나[오와왔온]|안\s?(와|왔|오는|온)|빠[지졌진]|자리\s?비|(누가|누구|사람)\s?(없|안)|없는\s?사람|출근\s?안/;
 /** 일정을 묻는 말 */
 const SCHEDULE_WORDS = /일정|스케줄|캘린더|회의|미팅|자리|외근|출장|재택|어디|바빠|바쁘|뭐\s?해/;
+/**
+ * 무엇을 물었는지(11/17). 서버는 물은 종류만 읽어요. 같은 파일의 ABSENT_WORDS·SCHEDULE_WORDS를 나눠 써요.
+ * - 휴가 낱말(휴가·연차·반차·병가·공가·쉬어) → 휴가
+ * - 회의 낱말(회의·미팅) → 회의
+ * - 외근·출장·재택·자리 비움 → 자리비움
+ * - 빠진 사람을 묻는 말(누가 없어·부재·안 나온·결근) → 휴가와 자리비움
+ * - 자리에 있는지·어디 있는지, 또는 위 낱말이 없는 물음(일정·스케줄) → 셋 다(빈 배열)
+ */
+const LEAVE_WHAT = /휴가|연차|반차|월차|병가|공가|경조|쉬(?!운)|쉰다|쉴/;
+const MEETING_WHAT = /회의|미팅/;
+const AWAY_WHAT = /외근|출장|재택|자리\s?비/;
+const PRESENCE_WHAT = /자리에|자리\s?(있|계)|어디|뭐\s?해|바빠|바쁘/;
+
+/** 같은 팀 일정에서 물은 종류(규칙). 빈 배열은 셋 다예요. 모델의 teamWhat과 같은 모양이에요. */
+export function teamWhatOf(text: string): TeamWhat[] {
+  if (PRESENCE_WHAT.test(text)) return [];
+  const what = new Set<TeamWhat>();
+  if (LEAVE_WHAT.test(text)) what.add('leave');
+  if (MEETING_WHAT.test(text)) what.add('meeting');
+  if (AWAY_WHAT.test(text)) what.add('away');
+  // 휴가·자리비움 낱말이 아닌 빠진 사람 말("누가 없어?", "부재", "안 나온 사람")은 휴가와 자리비움이에요.
+  const rest = text.replace(new RegExp(LEAVE_WHAT.source, 'g'), ' ').replace(new RegExp(AWAY_WHAT.source, 'g'), ' ');
+  if (ABSENT_WORDS.test(rest)) {
+    what.add('leave');
+    what.add('away');
+  }
+  // 아무것도 짚지 않았거나("이번 주 팀 일정") 셋 다면 가리지 않아요.
+  if (what.size === 0 || what.size === WHAT_ORDER.length) return [];
+  return WHAT_ORDER.filter((w) => what.has(w));
+}
+const WHAT_ORDER: readonly TeamWhat[] = ['leave', 'meeting', 'away'];
+
 /** 남(한 사람)을 가리키는 말 */
 const OTHER_PERSON =
   /팀장|부장|과장|차장|대리|실장|본부장|이사님|대표님|사장님|선배|후배|부서장|매니저|리더|[가-힣]{2,4}\s?(님|씨)(?![가-힣])|그\s?사람|그분|걔|쟤|다른\s?사람/;
@@ -102,20 +135,56 @@ export function asksTeamSchedule(text: string, names: string[] = []): boolean {
 
 const squash = (s: string) => s.replace(/\s+/g, '');
 
+/** 부서 이름 끝말. 떼고 남은 줄기로 "디자인이랑"·"개발과"를 알아봐요(11/17). */
+const DEPT_SUFFIX = /(본부|센터|그룹|파트|팀|부|실|과)$/;
+/** 줄기 바로 뒤에 붙는 "함께" 조사. 조사 없이 쓴 "디자인 리뷰"는 부서로 보지 않아요. */
+const WITH_PARTICLE = '(?:이랑|랑|하고|과|와)';
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * 줄여 말한 부서(11/17, 규칙만·모델 없음): 부서 이름에서 끝말("팀·부·실")을 뗀 줄기(두 글자 이상)가 낱말 처음에 있고,
+ * 바로 뒤에 "이랑·랑·과·와·하고"가 붙고, 그 뒤가 낱말 끝일 때만이에요("디자인이랑 내일 3시", "개발과 회의").
+ * "앱개발이랑"의 "개발"처럼 다른 낱말의 일부이거나, 두 부서가 같은 줄기면(어느 쪽인지 몰라서) 맞추지 않아요.
+ */
+function departmentsByStem(text: string, departments: string[]): string[] {
+  const byStem = new Map<string, string[]>();
+  for (const name of new Set(departments.filter(Boolean))) {
+    const key = squash(name);
+    const stem = key.replace(DEPT_SUFFIX, '');
+    if (stem === key || stem.length < 2) continue;
+    byStem.set(stem, [...(byStem.get(stem) ?? []), name]);
+  }
+  const out: string[] = [];
+  for (const [stem, names] of byStem) {
+    if (names.length !== 1) continue;
+    const re = new RegExp(`(?<![가-힣A-Za-z0-9])${escapeRe(stem)}${WITH_PARTICLE}(?![가-힣A-Za-z0-9])`, 'i');
+    if (re.test(text)) out.push(names[0]!);
+  }
+  return out;
+}
+
+/** 질문에 나온 부서 이름(통째로 쓴 이름 + 줄여 말한 이름). 긴 이름부터 지워서 "앱개발팀" 안의 "개발팀"을 따로 세지 않아요. */
+function departmentsIn(text: string, departments: string[]): string[] {
+  let rest = squash(text);
+  const out: string[] = [];
+  for (const name of [...new Set(departments.filter(Boolean))].sort((a, b) => squash(b).length - squash(a).length)) {
+    const key = squash(name);
+    if (!key || !rest.includes(key)) continue;
+    rest = rest.split(key).join(' ');
+    out.push(name);
+  }
+  for (const name of departmentsByStem(text, departments)) if (!out.some((n) => squash(n) === squash(name))) out.push(name);
+  return out;
+}
+
 /**
  * 질문에 내 부서가 아닌 부서 이름이 있는지. 서버 안에서 디렉터리 부서 이름과 대조만 해요(띄어 쓴 "개발 팀"도 같아요).
  * 긴 이름부터 지워서 "앱개발팀" 안의 "개발팀"을 따로 세지 않아요. 명단에 없는 이름은 다른 팀으로 보지 않아요(보여 주는 건 늘 내 부서뿐이에요).
+ * 11/17: "디자인이랑"처럼 끝말을 뗀 줄기 + "이랑·랑·과·와·하고"도 그 부서로 봐요(departmentsByStem).
  */
 export function mentionsOtherTeam(text: string, own: string, departments: string[]): boolean {
-  let rest = squash(text);
   const mine = squash(own);
-  const names = [...new Set(departments.map(squash).filter(Boolean))].sort((a, b) => b.length - a.length);
-  for (const name of names) {
-    if (!rest.includes(name)) continue;
-    if (name !== mine) return true;
-    rest = rest.split(name).join(' ');
-  }
-  return false;
+  return departmentsIn(text, departments).some((name) => squash(name) !== mine);
 }
 
 const startOf = (date: string) => Date.parse(`${date}T00:00:00${KST_OFFSET}`);
@@ -183,6 +252,7 @@ export async function gatherTeamSchedule(
   text: string,
   dates: { from: string; to: string },
   from: Pick<AccessEntry, 'ip' | 'requestId'>,
+  what: readonly TeamWhat[] = [],
 ): Promise<TeamGather> {
   let members: EmployeeProfile[];
   let allNames: string[];
@@ -206,12 +276,17 @@ export async function gatherTeamSchedule(
   const fromMs = startOf(dates.from);
   const toMs = startOf(addDays(dates.to, 1));
   const ids = people.map((p) => pseudonymize(ctx.config.pseudonymSecret, p.idpSubject));
-  const rooms = settings.modules.rooms === 'on' ? ctx.services.rooms?.team : undefined;
-  const away = settings.modules.navi === 'on' ? ctx.services.navi?.away : undefined;
+  // 물은 종류만 읽어요(11/17). 묻지 않은 종류는 근태·회의·자리비움을 조회하지 않아서 보여 준 사람(접속기록)에도 들지 않아요.
+  const wants = (w: TeamWhat) => what.length === 0 || what.includes(w);
+  const rooms = settings.modules.rooms === 'on' && wants('meeting') ? ctx.services.rooms?.team : undefined;
+  const away = settings.modules.navi === 'on' && wants('away') ? ctx.services.navi?.away : undefined;
+  const readLeave = wants('leave');
   const [records, meetings, aways] = await Promise.all([
-    mapLimited(people, LEAVE_CONCURRENCY, (p) =>
-      ctx.adapters.leave.leaveOf({ idpSubject: p.idpSubject, ...(p.email ? { email: p.email } : {}) }).catch(() => null),
-    ),
+    readLeave
+      ? mapLimited(people, LEAVE_CONCURRENCY, (p) =>
+          ctx.adapters.leave.leaveOf({ idpSubject: p.idpSubject, ...(p.email ? { email: p.email } : {}) }).catch(() => null),
+        )
+      : Promise.resolve(people.map(() => null)),
     rooms ? rooms.meetingsOf(ids, fromMs, toMs).catch(() => [] as TeamMeeting[]) : Promise.resolve([] as TeamMeeting[]),
     away ? away.ofPeople(ids, fromMs, toMs).catch(() => [] as TeamAway[]) : Promise.resolve([] as TeamAway[]),
   ]);
@@ -267,7 +342,8 @@ export async function gatherTeamSchedule(
     status: 'shown',
     entries: entries.map(({ order: _order, ...e }) => e as TeamEntry),
     person: focus.length === 1 ? focus[0]!.displayName : null,
-    leaveConnected: people.length === 0 || records.some((r) => r !== null),
+    // 휴가를 묻지 않았으면 근태를 읽지 않았으니 "휴가가 빠졌어요" 안내도 붙이지 않아요.
+    leaveConnected: !readLeave || people.length === 0 || records.some((r) => r !== null),
   };
 }
 
@@ -338,18 +414,13 @@ export async function teamPresence(
   return { total, present: Math.max(1, total - leave - awayCount), leave, away: awayCount };
 }
 
-/** 질문에 나온 내 부서가 아닌 부서 이름들(명단에 있는 이름만, 긴 이름 먼저). 여러 팀 회의에서 어느 팀에 고르기를 보낼지 정해요(ADR-28). */
+/**
+ * 질문에 나온 내 부서가 아닌 부서 이름들(명단에 있는 이름만, 긴 이름 먼저). 여러 팀 회의에서 어느 팀에 고르기를 보낼지 정해요(ADR-28).
+ * 11/17: "디자인이랑 내일 3시 회의"처럼 끝말을 뗀 줄기 + 조사도 그 부서로 봐요. 서버 안에서 명단과 대조만 하고 모델에 보내지 않아요.
+ */
 export function otherTeamsIn(text: string, own: string, departments: string[]): string[] {
-  let rest = squash(text);
   const mine = squash(own);
-  const out: string[] = [];
-  for (const name of [...new Set(departments.filter(Boolean))].sort((a, b) => squash(b).length - squash(a).length)) {
-    const key = squash(name);
-    if (!key || !rest.includes(key)) continue;
-    rest = rest.split(key).join(' ');
-    if (key !== mine) out.push(name);
-  }
-  return out;
+  return departmentsIn(text, departments).filter((name) => squash(name) !== mine);
 }
 
 /** 여러 팀이 함께하는 회의를 가리키는 말(11/4). 이때는 팀 인원으로 짐작하지 않고 인원을 물어요. */

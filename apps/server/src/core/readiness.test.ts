@@ -7,7 +7,7 @@ import { buildApp } from '../app';
 import { loadConfig } from '../config';
 import { insertCard, insertFlag, insertMerge, insertVote } from '../modules/pantry/repo';
 import { createTestApp, MOCK } from '../testing';
-import { applyMigrations, pendingMigrations } from './db';
+import { applyMigrations, migrationState, pendingMigrations } from './db';
 import { MIGRATIONS_DIR } from './db/migrate';
 import { createPgliteDb } from './db/pglite';
 import { errorSummary } from './logging';
@@ -79,12 +79,42 @@ describe('마이그레이션(L-22)', () => {
   it('폴더에 없는 이름이 기록된 옛 DB(합치기 전 개발 DB)는 적용하지 않고 지우라고 알려요', async () => {
     const db = await createPgliteDb();
     try {
-      await applyMigrations(db);
+      // 합치기 전 DB: 옛 이름만 적혀 있고 지금 폴더 파일은 적용되지 않았어요.
+      await db.exec('create table schema_migrations (name text primary key, sha256 text not null, applied_at timestamptz not null default now())');
       await db.query("insert into schema_migrations (name, sha256) values ('001_base.sql', 'x')");
       await expect(applyMigrations(db)).rejects.toThrow(/001_base\.sql.*\.data\/pglite/);
       await expect(pendingMigrations(db)).rejects.toThrow(/폴더에 없는/);
       const config = loadConfig({ DESK_MIGRATE_ON_START: 'false' });
       await expect(buildApp({ config, db, seed: false, retentionTimer: false })).rejects.toThrow(/폴더에 없는/);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it('[QA Q1 시험] 더 새 판이 붙인 기록이 있어도(앞 판 이미지로 되돌림) 폴더 파일이 다 적용돼 있으면 적용·시작 모두 되고 경고만 남겨요', async () => {
+    const db = await createPgliteDb();
+    const lines: string[] = [];
+    try {
+      await applyMigrations(db);
+      await db.query("insert into schema_migrations (name, sha256) values ('620_newer.sql', 'abc')");
+      // release_command(db:migrate)는 할 일이 없고 멈추지 않아요.
+      expect(await applyMigrations(db)).toEqual([]);
+      expect(await migrationState(db)).toEqual({ pending: [], newer: ['620_newer.sql'] });
+      const config = loadConfig({ DESK_MIGRATE_ON_START: 'false' });
+      const { app } = await buildApp({
+        config,
+        db,
+        seed: false,
+        retentionTimer: false,
+        logger: { level: 'warn', stream: { write: (line: string) => void lines.push(line) } },
+      });
+      expect((await app.inject({ method: 'GET', url: '/health/ready' })).statusCode).toBe(200);
+      await app.close();
+      expect(lines.some((l) => l.includes('db-newer-migrations') && l.includes('620_newer.sql'))).toBe(true);
+      // 같은 이름인데 폴더 파일을 고친 것은 그대로 멈춰요.
+      const first = (await db.query<{ name: string }>("select name from schema_migrations where name <> '620_newer.sql' order by name limit 1")).rows[0]!.name;
+      await db.query("update schema_migrations set sha256 = 'changed' where name = $1", [first]);
+      await expect(migrationState(db)).rejects.toThrow(/바뀌었어요/);
     } finally {
       await db.close();
     }

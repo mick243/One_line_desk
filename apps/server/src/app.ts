@@ -20,7 +20,7 @@ import { GeminiProvider } from './core/ai/gemini-provider';
 import { AiGateway, FakeProvider, type LlmProvider } from './core/ai/gateway';
 import { AccessRecorder } from './core/access-record';
 import { AuditLog } from './core/audit';
-import { applyMigrations, type Db, openDb, pendingMigrations } from './core/db';
+import { applyMigrations, type Db, migrationState, openDb } from './core/db';
 import { DeskError } from './core/errors';
 import { FixedActions } from './core/fixed-action';
 import { errorSummary, maskedLogger, pathOnly } from './core/logging';
@@ -72,10 +72,9 @@ export async function buildApp(opts: BuildOptions) {
   const db = opts.db ?? (await openDb(config.databaseUrl));
   // 운영은 앱 시작 적용을 끄고(앱 계정에 표 만들기 권한 없음) 배포 잡이 먼저 적용해요(L-22). 빠진 게 있으면 뜨지 않아요.
   if (config.migrateOnStart) await applyMigrations(db);
-  else {
-    const pending = await pendingMigrations(db);
-    if (pending.length) throw new Error(`아직 적용하지 않은 마이그레이션이 있어요(${pending.join(', ')}). npm run db:migrate를 먼저 돌려 주세요`);
-  }
+  // 아직 적용하지 않은 것이 있으면 뜨지 않아요. 더 새 판이 붙인 기록(앞 판으로 되돌림)은 뜨고 경고만 남겨요(11/11 QA Q1).
+  const state = await migrationState(db);
+  if (state.pending.length) throw new Error(`아직 적용하지 않은 마이그레이션이 있어요(${state.pending.join(', ')}). npm run db:migrate를 먼저 돌려 주세요`);
 
   const audit = new AuditLog(db);
   // 운영(production)은 출시 기본값(회의실 쓰기·MCP 끔)에서 시작해요. 개발·시연은 모두 켠 기본값이에요. 바꾼 값은 표에서 읽어요.
@@ -115,7 +114,8 @@ export async function buildApp(opts: BuildOptions) {
     access: new AccessRecorder(db, now),
     ops,
     rateLimiter: new RateLimiter(now, () => settings().values.rateLimitPerMinute),
-    gateway: new AiGateway(provider, config.noRetentionContractConfirmed, db),
+    // 하루 AI 호출 상한(운영 값 aiDailyCalls, 11/11 QA Q7): 넘으면 그날은 낱말 규칙으로만 답해요.
+    gateway: new AiGateway(provider, config.noRetentionContractConfirmed, db, () => settings().values.aiDailyCalls),
     plans: new PlanService(db, tokens, audit, settings, now),
     fixed: new FixedActions(db, audit, settings, now),
     notify: new Notifier(db, now),
@@ -151,6 +151,12 @@ export async function buildApp(opts: BuildOptions) {
       return reply.code(400).send({ error: 'bad-request', message: '요청 형식이 맞지 않아요' });
     },
   });
+  if (state.newer.length)
+    app.log.warn({
+      msg: 'db-newer-migrations',
+      names: state.newer,
+      note: '더 새 판이 붙인 마이그레이션 기록이 있어요. 앞 판으로 되돌린 상태예요(장애런북 3절). 새 판을 다시 올리면 이 경고는 없어져요',
+    });
   await app.register(cookie, { secret: config.sessionSecret });
 
   app.setErrorHandler((err: Error & { statusCode?: number; validation?: unknown }, req, reply) => {

@@ -108,6 +108,11 @@ export interface OpsSettings {
      * (공휴일이 유급휴일이 아닌 5인 미만 사업장 등). 회사 휴일(companyHolidays)은 값과 상관없이 늘 쉬는 날이에요. smallWorkplace와 따로예요.
      */
     publicHolidaysOff: number;
+    /**
+     * 회사 전체 하루(한국 시간) AI 호출 상한(11/11 QA Q7, 기본 2,000번). 넘으면 그날은 낱말 규칙으로만 답하고 카드에 "AI 정리"가 없어요.
+     * 0이면 AI를 부르지 않아요. 공급자 콘솔의 지출 한도도 같이 걸어요(장애런북).
+     */
+    aiDailyCalls: number;
   };
 }
 
@@ -159,6 +164,7 @@ export const DEFAULT_OPS_SETTINGS: OpsSettings = {
     eventLeaveFromAnnual: 0,
     smallWorkplace: 0,
     publicHolidaysOff: 1,
+    aiDailyCalls: 2000,
   },
 };
 

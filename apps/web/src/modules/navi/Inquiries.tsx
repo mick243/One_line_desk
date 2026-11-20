@@ -1,8 +1,11 @@
 import {
   checkInput,
   dayLabel,
+  INQUIRY_FAQ_FILL_TEXT,
+  INQUIRY_FAQ_HINT_TEXT,
   INQUIRY_REPLY_MAX,
   INQUIRY_STATE_LABEL,
+  type InquiryFaqHint,
   type InquiryItem,
   type InquiryListResponse,
   kstDate,
@@ -23,6 +26,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
 import { useActions, useListVersion } from '../../components/ActionHost';
 import { newRequestId } from '../../net';
+import './navi.css';
 
 // 받은 문의함(내 부서로 온 문의)과 내 문의(내가 보낸 문의). 담당 찾기 페이지 아래에 있어요(ADR-16).
 // 10/30(ADR-24): 받은 팀은 답장을 보내고, 휴가 요청은 [승인]·[반려](사유 필수)해요. 결정 전 휴가 요청에는 보낸 사람 남은 연차가
@@ -188,6 +192,23 @@ function LeaveBlock({ item }: { item: InquiryItem }) {
   );
 }
 
+/**
+ * 받은 IT 문의에 맞아 보이는 FAQ(후보 15, 11/17). 서버가 규칙으로 찾은 것이고 AI가 아니라서 "AI 정리"가 없어요.
+ * [답장에 FAQ 넣기]는 답장 칸을 채우기만 해요. 고친 뒤 [답장 보내기](고정 버튼)를 눌러야 보내져요.
+ */
+export function FaqHint({ hint, onFill }: { hint: InquiryFaqHint; onFill: () => void }) {
+  return (
+    <div className='inquiry-faq-hint'>
+      <p className='hint'>
+        {INQUIRY_FAQ_HINT_TEXT}: {hint.title}
+      </p>
+      <button type='button' className='secondary small' onClick={onFill}>
+        {INQUIRY_FAQ_FILL_TEXT}
+      </button>
+    </div>
+  );
+}
+
 /** 받은 문의함 한 줄: 답장, 휴가 요청 승인·반려 */
 function InboxItem({ item }: { item: InquiryItem }) {
   const actions = useActions();
@@ -283,6 +304,15 @@ function InboxItem({ item }: { item: InquiryItem }) {
         </p>
       )}
       <Replies item={item} />
+      {mode === 'none' && item.canReply && item.faqHint && (
+        <FaqHint
+          hint={item.faqHint}
+          onFill={() => {
+            setMode('reply');
+            setText(item.faqHint!.reply);
+          }}
+        />
+      )}
 
       {mode === 'reply' && <TextBox label='답장' value={text} onChange={setText} max={INQUIRY_REPLY_MAX} placeholder='보낸 사람에게 보낼 답을 적어 주세요' />}
       {mode === 'reject' && (

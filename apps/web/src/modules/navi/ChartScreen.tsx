@@ -126,6 +126,8 @@ interface Preview {
   changes: PreviewChange[];
   unchanged: number;
   untouched: number;
+  /** 머리 줄을 다른 이름으로 읽은 안내(후보 17). 사람이 보고 [반영하기]를 눌러요. */
+  headerNotes?: string[];
 }
 
 interface UploadConfig {
@@ -301,6 +303,13 @@ function UploadPanel({ config, onApplied }: { config: UploadConfig; onApplied: (
 
         {preview && (
           <div className='chart-preview'>
+            {preview.headerNotes && preview.headerNotes.length > 0 && (
+              <ul className='plain hint chart-header-notes' aria-label='머리 줄을 읽은 방법'>
+                {preview.headerNotes.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            )}
             {preview.changes.length === 0 ? (
               <p className='empty'>{config.noChange}</p>
             ) : (

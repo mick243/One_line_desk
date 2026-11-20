@@ -155,6 +155,11 @@ export interface Card {
   wrong?: WrongInfo;
   /** 회의실 현황 카드(variant 'rooms-overview')의 회의실 한 줄 목록. fields에도 같은 내용이 글로 있어요(따로 그리지 못하는 화면용). */
   overview?: RoomOverview;
+  /**
+   * 결과 카드로 올 때 같은 목록에서 지울 카드 id(11/11 QA E2). 예약을 취소하면 그 예약의 "다른 빈 회의실로 바꾸기" 카드를 지워요.
+   * 사람을 가리키는 값을 넣지 않아요(id와 같은 규칙).
+   */
+  replaces?: string[];
   /** 5 꼬리: 무엇이 바뀌고 무엇이 남는지 한 줄 */
   tail: string;
 }
