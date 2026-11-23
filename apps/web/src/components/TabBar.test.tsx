@@ -40,4 +40,15 @@ describe('탭 목록과 바리스타 메뉴', () => {
     expect(staff).toContain('</svg>카페</button>');
     expect(staff).toContain('aria-current="page"');
   });
+
+  it('[11/23 사용성] 탭이 6칸 이상이면 모바일에서 짧은 이름(채워요·마이)을 쓰고, 화면 읽기는 원래 이름으로 읽어요', () => {
+    const many = renderToStaticMarkup(<TabBar current='home' onChange={() => undefined} modules={modules('on')} roles={STAFF} />);
+    expect(many).toContain('class="tabbar crowded"');
+    expect(many).toContain('aria-label="같이 채워요"');
+    expect(many).toContain('<span class="tab-short" aria-hidden="true">채워요</span>');
+    expect(many).toContain('aria-label="마이 페이지"');
+    expect(many).toContain('<span class="tab-short" aria-hidden="true">마이</span>');
+    const few = renderToStaticMarkup(<TabBar current='home' onChange={() => undefined} modules={modules('on')} roles={BARISTA} />);
+    expect(few).toContain('class="tabbar"');
+  });
 });

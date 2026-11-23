@@ -223,7 +223,7 @@ export function BoardScreen({
       )}
 
       {draft && (
-        <Sheet title='결과' onClose={() => setDraft(null)}>
+        <Sheet title='올리기 전에 봐요' onClose={() => setDraft(null)}>
           <div className='kind-chips'>
             <span className='chip selected'>탕비실</span>
           </div>
@@ -233,7 +233,7 @@ export function BoardScreen({
         </Sheet>
       )}
       {notice && (
-        <Sheet title='결과' onClose={() => setNotice(null)}>
+        <Sheet title='알려 드려요' onClose={() => setNotice(null)}>
           <p>{notice}</p>
         </Sheet>
       )}

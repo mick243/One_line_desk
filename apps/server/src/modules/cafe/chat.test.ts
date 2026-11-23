@@ -313,8 +313,8 @@ describe('[F4-13] "이번 달 커피값 얼마야?"', () => {
           { name: '이번 달 지금까지', value: '5,000원' },
           { name: '남은 한도', value: '495,000원(이번 달 한도 500,000원)' },
         ],
-        evidence: { text: '내 주문 기록과 청구서로 서버가 계산했어요', aiSummarized: false },
-        tail: '나에게만 보여요. 카페 값은 서버가 주문 기록으로 계산하고 AI로 보내지 않아요',
+        evidence: { text: '내 주문 기록과 청구서로 앱이 계산했어요', aiSummarized: false },
+        tail: '나에게만 보여요. 카페 값은 앱이 주문 기록으로 계산하고 AI로 보내지 않아요',
       }),
     ]);
     expect(JSON.stringify(res)).not.toContain('2,000');

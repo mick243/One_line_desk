@@ -135,7 +135,7 @@ export function Login({
       {login.kind === 'oidc' && (
         <section className='card'>
           <h2>{login.label}으로 들어가기</h2>
-          <p className='hint'>회사 IdP 로그인 화면으로 갔다가 돌아와요. 이 앱은 비밀번호를 보지 않아요.</p>
+          <p className='hint'>회사 로그인 화면으로 갔다가 돌아와요. 이 앱은 비밀번호를 보지 않아요.</p>
           <button type='button' className='primary' onClick={startIdpLogin}>
             {login.label}으로 로그인
           </button>

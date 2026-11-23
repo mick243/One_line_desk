@@ -190,7 +190,7 @@ export function ItHelpScreen({ onBack }: { onBack: () => void }) {
         {/* 못 찾았을 때는 후보 칩을 먼저 보여 줘요. 맞는 FAQ가 문의 버튼 아래에 묻히던 문제(L2). */}
         {found && !found.faq && !picked && chips}
         {result?.faq && (
-          <article className='result-card label-안내' aria-label='담당 안내'>
+          <article className='result-card label-안내' aria-label='받을 팀 안내'>
             <header className='card-head'>
               <span className='kind'>담당</span>
               <span className='label'>안내</span>
@@ -217,7 +217,7 @@ export function ItHelpScreen({ onBack }: { onBack: () => void }) {
           </article>
         )}
         {result && !result.faq && (
-          <article className='result-card label-안내' aria-label='담당 안내'>
+          <article className='result-card label-안내' aria-label='받을 팀 안내'>
             <header className='card-head'>
               <span className='kind'>담당</span>
               <span className='label'>안내</span>

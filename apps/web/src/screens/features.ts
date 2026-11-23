@@ -68,7 +68,7 @@ export const FEATURES: Feature[] = [
 
 // "링크만"·회의실 쓰기 끔일 때 소개 글(L-50, QA-13). 이 일은 그룹웨어에서 한다고 먼저 알려요.
 const LINK_COPY: Record<ModuleKind, Pick<Feature, 'short' | 'summary'>> = {
-  navi: { short: '담당 안내는 그룹웨어에서 봐요', summary: '지금은 담당 안내를 그룹웨어에서 봐요. 한 줄로 쓰면 그룹웨어로 가는 길을 알려 줘요.' },
+  navi: { short: '문의는 그룹웨어에서 해요', summary: '지금은 문의를 그룹웨어에서 해요. 한 줄로 쓰면 그룹웨어로 가는 길을 알려 줘요.' },
   rooms: { short: '회의실 예약은 그룹웨어에서 해요', summary: '지금은 회의실 예약을 그룹웨어에서 해요. 한 줄로 쓰면 그룹웨어로 가는 길을 알려 줘요.' },
   notices: { short: '공지는 그룹웨어 게시판에서 봐요', summary: '지금은 공지를 그룹웨어 게시판에서 봐요. 한 줄로 쓰면 게시판으로 가는 길을 알려 줘요.' },
   pantry: { short: '비품 요청은 그룹웨어에서 해요', summary: '지금은 비품 요청을 그룹웨어에서 해요. 한 줄로 쓰면 그룹웨어로 가는 길을 알려 줘요.' },

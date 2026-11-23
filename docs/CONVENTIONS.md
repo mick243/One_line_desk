@@ -85,6 +85,7 @@ db/migrations/              NNN_<영역>_<무엇>.sql
 - `describe`·`it` 이름은 한국어로 "무엇이 어떻게 돼요"라고 써요. PRD 완료 기준을 지키는 시험은 이름 앞에 기준 번호를 붙여요: `it('[F2-7] 같은 방·구간 동시 확정은 한 명만 성공해요', …)`.
 - DB 시험은 `core/db/test-db.ts`의 `createTestDb()`로 새 DB를 띄워요. 기본은 메모리 PGlite예요. `npm run test:pg`(`TEST_DATABASE_URL`)로 돌리면 같은 시험이 실제 PostgreSQL의 새 스키마에서 돌고, 끝나면 그 스키마를 지워요. 시험은 둘 다에서 통과해야 해요. DB 종류에 따라 값이 달라지면 `db.kind`로 기대값을 만들어요.
 - 두 연결이 필요한 경쟁 시험은 `inject('testDatabaseUrl')`이 있을 때만 돌려요(PGlite는 연결 하나라 건너뛰어요).
+- 웹 화면을 눌러 보는 시험은 파일 맨 위에 `// @vitest-environment happy-dom`을 적고 `apps/web/src/testing/dom.tsx`(가짜 서버·누르기·글 넣기)를 써요.
 - LLM은 시험에서 `FakeProvider`를 써요. 실제 모델을 부르는 시험은 두지 않아요.
 
 ## 8. 규칙 시험(`apps/server/src/core/conventions.test.ts`)
@@ -92,7 +93,7 @@ db/migrations/              NNN_<영역>_<무엇>.sql
 코드를 읽어 아래를 막아요.
 - 모듈끼리 import
 - 서버 코드의 `console.log`(마이그레이션 스크립트 빼고)
-- 웹 코드의 `localStorage`·`sessionStorage`·`indexedDB`
+- 웹 코드의 `localStorage`·`sessionStorage`·`indexedDB`(저장소가 비었는지 보는 시험 파일은 빼요)
 - `dangerouslySetInnerHTML`
 - 모듈 안의 `Date.now()`·`new Date()`(시계는 `ctx.now()`)
 

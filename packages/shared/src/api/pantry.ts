@@ -20,7 +20,7 @@ export const PANTRY_TEXT = {
   postLimit: '다른 표를 거두면 올릴 수 있어요',
   overLimit: '합치기가 풀려 상한을 넘었어요. 새 표는 거둔 뒤에 줄 수 있어요.',
   rateLimited: '요청이 많아요. 잠시 뒤에 다시 올려 주세요.',
-  moveToAsk: '이건 담당 안내가 맞아 보여요',
+  moveToAsk: '이건 문의함에서 물어볼 일 같아요',
   standaloneOnly: '여기에는 탕비실 요청만 올려요',
   conflict: '다른 총무가 먼저 이 품목을 바꿨어요. 새로 불러왔어요.',
   justPosted: '방금 같은 품목이 올라왔어요',

@@ -1,6 +1,7 @@
 import { CAFE_LIMITS, CAFE_NEXT_STATUS, CAFE_STATUS_LABEL, CAFE_TEXT, type CafeBoardResponse, type CafeStatusRequest } from '@one-line-desk/shared';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { ApiFailure, apiRequest } from '../../api';
+import { ConfirmSheet } from '../../components/ActionHost';
 import './cafe.css';
 
 // S8 카페 판(바리스타의 홈, F4 1묶음, ADR-29). 머리(영업 중·[영업 끝] / 영업 전·[영업 시작]) → 판 머리 문구 → 주문 줄 → 메뉴 품절 바꾸기.
@@ -8,6 +9,18 @@ import './cafe.css';
 // 이름·가명 ID·금액은 응답에도 화면에도 없어요. 새 주문 소리는 [영업 시작]을 누른 뒤에만 나요(브라우저는 사람이 한 번 눌러야 소리를 내요).
 
 const FRESH_MS = 6_000;
+/**
+ * 상태 버튼(받기·다 됐어요·가져갔어요)은 누른 뒤 이만큼 기다렸다가 보내요. 그동안 [되돌리기]로 취소해요(11/23 사용성 검토).
+ * 서버는 상태를 되돌리지 않고 "나왔어요" 알림이 바로 가서, 잘못 누른 것은 보내기 전에만 거둘 수 있어요.
+ */
+export const CAFE_UNDO_MS = 4_000;
+
+/** 보내기를 기다리는 상태 바꾸기 */
+export interface PendingStep {
+  id: string;
+  to: CafeStatusRequest['to'];
+  button: string;
+}
 
 /** 짧은 "띵" 한 번. 소리를 못 내도 판은 그대로예요. */
 function chime(audio: AudioContext): void {
@@ -48,6 +61,10 @@ export function CafeBoard() {
   const [soundOn, setSoundOn] = useState(false);
   const audio = useRef<AudioContext | null>(null);
   const seen = useRef<Set<string> | null>(null);
+  const [pending, setPending] = useState<PendingStep | null>(null);
+  const pendingRef = useRef<PendingStep | null>(null);
+  const pendingTimer = useRef<number | null>(null);
+  const [closing, setClosing] = useState(false);
 
   const load = useCallback(async (background: boolean) => {
     try {
@@ -80,14 +97,42 @@ export function CafeBoard() {
     return () => window.clearTimeout(id);
   }, [fresh]);
 
-  // 판을 떠나면 소리를 끄고 놓아요.
+  // 판을 떠나면 소리를 끄고 놓아요. 기다리던 상태 바꾸기는 누른 대로 보내요.
   useEffect(
     () => () => {
       void audio.current?.close().catch(() => undefined);
       audio.current = null;
+      if (pendingTimer.current !== null) window.clearTimeout(pendingTimer.current);
+      const left = pendingRef.current;
+      if (left) void apiRequest('POST', `/api/cafe/orders/${left.id}/status`, { to: left.to } satisfies CafeStatusRequest).catch(() => undefined);
     },
     [],
   );
+
+  function clearPending(): PendingStep | null {
+    if (pendingTimer.current !== null) window.clearTimeout(pendingTimer.current);
+    pendingTimer.current = null;
+    const was = pendingRef.current;
+    pendingRef.current = null;
+    setPending(null);
+    return was;
+  }
+
+  function send(step: PendingStep) {
+    void write(`${step.id}:${step.to}`, () => apiRequest('POST', `/api/cafe/orders/${step.id}/status`, { to: step.to } satisfies CafeStatusRequest));
+  }
+
+  /** 상태 버튼: 바로 보내지 않고 CAFE_UNDO_MS 뒤에 보내요. 다른 줄을 누르면 앞서 기다리던 것은 바로 보내요. */
+  function advance(step: PendingStep) {
+    const before = clearPending();
+    if (before) send(before);
+    pendingRef.current = step;
+    setPending(step);
+    pendingTimer.current = window.setTimeout(() => {
+      const now = clearPending();
+      if (now) send(now);
+    }, CAFE_UNDO_MS);
+  }
 
   const turnSoundOn = useCallback(() => {
     if (!audio.current) audio.current = startAudio();
@@ -106,6 +151,15 @@ export function CafeBoard() {
       setBusy(null);
       await load(false);
     }
+  }
+
+  async function closeDuty() {
+    await write('close', async () => {
+      await apiRequest('POST', '/api/cafe/board/close');
+      void audio.current?.close().catch(() => undefined);
+      audio.current = null;
+      setSoundOn(false);
+    });
   }
 
   if (!data) {
@@ -140,16 +194,23 @@ export function CafeBoard() {
           await apiRequest('POST', '/api/cafe/board/open');
         })
       }
-      onClose={() =>
-        void write('close', async () => {
-          await apiRequest('POST', '/api/cafe/board/close');
-          void audio.current?.close().catch(() => undefined);
-          audio.current = null;
-          setSoundOn(false);
-        })
+      onClose={() => setClosing(true)}
+      closeSheet={
+        closing && (
+          <ConfirmSheet
+            sheet={{ title: '영업을 끝낼까요?', lines: [CAFE_TEXT.closeLine, CAFE_TEXT.closeKeep], confirmLabel: '영업 끝내기' }}
+            onCancel={() => setClosing(false)}
+            onConfirm={async () => {
+              setClosing(false);
+              await closeDuty();
+            }}
+          />
+        )
       }
       onSound={turnSoundOn}
-      onAdvance={(id, to) => void write(`${id}:${to}`, () => apiRequest('POST', `/api/cafe/orders/${id}/status`, { to } satisfies CafeStatusRequest))}
+      pending={pending}
+      onAdvance={(id, to, button) => advance({ id, to, button })}
+      onUndo={() => void clearPending()}
       onSoldOut={(id, soldOut) => void write(`menu:${id}`, () => apiRequest('PUT', `/api/cafe/menu/${id}/sold-out`, { soldOut }))}
     />
   );
@@ -176,6 +237,9 @@ export function BoardView({
   onSound,
   onAdvance,
   onSoldOut,
+  pending = null,
+  onUndo = () => undefined,
+  closeSheet = null,
 }: {
   data: CafeBoardResponse;
   fresh: ReadonlySet<string>;
@@ -185,8 +249,13 @@ export function BoardView({
   onOpen: () => void;
   onClose: () => void;
   onSound: () => void;
-  onAdvance: (id: string, to: CafeStatusRequest['to']) => void;
+  onAdvance: (id: string, to: CafeStatusRequest['to'], button: string) => void;
   onSoldOut: (id: string, soldOut: boolean) => void;
+  /** 누르고 보내기를 기다리는 상태 바꾸기(그동안 [되돌리기]) */
+  pending?: PendingStep | null;
+  onUndo?: () => void;
+  /** [영업 끝] 확인 시트 */
+  closeSheet?: ReactNode;
 }) {
   return (
     <div className='feature-page cafe-board'>
@@ -241,15 +310,24 @@ export function BoardView({
                     픽업 {o.pickupLabel} · 주문 {o.orderedAt} · {CAFE_STATUS_LABEL[o.status]}
                   </span>
                 </div>
-                {next && (
-                  <button
-                    type='button'
-                    className='secondary cafe-step'
-                    disabled={busy !== null}
-                    onClick={() => onAdvance(o.id, next.to as CafeStatusRequest['to'])}
-                  >
-                    {busy === key ? '처리하는 중' : next.button}
-                  </button>
+                {next && pending?.id === o.id ? (
+                  <div className='cafe-undo' role='status'>
+                    <span className='hint'>[{pending.button}] 잠시 뒤 반영해요</span>
+                    <button type='button' className='neutral small' onClick={onUndo}>
+                      되돌리기
+                    </button>
+                  </div>
+                ) : (
+                  next && (
+                    <button
+                      type='button'
+                      className='secondary cafe-step'
+                      disabled={busy !== null}
+                      onClick={() => onAdvance(o.id, next.to as CafeStatusRequest['to'], next.button)}
+                    >
+                      {busy === key ? '처리하는 중' : next.button}
+                    </button>
+                  )
                 )}
               </li>
             );
@@ -276,6 +354,7 @@ export function BoardView({
           ))}
         </ul>
       </section>
+      {closeSheet}
     </div>
   );
 }

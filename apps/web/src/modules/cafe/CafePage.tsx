@@ -278,6 +278,12 @@ export function CafePage() {
         </button>
         {!data.open && <p className='hint'>{CAFE_TEXT.closed}</p>}
         {billing.blocked && <p className='hint'>{CAFE_TEXT.unpaid}</p>}
+        {/* 영업 중이고 막힌 곳이 없는데 버튼이 꺼져 있으면, 빠진 것을 한 줄로 알려요(11/23 사용성 검토). */}
+        {data.open && !billing.blocked && !overLimit && !busy && (lineCount === 0 || slot === null) && (
+          <p className='hint cafe-missing'>
+            {lineCount === 0 && slot === null ? CAFE_TEXT.pickBoth : lineCount === 0 ? CAFE_TEXT.pickMenu : CAFE_TEXT.pickSlot}
+          </p>
+        )}
       </div>
 
       <MyOrders orders={data.orders} />

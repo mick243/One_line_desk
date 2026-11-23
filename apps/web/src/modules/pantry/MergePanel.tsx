@@ -187,7 +187,7 @@ export function MergePanel({ me }: ScreenProps) {
         />
       )}
       {message && (
-        <Sheet title='결과' onClose={() => setMessage(null)}>
+        <Sheet title='알려 드려요' onClose={() => setMessage(null)}>
           <p>{message}</p>
         </Sheet>
       )}

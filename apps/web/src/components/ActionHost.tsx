@@ -12,6 +12,12 @@ interface Confirming {
   sheet: PlanSheet;
   run: () => Promise<PlanConfirmResponse | unknown>;
   onResult?: ResultHandler;
+  from: string | null;
+}
+
+/** 쓰기를 부른 자리. 목록 한 줄처럼 자기 쓰기에만 양식을 닫고 싶은 곳이 넘겨요(11/23 사용성 검토). */
+export interface RunOptions {
+  from?: string;
 }
 
 /** 버튼을 누른 카드를 결과 카드로 바꿔 끼울 때 받는 함수(QA D-B01). 끝난 카드가 실행 전 모양으로 남지 않게 해요. */
@@ -25,7 +31,7 @@ interface Shown {
 
 interface ActionsApi {
   /** onResult: 실행이 끝나면 그 카드 자리에 들어갈 결과 카드(확정·취소·막힘+대안·다시 찾은 카드)를 받아요. */
-  run(action: CardAction, card?: Card, onResult?: ResultHandler): Promise<void>;
+  run(action: CardAction, card?: Card, onResult?: ResultHandler, opts?: RunOptions): Promise<void>;
   /** 결과 카드를 시트로 보여 줘요(앱 확인 링크 진입 등). */
   show(shown: Shown): void;
   /** 쓰기가 끝나거나 새 알림이 올 때마다 올라가요. 목록 화면은 이 값이 바뀌면 다시 불러요. */
@@ -37,6 +43,11 @@ interface ActionsApi {
    * 새 알림으로 목록만 다시 부를 때는 그대로라서, 쓰던 글이 사라지지 않아요(10/29 개선 회의 A2).
    */
   writes: number;
+  /**
+   * 마지막 쓰기를 부른 자리(run의 opts.from). 넘기지 않은 쓰기면 null이에요.
+   * 목록 한 줄의 양식은 writes가 바뀌어도 이 값이 자기 자리일 때만 닫아요. 다른 줄에서 처리해도 쓰던 글이 남아요(11/23 사용성 검토).
+   */
+  writeFrom: string | null;
   /** 카드 버튼 밖에서 쓰기가 끝났을 때(회의실 채팅 자동 실행, ADR-19) 목록을 다시 불러요. */
   refresh(): void;
   /** 초대 알릴 길(공개 설정). 여러 팀 회의 참석자 고르기(ADR-28)도 같은 길을 보여 줘요. */
@@ -94,31 +105,34 @@ export function ActionHost({
   const [version, setVersion] = useState(0);
   const [quiet, setQuiet] = useState(false);
   const [writes, setWrites] = useState(0);
+  const [writeFrom, setWriteFrom] = useState<string | null>(null);
   const [inviting, setInviting] = useState<InviteAction | null>(null);
 
   // 내 쓰기가 끝났어요: 목록도 다시 부르고, 양식도 닫게 해요.
-  const wrote = useCallback(() => {
+  const wrote = useCallback((from: string | null = null) => {
     setQuiet(false);
+    setWriteFrom(from);
     setVersion((v) => v + 1);
     setWrites((w) => w + 1);
   }, []);
 
   const showOutcome = useCallback(
-    (res: PlanConfirmResponse) => {
-      wrote();
-      if (res.status === 'done') setShown({ title: '결과', cards: [res.card] });
-      else if (res.status === 'blocked') setShown({ title: '결과', cards: [res.card, ...res.alternatives] });
+    (res: PlanConfirmResponse, from: string | null = null) => {
+      wrote(from);
+      if (res.status === 'done') setShown({ title: '처리했어요', cards: [res.card] });
+      else if (res.status === 'blocked') setShown({ title: '막혔어요', cards: [res.card, ...res.alternatives] });
       else setShown({ title: '다시 찾았어요', message: res.message, cards: res.cards });
     },
     [wrote],
   );
 
   const fail = useCallback((e: unknown) => {
-    setShown({ title: '결과', message: e instanceof ApiFailure ? e.message : '지금 처리하지 못했어요', cards: [] });
+    setShown({ title: '처리하지 못했어요', message: e instanceof ApiFailure ? e.message : '지금 처리하지 못했어요', cards: [] });
   }, []);
 
   const run = useCallback(
-    async (action: CardAction, card?: Card, onResult?: ResultHandler) => {
+    async (action: CardAction, card?: Card, onResult?: ResultHandler, opts?: RunOptions) => {
+      const from = opts?.from ?? null;
       try {
         switch (action.type) {
           case 'link':
@@ -163,30 +177,30 @@ export function ActionHost({
               return;
             }
             setShown(null);
-            setConfirming({ sheet: created.sheet, run: () => api.confirmPlan(created.planId), onResult });
+            setConfirming({ sheet: created.sheet, run: () => api.confirmPlan(created.planId), onResult, from });
             return;
           }
           case 'post': {
             const res = await api.directPlan(action.proposalToken, { itemName: action.itemName });
-            showOutcome(res);
+            showOutcome(res, from);
             onResult?.(resultCards(res));
             return;
           }
           case 'fixed': {
             const call = () => apiRequest(action.method, action.path, action.body);
             if (action.confirm) {
-              setConfirming({ sheet: action.confirm, run: call, onResult });
+              setConfirming({ sheet: action.confirm, run: call, onResult, from });
               return;
             }
             const res = await call();
             // 결과 카드를 돌려주는 버튼(취소 등)은 카드를 보여 줘요. 카드 위 버튼(+1 등)은 카드가 그대로라 짧은 확인을 띄워요.
             // 판·목록 줄의 버튼은 목록이 바로 바뀌어서 따로 띄우지 않아요.
             if (isOutcome(res)) {
-              showOutcome(res);
+              showOutcome(res, from);
               onResult?.(resultCards(res));
             } else {
-              wrote();
-              if (card) setShown({ title: '결과', message: '반영했어요', cards: [] });
+              wrote(from);
+              if (card) setShown({ title: '반영했어요', cards: [] });
             }
             return;
           }
@@ -202,9 +216,10 @@ export function ActionHost({
     setQuiet(opts?.background === true);
     setVersion((v) => v + 1);
   }, []);
+  const refresh = useCallback(() => wrote(), [wrote]);
   const value = useMemo<ActionsApi>(
-    () => ({ run, show: setShown, version, quiet, writes, refresh: wrote, reload, inviteChannels }),
-    [run, version, quiet, writes, wrote, reload, inviteChannels],
+    () => ({ run, show: setShown, version, quiet, writes, writeFrom, refresh, reload, inviteChannels }),
+    [run, version, quiet, writes, writeFrom, refresh, reload, inviteChannels],
   );
 
   return (
@@ -219,9 +234,9 @@ export function ActionHost({
               const res = await confirming.run();
               setConfirming(null);
               if (isOutcome(res)) {
-                showOutcome(res);
+                showOutcome(res, confirming.from);
                 confirming.onResult?.(resultCards(res));
-              } else wrote();
+              } else wrote(confirming.from);
             } catch (e) {
               setConfirming(null);
               fail(e);

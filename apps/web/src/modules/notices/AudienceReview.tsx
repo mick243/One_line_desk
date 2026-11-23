@@ -92,8 +92,11 @@ export function ReviewItem({ item, options, autoSend = false }: { item: NoticeAu
   const [count, setCount] = useState<number | null>(item.count);
   const [countError, setCountError] = useState<string | null>(null);
 
-  // 내 쓰기가 끝나면 고치던 칩을 처음 제안으로 돌려요. 새 알림으로 목록만 다시 부를 때는 고치던 칩을 그대로 둬요(10/29 개선 회의 A2).
+  // 이 공지에서 한 쓰기가 끝나면 고치던 칩을 처음 제안으로 돌려요. 새 알림으로 목록만 다시 부를 때나
+  // 다른 공지를 알렸을 때는 고치던 칩을 그대로 둬요(10/29 개선 회의 A2, 11/23 사용성 검토).
+  const from = `audience:${item.id}`;
   useEffect(() => {
+    if (actions.writeFrom !== from) return;
     setEditing(false);
     setDraft(item.audience);
     setCount(item.count);
@@ -122,28 +125,38 @@ export function ReviewItem({ item, options, autoSend = false }: { item: NoticeAu
 
   function send() {
     if (!ready) return;
-    void actions.run({
-      type: 'fixed',
-      text: '알리기',
-      method: 'POST',
-      path: `/api/notices/audience/${item.id}/send`,
-      body: changed ? { audience: draft } : {},
-      confirm: {
-        title: NOTICE_AUDIENCE_TEXT.sendTitle,
-        lines: [`공지: ${item.notice.title}`, `대상: ${audienceText(draft)} · ${count}명`, NOTICE_AUDIENCE_TEXT.sendLine, NOTICE_AUDIENCE_TEXT.sendKeep],
-        confirmLabel: '알리기',
+    void actions.run(
+      {
+        type: 'fixed',
+        text: '알리기',
+        method: 'POST',
+        path: `/api/notices/audience/${item.id}/send`,
+        body: changed ? { audience: draft } : {},
+        confirm: {
+          title: NOTICE_AUDIENCE_TEXT.sendTitle,
+          lines: [`공지: ${item.notice.title}`, `대상: ${audienceText(draft)} · ${count}명`, NOTICE_AUDIENCE_TEXT.sendLine, NOTICE_AUDIENCE_TEXT.sendKeep],
+          confirmLabel: '알리기',
+        },
       },
-    });
+      undefined,
+      undefined,
+      { from },
+    );
   }
 
   function skip() {
-    void actions.run({
-      type: 'fixed',
-      text: '알리지 않기',
-      method: 'POST',
-      path: `/api/notices/audience/${item.id}/skip`,
-      confirm: { title: NOTICE_AUDIENCE_TEXT.skipTitle, lines: [`공지: ${item.notice.title}`, NOTICE_AUDIENCE_TEXT.skipLine], confirmLabel: '알리지 않기' },
-    });
+    void actions.run(
+      {
+        type: 'fixed',
+        text: '알리지 않기',
+        method: 'POST',
+        path: `/api/notices/audience/${item.id}/skip`,
+        confirm: { title: NOTICE_AUDIENCE_TEXT.skipTitle, lines: [`공지: ${item.notice.title}`, NOTICE_AUDIENCE_TEXT.skipLine], confirmLabel: '알리지 않기' },
+      },
+      undefined,
+      undefined,
+      { from },
+    );
   }
 
   const set = (next: Partial<NoticeAudience>) => setDraft((d) => ({ ...d, ...next, everyone: next.everyone ?? false }));

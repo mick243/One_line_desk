@@ -175,7 +175,7 @@ function CliGuide({ mcpUrl, apps }: { mcpUrl: string; apps: ConnectionsResponse[
             ) : (
               <>
                 <CopyLine text={mcpUrl} />
-                <p className='hint'>클라이언트 ID: {app.clientId}</p>
+                <p className='hint'>앱 번호(클라이언트 ID): {app.clientId}</p>
               </>
             )}
           </div>

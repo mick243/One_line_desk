@@ -77,7 +77,8 @@ export function InviteSheet({ action, channels, onClose }: { action: Invite; cha
   }
 
   return (
-    <Sheet title='참석자 초대' onClose={onClose}>
+    // 고른 사람이 있으면 바깥·Esc·밀기로 닫기 전에 한 번 물어요(11/23 사용성 검토, 문의·휴가 시트와 같게).
+    <Sheet title='참석자 초대' onClose={onClose} dirty={chosen.length > 0}>
       <p className='inquiry-scope'>
         {action.roomName} · {action.when}
       </p>

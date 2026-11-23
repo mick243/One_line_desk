@@ -167,14 +167,14 @@ export function App() {
   if (offline) {
     return (
       <div className='loading'>
-        <p>지금 서버에 연결할 수 없어요.</p>
+        <p>지금 앱에 연결하지 못했어요.</p>
         <button type='button' className='secondary small' onClick={() => void load()}>
           다시 연결하기
         </button>
       </div>
     );
   }
-  if (me === undefined || !config) return <div className='loading'>불러오는 중…</div>;
+  if (me === undefined || !config) return <div className='loading'>불러오는 중이에요</div>;
 
   // 꺼진 모듈의 페이지에 있으면 홈으로 돌려요(ADR-12). 바리스타 메뉴(11/6, ADR-29)면 회의실·공지·카페 페이지도 홈으로 돌려요.
   const roles = me?.roles ?? [];
