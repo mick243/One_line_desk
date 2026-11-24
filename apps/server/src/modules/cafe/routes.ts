@@ -96,7 +96,7 @@ export function registerCafeRoutes(app: FastifyInstance, ctx: AppContext, desk: 
   // ── S8 카페 판(바리스타만) ──
 
   // 웹은 3초마다 배경 요청(x-desk-background)으로 불러요. 쉬는 시간을 늘리지 않아요(ADR-20).
-  app.get('/api/cafe/board', { preHandler: barista }, async () => desk.board());
+  app.get('/api/cafe/board', { preHandler: barista, config: { background: true } }, async () => desk.board());
 
   app.post('/api/cafe/board/open', { preHandler: barista }, async (req) => desk.setOpen(req.deskUser!, true));
   app.post('/api/cafe/board/close', { preHandler: barista }, async (req) => desk.setOpen(req.deskUser!, false));

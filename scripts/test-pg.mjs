@@ -5,7 +5,14 @@ import { spawn } from 'node:child_process';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL || 'postgres://desk:desk@localhost:5434/one_line_desk_test';
 // 셸에 명령 한 줄로 넘겨요(인자 배열 + shell은 Node가 DEP0190 경고를 내요). 뒤에 붙인 값은 시험 파일 거르기용이에요.
-const child = spawn(['npm test -w @one-line-desk/server --', ...process.argv.slice(2)].join(' '), {
+// 셸 문자열로 이어 붙이니까 경로·옵션 모양 값만 받아요(11/23 운영 검토). 따옴표·세미콜론·&·| 같은 셸 기호는 거절해요.
+const extra = process.argv.slice(2);
+const unsafe = extra.filter((a) => !/^[\w./@:=+-]+$/.test(a));
+if (unsafe.length) {
+  console.error('test:pg 뒤에는 시험 파일 경로나 vitest 옵션만 붙여요(셸 기호는 받지 않아요)');
+  process.exit(2);
+}
+const child = spawn(['npm test -w @one-line-desk/server --', ...extra].join(' '), {
   stdio: 'inherit',
   shell: true,
   env: { ...process.env, TEST_DATABASE_URL },

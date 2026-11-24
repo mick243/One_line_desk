@@ -9,14 +9,14 @@
 
 ## 실행
 
-Node 22 이상과 npm이 필요해요.
+Node 22.21 이상(22.x) 또는 24 이상과 npm이 필요해요. 권장 판은 `.node-version`(24.18.0)이에요.
 
 ```bash
 npm install
 npm run dev
 ```
 
-웹은 http://localhost:5190, 서버는 http://localhost:3190 이에요. 가상 직원 다섯 명 중 하나를 골라 모의 로그인해요.
+웹은 http://localhost:5190, 서버는 http://localhost:3190 이에요. 가상 직원 중 하나를 골라 모의 로그인해요.
 
 - DB: `DATABASE_URL`이 없으면 내장 PGlite(`.data/pglite`)를 써요. 서버가 뜰 때 마이그레이션을 적용하고, 비어 있으면 가상 자료(분장표·공지·회의실 장부·탕비실 카탈로그와 요청)를 넣어요. 처음부터 다시 하려면 서버를 끄고 `.data/`를 지워요. 10/30에 마이그레이션을 7개로 합쳐서, 그 전에 만든 개발 DB는 서버가 "폴더에 없는 마이그레이션 기록이 있어요"로 멈춰요. 그때도 `.data/pglite`를 지우고, Docker PostgreSQL이면 `docker compose down -v` 뒤 다시 띄워요.
 - 실제 PostgreSQL: `cp .env.example .env` → `npm run db:up`(Docker, 5433) → `DATABASE_URL` 설정 → `npm run db:migrate`
@@ -33,7 +33,7 @@ npm run dev
 npm run check
 ```
 
-서식 검사(Prettier) + 타입 검사 + 시험(공유 149개, 서버 654개, 웹 19개)을 한 번에 돌려요. 시험 DB는 PGlite예요. CI는 같은 서버 시험을 실제 PostgreSQL에서도 돌려요(`npm run test:pg`). 두 연결로 겹치는 경쟁 시험은 다음 일이에요([docs/REVIEW.md](docs/REVIEW.md) M1).
+서식 검사(Prettier) + 타입 검사 + 시험(공유·서버·웹)을 한 번에 돌려요. 시험 DB는 PGlite예요. CI는 같은 서버 시험을 실제 PostgreSQL에서도 돌려요(`npm run test:pg`). 두 연결로 겹치는 경쟁 시험은 다음 일이에요([docs/REVIEW.md](docs/REVIEW.md) M1).
 
 ## 기능과 화면
 
@@ -53,7 +53,7 @@ npm run check
 | `apps/server/src/core` | 공통 바닥: DB(PGlite·pg), AI 게이트웨이, 감사 로그, 제안 토큰, plan, 고정 버튼, 라우터, 가드, 운영 설정 |
 | `apps/server/src/modules` | navi · notices · rooms · pantry(+ order) · mcp. 모듈끼리는 `core/services.ts`로만 이어져요 |
 | `apps/web/src` | React 웹. `components/`(카드·시트·행동·탭), `screens/`(홈·기능 페이지·로그인·마이 페이지), `modules/`(모듈 화면) |
-| `db/migrations` | 영역별 번호(0xx 공통 · 1xx navi · 2xx notices · 3xx rooms · 4xx pantry · 5xx mcp) |
+| `db/migrations` | 영역별 번호(0xx 공통 · 1xx navi · 2xx notices · 3xx rooms · 4xx pantry · 5xx mcp · 6xx cafe) |
 | `.claude/agents` | 에이전트 팀 정의(모듈 개발·검토·추적) |
 
 ## 정해 둔 기술
