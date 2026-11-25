@@ -100,6 +100,14 @@ export async function insertAudience(
   return rows[0]?.id ?? null;
 }
 
+/** 총무 확인을 기다리는 줄 수(11/25 아침 요약). 보관 기간 안의 것만 세요. */
+export async function pendingCount(q: Queryable, since: number): Promise<number> {
+  const { rows } = await q.query<{ n: number }>("select count(*)::int as n from notice_audience where state = 'pending' and created_at >= $1", [
+    new Date(since).toISOString(),
+  ]);
+  return rows[0]!.n;
+}
+
 /** 보관 기간(since 이후에 만든 것) 안의 줄. 확인 대기 먼저, 그다음 새것부터예요. */
 export async function listAudience(q: Queryable, since: number, limit: number): Promise<AudienceRow[]> {
   const { rows } = await q.query<DbRow>(

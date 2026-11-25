@@ -1,4 +1,5 @@
 import type {
+  AppDestination,
   Card,
   AwayKind,
   CardAction,
@@ -263,7 +264,19 @@ export interface CafeService {
   spendCard(user: DeskUser): Promise<Card>;
 }
 
+/**
+ * 총무가 확인할 일의 수(11/25 아침 요약). 모듈마다 자기 표에서 세서 하나씩 더해요(남의 표를 읽지 않아요).
+ * 수만 돌려줘요. 이름·금액·글은 없어요. page는 알림을 눌렀을 때 열 페이지예요.
+ */
+export interface FacilitiesPendingSource {
+  label: string;
+  page: AppDestination;
+  count(): Promise<number>;
+}
+
 export interface Services {
+  /** 총무 아침 요약(core/facilities-digest.ts)이 모으는 확인 대기 수. 모듈이 init 전에 넣어요. */
+  facilitiesPending?: FacilitiesPendingSource[];
   rooms?: RoomsService;
   notices?: NoticesService;
   navi?: NaviService;

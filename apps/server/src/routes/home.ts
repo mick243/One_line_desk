@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context';
 import { accessFrom } from '../core/access-record';
 import { HomeDesk } from '../core/home';
+import { createTeamToday } from '../core/team-today';
 import type { Router } from '../core/router';
 
 // 홈 AI 채팅 "나에게 해당하는 일"(ADR-27, 개선 회의 D8 해제).
@@ -44,4 +45,9 @@ export function registerHomeRoutes(app: FastifyInstance, ctx: AppContext, router
       return home.ask(user, checked.text, accessFrom(req));
     },
   );
+
+  // 오늘 우리 팀 한 줄(11/25): 홈을 열 때 수만 받고, [누구인지 보기]를 누를 때만 이름을 받아요(접속기록 team.schedule).
+  const teamToday = createTeamToday(ctx);
+  app.get('/api/home/team-today', { preHandler: ctx.guards.user }, async (req) => teamToday.summary(req.deskUser!, accessFrom(req)));
+  app.get('/api/home/team-today/people', { preHandler: ctx.guards.user }, async (req) => teamToday.people(req.deskUser!, accessFrom(req)));
 }

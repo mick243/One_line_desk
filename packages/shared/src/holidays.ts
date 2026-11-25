@@ -77,6 +77,9 @@ const KR_HOLIDAYS: Readonly<Record<string, string>> = {
   '2027-12-27': '대체공휴일(기독탄신일)',
 };
 
+/** 표에 있는 모든 날짜(표 모양 검사·다음 해 표 확인용, 11/25). */
+export const krHolidayDates = (): string[] => Object.keys(KR_HOLIDAYS);
+
 /** 운영 설정 회사 휴일(창립기념일·임시공휴일 등)의 이름. 운영자는 날짜만 넣어요. */
 export const COMPANY_HOLIDAY_NAME = '회사 휴일';
 /** 운영 설정 회사 휴일 날짜 수 상한 */

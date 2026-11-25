@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { checkInput, hasControlChar, maskLine } from './check';
-import { luhnValid } from './rules';
+import { luhnValid, RULES_VERSION } from './rules';
 import { QA_LOCKED } from './samples';
 
 describe('공통 입력 검사', () => {
@@ -47,7 +47,7 @@ describe('공통 입력 검사', () => {
 describe('입력 검사 규칙 2(QA-2·3·10·19)', () => {
   it.each(QA_LOCKED)('%s → 잠가요', (_name, text, kind) => {
     const r = checkInput(text);
-    expect(r.rulesVersion).toBe(5);
+    expect(r.rulesVersion).toBe(RULES_VERSION);
     expect(r.locks.map((l) => l.kind)).toContain(kind);
   });
 

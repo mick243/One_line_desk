@@ -71,6 +71,8 @@ export interface MyReservation {
   invite: CardAction;
   /** 부른 사람과 답 */
   attendees: ReservationAttendee[];
+  /** [답 안 한 n명에게 다시 알리기](11/25 고정 버튼). 다시 알릴 사람이 없거나 회의가 시작했으면 없어요. */
+  remind?: CardAction;
   /** 캘린더 파일 받기 주소 */
   icsPath: string;
   /** 이 회의에 붙여 빌린 장비 종류(ADR-19). 회의를 취소하면 함께 취소돼요. */

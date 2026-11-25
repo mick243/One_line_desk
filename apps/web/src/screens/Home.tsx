@@ -12,6 +12,7 @@ import { webModules } from '../modules/registry';
 import { FEATURES, featureFor } from './features';
 import { HomeAsk } from './HomeAsk';
 import { LeaveStart } from './LeaveStart';
+import { TeamToday } from './TeamToday';
 
 const ICON = { navi: 'navi', rooms: 'rooms', notices: 'notices', pantry: 'pantry' } as const;
 
@@ -54,6 +55,9 @@ export function Home({
           {me.department} {me.floor}
         </p>
       </header>
+
+      {/* 오늘 우리 팀 한 줄(11/25): 같은 팀 일정 스위치가 켜졌을 때만. 수만 보이고 이름은 눌러야 보여요. */}
+      {switches.teamSchedule === true && <TeamToday />}
 
       {homeAsk && <HomeAsk onOpen={onOpen} teamSchedule={switches.teamSchedule === true} modules={modules} initialText={initialText} autoRun={autoRun} />}
 

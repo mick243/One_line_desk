@@ -2,7 +2,7 @@ import { type AppDestination, type DeskNotification, type ModuleKind, type Notif
 import type { Db, Queryable } from './db';
 import type { DeskUser } from './user';
 
-// 앱 안 알림(10/26, ADR-16). 받는 쪽은 한 사람 또는 한 부서, 또는 한 역할(11/6 사내 카페 총무)이에요.
+// 앱 안 알림(10/26, ADR-16). 받는 쪽은 한 사람 또는 한 부서, 또는 한 역할(11/6 사내 카페 총무, 11/25 보관 감시 운영자)이에요.
 // 알림 글에는 내용(문의 글 등)을 넣지 않아요. 무슨 일인지와 볼 페이지만 넣고, 내용은 그 페이지에서 권한을 확인한 뒤 보여 줘요.
 
 interface NotifyInput {
@@ -12,7 +12,7 @@ interface NotifyInput {
 }
 
 /** 알림을 받을 수 있는 역할. 역할은 IdP 그룹이라 사람 목록이 없어서, 읽을 때 그 사람의 지금 역할로 걸러요(R17). */
-type AudienceRole = Extract<Role, 'facilities'>;
+type AudienceRole = Extract<Role, 'facilities' | 'operator'>;
 
 /** 알림 목록·읽음 표시에 필요한 사람 정보. roles가 없으면 역할 알림은 보이지 않아요. */
 type Reader = Pick<DeskUser, 'pseudonymId' | 'department'> & { roles?: readonly Role[] };

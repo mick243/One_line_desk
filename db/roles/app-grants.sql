@@ -4,6 +4,7 @@
 --   psql "$DESK_MIGRATE_DATABASE_URL" -v app_role=desk_app -f db/roles/app-grants.sql
 -- 앱 계정은 표를 만들거나 바꾸거나 지우지 못해요(DDL 없음). TRUNCATE 권한도 없어요(행 트리거로는 TRUNCATE를 막지 못해요).
 -- 접속기록(access_log, 1년, ADR-20)은 넣기·읽기와 1년 지난 줄 지우기(행 트리거가 1년 안 줄은 막아요)만이에요. 고치기 권한은 없어요.
+-- 실제 PostgreSQL에서는 btree_gist 확장 함수마다 "no privileges were granted" 경고가 나와요. 확장 주인이 달라서 생기는 것이라 괜찮아요(11/25 확인).
 -- 앱 계정 자체(로그인·비밀번호)는 관리형 DB 화면이나 CREATE ROLE로 먼저 만들어요. 비밀번호는 이 파일에 넣지 않아요.
 
 grant usage on schema public to :"app_role";

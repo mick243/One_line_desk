@@ -198,12 +198,18 @@ export class CafeDesk {
       canReportMissed: (o.status === 'ready' || o.status === 'picked') && o.missed === null,
     }));
     const monthTotalWon = await repo.monthTotal(db, user.pseudonymId, monthStart(now));
+    // [지난번처럼 담기](11/25): 지금 메뉴로 다시 고를 수 있는 줄만 남겨요. 금액은 넣지 않아요(서버가 주문할 때 다시 계산해요).
+    const byId = new Map(menu.map((m) => [m.id, m]));
+    const lastOrder = ((await repo.lastOrderItems(db, user.pseudonymId)) ?? [])
+      .filter((i) => byId.has(i.menuId) && !byId.get(i.menuId)!.soldOut)
+      .map((i) => ({ menuId: i.menuId, qty: i.qty, options: i.options.filter((o) => byId.get(i.menuId)!.options.includes(o)) }));
     return {
       status: 'on',
       open: acceptingOrders(duty, now),
       menu: menu.map((m) => ({ id: m.id, name: m.name, priceWon: m.priceWon, options: m.options, soldOut: m.soldOut })),
       slots,
       orders,
+      lastOrder: lastOrder.length ? lastOrder : null,
       monthTotalWon,
       billing: await this.billing.mine(user, monthTotalWon),
     };

@@ -2,6 +2,7 @@ import {
   type Card,
   checkInput,
   formatKstDateTime,
+  kstTime,
   INVITE_MAX,
   INVITE_REASON_MAX,
   type InviteColleaguesResponse,
@@ -50,6 +51,8 @@ interface InviteRow {
   declineReason: string | null;
   delegatedBySubject: string | null;
   delegateReason: string | null;
+  /** [답 안 한 사람에게 다시 알리기](11/25)를 이미 받았는지 */
+  reminded: boolean;
 }
 
 const MEETING_COLUMNS = `x.id::text as id, r.name as "roomName", r.floor,
@@ -59,7 +62,7 @@ const MEETING_COLUMNS = `x.id::text as id, r.name as "roomName", r.floor,
 const INVITE_COLUMNS = `attendee_pseudonym as "attendeePseudonym", attendee_subject as "attendeeSubject",
   inviter_pseudonym as "inviterPseudonym", inviter_subject as "inviterSubject", response,
   via_calendar as "viaCalendar", via_slack as "viaSlack", decline_reason as "declineReason",
-  delegated_by_subject as "delegatedBySubject", delegate_reason as "delegateReason"`;
+  delegated_by_subject as "delegatedBySubject", delegate_reason as "delegateReason", reminded_at is not null as reminded`;
 
 async function findMeeting(q: Queryable, id: string): Promise<Meeting | null> {
   if (!/^\d{1,18}$/.test(id)) return null;
@@ -76,6 +79,9 @@ async function invitesOf(q: Queryable, reservationId: string): Promise<InviteRow
   ]);
   return rows;
 }
+
+/** 회의 시작 전 알림을 보내는 때: 시작 10분 전부터예요. */
+const START_SOON_MS = 10 * 60_000;
 
 const writeOn = (s: OpsSettings) => s.modules.rooms === 'on' && s.roomsWrite;
 const calendarUid = (reservationId: string) => `one-line-desk-reservation-${reservationId}`;
@@ -343,6 +349,85 @@ export function createInviteService(ctx: AppContext) {
           attendeeEmails: emails,
         })
         .catch(() => undefined);
+    },
+
+    /**
+     * 회의 시작 10분 전 알림(11/25 자동화 후보). 서버의 1분 회차가 불러요.
+     * 시작이 10분 안으로 들어온 앱 예약마다 한 번(start_reminded_at), 예약한 사람과 "참석할게요"로 답한 사람에게 앱 알림을 보내요.
+     * 글은 시간·회의실뿐이에요(제목·참석자 없음, ADR-06). 예약한 사람에게는 안 쓰면 내 예약에서 취소해 달라는 말을 붙여요(노쇼 줄이기).
+     * 풀기는 지금처럼 사람이 [취소](확인 한 번)를 눌러야 해요. 자동으로 취소하지 않아요(ADR-19).
+     */
+    async startSoon(): Promise<void> {
+      if (ctx.ops.get().modules.rooms !== 'on') return;
+      const now = ctx.now();
+      await ctx.db.tx(async (q) => {
+        const { rows } = await q.query<{ id: string; owner: string; roomName: string; floor: string; start: number }>(
+          `with soon as (
+             update room_reservations set start_reminded_at = $3
+              where source = 'app' and start_reminded_at is null and lower(slot) > $1 and lower(slot) <= $2
+             returning id, room_id, pseudonym_id, slot)
+           select s.id::text as id, s.pseudonym_id as owner, r.name as "roomName", r.floor, (extract(epoch from lower(s.slot)) * 1000)::float8 as start
+             from soon s join rooms r on r.id = s.room_id`,
+          [new Date(now).toISOString(), new Date(now + START_SOON_MS).toISOString(), new Date(now).toISOString()],
+        );
+        for (const m of rows) {
+          const what = `곧 회의가 있어요 · ${kstTime(m.start)} · ${m.roomName}(${m.floor})`;
+          await ctx.notify.toUser(q, m.owner, { module: 'rooms', title: `${what} · 안 쓰면 내 예약에서 취소해 주세요`, page: 'rooms' });
+          const going = (await invitesOf(q, m.id)).filter((i) => i.response === 'accepted').map((i) => i.attendeePseudonym);
+          await ctx.notify.toUsers(q, going, { module: 'rooms', title: what, page: 'rooms' });
+        }
+      });
+    },
+
+    /** 아직 답하지 않았고 다시 알림도 받지 않은 사람 수(11/25). 내 예약 칸의 [다시 알리기] 버튼에 써요. */
+    async remindable(reservationId: string): Promise<number> {
+      return (await invitesOf(ctx.db, reservationId)).filter((i) => i.response === 'pending' && !i.reminded).length;
+    },
+
+    /**
+     * [답 안 한 사람에게 다시 알리기](11/25 자동화 후보, 고정 버튼). 예약한 사람이 누르면 아직 답하지 않은 사람에게만 앱 알림을 한 번 더 보내요.
+     * 한 사람에게 한 회의마다 한 번만이에요(reminded_at). 글은 처음 초대 알림과 같고(부른 사람 이름·시간, ADR-17), 바깥(Slack·메일)으로는 보내지 않아요.
+     */
+    async remind(user: DeskUser, reservationId: string): Promise<{ status: 'done'; card: Card }> {
+      if (!writeOn(ctx.ops.get())) throw new DeskError('feature-off', 409, '지금은 이 기능이 꺼져 있어요');
+      const meeting = await findMeeting(ctx.db, reservationId);
+      if (!meeting || meeting.owner !== user.pseudonymId) throw new DeskError('not-found', 404, '내 예약을 찾지 못했어요');
+      if (meeting.start <= ctx.now()) throw new DeskError('ended', 409, '이미 시작한 회의예요');
+      const when = formatKstDateTime(meeting.start);
+      let sent = 0;
+      return ctx.fixed.run<{ status: 'done'; card: Card }>(user, {
+        module: 'rooms',
+        action: 'invite.remind',
+        enabled: writeOn,
+        resultCode: () => `sent:${sent}`,
+        run: async (q, now) => {
+          const { rows } = await q.query<{ attendee_pseudonym: string }>(
+            `update room_invites set reminded_at = $2
+              where reservation_id = $1 and response = 'pending' and reminded_at is null
+             returning attendee_pseudonym`,
+            [reservationId, new Date(now).toISOString()],
+          );
+          sent = rows.length;
+          for (const r of rows) {
+            await ctx.notify.toUser(q, r.attendee_pseudonym, {
+              module: 'rooms',
+              title: `${user.displayName}님 회의 초대에 아직 답하지 않았어요 · ${when}`,
+              page: 'rooms',
+            });
+          }
+          return {
+            status: 'done',
+            card: makeCard({
+              id: `rooms-remind-${reservationId}`,
+              kind: 'rooms',
+              label: '확정',
+              headline: sent ? `답하지 않은 ${sent}명에게 다시 알렸어요` : '다시 알릴 사람이 없어요',
+              evidence: { text: '내 예약 목록', aiSummarized: false },
+              tail: sent ? '앱 알림만 한 번 더 갔어요 · 메일·Slack은 보내지 않았어요' : '아무것도 보내지 않았어요',
+            }),
+          };
+        },
+      });
     },
 
     /** 예약한 사람이 보는 참석자와 답(내 예약 칸) */

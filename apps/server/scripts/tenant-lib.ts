@@ -143,3 +143,52 @@ export function checkTenantEnv(env: Record<string, string>, runtime = { node: '2
       .filter((line) => line && !line.startsWith('운영 설정을 확인해 주세요'));
   }
 }
+
+/** 앱 계정(DATABASE_URL의 사용자) 이름. PostgreSQL 역할 이름으로 쓸 수 있는 글자만 받아요(SQL에 그대로 들어가요). */
+export function appRoleOf(databaseUrl: string | undefined): string | null {
+  if (!databaseUrl) return null;
+  try {
+    const user = decodeURIComponent(new URL(databaseUrl).username);
+    return /^[a-z_][a-z0-9_]{0,62}$/.test(user) ? user : null;
+  } catch {
+    return null;
+  }
+}
+
+/** db/roles/app-grants.sql의 psql 변수(:"app_role")를 앱 계정 이름으로 바꿔요. psql 없이 pg로 돌리려고요(tenant db-init). */
+export function grantsSql(sql: string, role: string): string {
+  if (!/^[a-z_][a-z0-9_]{0,62}$/.test(role)) throw new Error('앱 계정 이름은 영문 소문자·숫자·밑줄만 써요');
+  return sql.replaceAll(':"app_role"', `"${role}"`);
+}
+
+/**
+ * 앱 계정으로 붙어서 권한을 읽기만 해요(tenant deploy 전 확인, 11/25). 표가 없으면(마이그레이션 전) has_tables가 거짓이에요.
+ * 고치지 않고 읽기만 해요.
+ */
+export const GRANT_CHECK_SQL = `select to_regclass('public.access_log') is not null as has_tables,
+  case when to_regclass('public.access_log') is null then false else has_table_privilege(current_user, 'public.access_log', 'INSERT') end as access_insert,
+  case when to_regclass('public.access_log') is null then false else has_table_privilege(current_user, 'public.access_log', 'UPDATE') end as access_update,
+  has_schema_privilege(current_user, 'public', 'CREATE') as schema_create,
+  exists (select 1 from pg_tables where schemaname = 'public' and tableowner = current_user) as owns_tables,
+  exists (select 1 from pg_tables where schemaname = 'public' and has_table_privilege(current_user, format('%I.%I', schemaname, tablename), 'TRUNCATE')) as any_truncate`;
+
+export interface GrantCheckRow {
+  has_tables: boolean;
+  access_insert: boolean;
+  access_update: boolean;
+  schema_create: boolean;
+  owns_tables: boolean;
+  any_truncate: boolean;
+}
+
+/** 권한 확인 결과를 사람이 읽을 문장으로. 비어 있으면 db/roles/app-grants.sql대로예요. 값(주소·비밀번호)은 넣지 않아요. */
+export function grantProblems(r: GrantCheckRow): string[] {
+  if (!r.has_tables) return ['표가 없어요. db-init(마이그레이션 → 권한)을 먼저 돌려 주세요'];
+  const out: string[] = [];
+  if (r.owns_tables) out.push('앱 계정이 표 주인이에요. DATABASE_URL은 소유자 계정이 아니라 앱 계정이어야 해요');
+  if (!r.access_insert) out.push('앱 계정이 접속기록(access_log)에 넣지 못해요. 권한 SQL을 돌려 주세요');
+  if (r.access_update) out.push('앱 계정이 접속기록을 고칠 수 있어요(고칠 수 없어야 해요)');
+  if (r.schema_create) out.push('앱 계정이 표를 만들 수 있어요(DDL 권한이 없어야 해요)');
+  if (r.any_truncate) out.push('앱 계정에 TRUNCATE 권한이 있어요(없어야 해요)');
+  return out;
+}
