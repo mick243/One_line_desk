@@ -27,6 +27,9 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci --no-audit --no-fund
+      # 운영에 들어가는 의존성(--omit=dev)만 봐요. 높음 이상이면 막고, 낮음·중간은 dependabot이 PR로 알려요(11/23 운영 검토).
+      - name: 의존성 보안 검사
+        run: npm audit --omit=dev --audit-level=high
       - name: 서식 검사
         run: npm run format:check
       - name: 타입 검사
@@ -60,8 +63,17 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: .node-version
+      # 이미지 만들기 캐시(11/23 운영 검토): 바뀌지 않은 층과 npm 내려받기를 GitHub 캐시에서 받아요. 판(DESK_BUILD)이 달라도 의존성 층은 그대로예요.
+      - uses: docker/setup-buildx-action@v4
       - name: 이미지 만들기
-        run: docker build --build-arg DESK_BUILD=${{ github.sha }} -t one-line-desk:ci .
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: one-line-desk:ci
+          build-args: DESK_BUILD=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: 이미지에 .env가 없고 root로 돌지 않아요
         run: |
           docker run --rm --entrypoint sh one-line-desk:ci -c 'test ! -e /app/.env && test "$(id -u)" != 0'

@@ -61,4 +61,19 @@ describe('규칙 시험', () => {
       .filter((f) => /Date\.now\(\)|new Date\(\)/.test(readFileSync(f, 'utf8')));
     expect(bad.map(rel)).toEqual([]);
   });
+
+  // 장애런북 3절: 배포를 되돌려도 앞 판이 그대로 뜨려면 한 배포의 마이그레이션은 넓히기만 해요(11/23 운영 검토).
+  // 지우기·이름 바꾸기·NOT NULL 더하기·자료형 바꾸기는 다음 배포로 나눠야 해서, 꼭 필요하면 아래 목록에 까닭과 함께 적어요.
+  it('[장애런북 3절] 마이그레이션은 넓히기만 해요(좁히는 문장은 허용 목록에 까닭을 적어요)', () => {
+    const ALLOWED: Record<string, string> = {
+      '020_core_notify_groupware.sql': "알림 page 검사를 지우고 값을 더한 검사로 바로 다시 붙여요(넓히기, 'groupware' 추가)",
+    };
+    const NARROW =
+      /\b(drop\s+(table|column|constraint|index|type|function|trigger)|rename\s+(to|column)|set\s+not\s+null|alter\s+column\s+\S+\s+(set\s+data\s+)?type)\b/i;
+    const dir = join(ROOT, 'db/migrations');
+    const bad = readdirSync(dir)
+      .filter((f) => f.endsWith('.sql') && !(f in ALLOWED))
+      .filter((f) => NARROW.test(readFileSync(join(dir, f), 'utf8').replace(/--.*$/gm, '')));
+    expect(bad).toEqual([]);
+  });
 });

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # 한 줄 데스크 운영 이미지(10/29 배포 준비 회의 A1·A2·A3). 서버와 웹 화면 파일을 한 이미지에 같은 판으로 담아요.
 #   만들기: docker build --build-arg DESK_BUILD=$(git rev-parse HEAD) -t one-line-desk .
 #   판은 커밋 전체 SHA(40자)예요. Vercel 시연의 웹 화면(scripts/vercel-build.mjs)과 같은 형식이라야 새 버전 띠가 잘못 뜨지 않아요(10/30).
@@ -19,7 +20,8 @@ COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
-RUN npm ci --no-audit --no-fund
+# npm 내려받기 캐시는 빌드 사이에 이어져서, 의존성이 같으면 다시 받지 않아요(BuildKit, 11/23 운영 검토).
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/web apps/web
@@ -33,7 +35,7 @@ COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
-RUN npm ci --omit=dev --no-audit --no-fund
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --no-audit --no-fund
 
 # 3) 실행 이미지: 파일은 root 소유(읽기만), 프로세스는 node 사용자예요.
 FROM node:${NODE_VERSION}-bookworm-slim

@@ -61,6 +61,10 @@ describe('운영 설정이 실수하면 닫혀요(L-15)', () => {
     [{ ANTHROPIC_LOG: 'debug' }, 'ANTHROPIC_LOG를 지워 주세요'],
     [{ DESK_AI_PROVIDER: 'anthropic', DESK_AI_MODEL: 'some-other-model' }, 'DESK_AI_MODEL은'],
     [{ DESK_SEED_DEMO: 'true' }, '운영에는 가상 자료를 넣지 않아요'],
+    // 11/23 운영 검토
+    [{ DESK_MIGRATE_ON_START: 'true' }, '운영은 시작할 때 마이그레이션을 적용하지 않아요'],
+    [{ SERVER_PORT: 'abc' }, 'SERVER_PORT는 1~65535 숫자여야 해요'],
+    [{ SERVER_PORT: '70000' }, 'SERVER_PORT는 1~65535 숫자여야 해요'],
   ])('잘못된 값 %o → 뜨지 않아요', (patch, reason) => {
     expect(problemsOf({ ...PROD, ...patch })).toContain(reason);
   });

@@ -1,0 +1,24 @@
+# 의존성 자동 갱신(11/23 운영 검토). 갱신은 PR로만 와서 CI(check·postgres·image)를 지나야 합쳐요.
+# 운영 의존성 보안 경고(npm audit)는 CI의 check 잡이 따로 봐요.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    # 보안 갱신이 아닌 갱신은 묶어서 PR을 줄여요.
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday

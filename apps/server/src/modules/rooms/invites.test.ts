@@ -328,6 +328,9 @@ describe('못 가요 사유·대신 부탁(11/4)', () => {
     expect(dm).toHaveLength(1);
     expect(dm[0]).toContain('가상 직원 도윤님 회의에 대신 가 달라는 부탁이 왔어요');
     expect(dm[0]).not.toMatch(/서준|출장/);
+    // 11/23 보안 검토: 멱등 영수증(action_receipts, 7일)에는 결과 모양만 남고, 사유·이름은 room_invites 말고 다른 표에 두 벌이 되지 않아요.
+    const receipts = JSON.stringify((await t.db.query('select result from action_receipts')).rows);
+    expect(receipts).not.toMatch(/출장|서준|주원|도윤/);
   });
 
   it('다른 팀 사람·남이 받은 목록·초대받지 않은 회의에는 부탁할 수 없어요', async () => {

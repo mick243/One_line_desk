@@ -37,6 +37,12 @@ describe('공통 인덱스', () => {
     );
   });
 
+  it('[11/23] 회의실 예약·장비 대여 7일 지우기는 끝 시각(upper(slot)) 인덱스로 찾아요(320_rooms_slot_end_index)', async () => {
+    const cut = '2026-11-01T00:00:00Z';
+    expect(await plan('delete from room_reservations where upper(slot) < $1', [cut])).toContain('room_reservations_slot_end');
+    expect(await plan('delete from room_equipment_loans where upper(slot) < $1', [cut])).toContain('room_equipment_loans_slot_end');
+  });
+
   it('회의실 채팅 영수증은 가명 ID 인덱스로 찾아요', async () => {
     const text = await plan(
       'select result from action_receipts where pseudonym_id = $1 and starts_with(idempotency_key, $2) order by created_at, idempotency_key',

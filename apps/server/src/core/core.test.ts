@@ -2,7 +2,17 @@ import { DEFAULT_OPS_SETTINGS, GRADE, gatewayAllows, isPantryStandalone, type Op
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { ANTHROPIC_CLIENT_OPTIONS } from './ai/anthropic-provider';
-import { AiDailyLimitReached, AiGateway, FakeProvider, GatewayRefused, type LlmProvider, ProviderFailure, SIGNAL_FOLD_MIN } from './ai/gateway';
+import {
+  AiDailyLimitReached,
+  AiGateway,
+  FakeProvider,
+  GatewayGradeTooLow,
+  GatewayRefused,
+  type LlmProvider,
+  ProviderFailure,
+  PUBLIC_GRADE_PURPOSES,
+  SIGNAL_FOLD_MIN,
+} from './ai/gateway';
 import { AuditLog } from './audit';
 import type { Db } from './db';
 import { createTestDb } from './db/test-db';
@@ -38,7 +48,11 @@ describe('AI 게이트웨이', () => {
       fallback: () => ({ id: 'a' }),
     };
     await expect(gateway.structured({ ...req, grade: GRADE.internal })).rejects.toBeInstanceOf(GatewayRefused);
-    await expect(gateway.structured({ ...req, grade: GRADE.public })).resolves.toEqual({ id: 'a' });
+    // 11/23: 등급 0은 정해 둔 목적(PUBLIC_GRADE_PURPOSES, 지금 없음)만 보내요. 사람 글을 등급 0으로 잘못 적어도 계약 전에 나가지 않아요.
+    expect(PUBLIC_GRADE_PURPOSES.size).toBe(0);
+    await expect(gateway.structured({ ...req, grade: GRADE.public })).rejects.toBeInstanceOf(GatewayGradeTooLow);
+    await expect(new AiGateway(new FakeProvider(), true, db).structured({ ...req, grade: GRADE.public })).rejects.toBeInstanceOf(GatewayGradeTooLow);
+    await expect(new AiGateway(new FakeProvider(), true, db).structured({ ...req, grade: GRADE.internal })).resolves.toEqual({ id: 'a' });
     const usage = await gateway.usageByModule();
     expect(usage).toEqual([{ module: 'navi', calls: 1, inputTokens: 0, outputTokens: 0, failures: 0, failureKinds: [], agreement: [] }]);
     const { rows } = await db.query('select * from ai_usage');
@@ -60,7 +74,7 @@ describe('AI 게이트웨이', () => {
     const req = {
       module: 'router' as const,
       purpose: 'classify',
-      grade: GRADE.public,
+      grade: GRADE.internal,
       system: 's',
       input: '문장',
       schema: z.object({ id: z.string() }),
@@ -96,7 +110,7 @@ describe('AI 게이트웨이', () => {
     const req = {
       module: 'rooms' as const,
       purpose: 'chat-intent',
-      grade: GRADE.public,
+      grade: GRADE.internal,
       system: 's',
       input: '문장 Y-CANARY',
       schema: z.object({ id: z.string() }),
@@ -144,7 +158,7 @@ describe('AI 게이트웨이: 모델·규칙 견줌(실사용 신호)', () => {
   const req = {
     module: 'rooms' as const,
     purpose: 'chat-intent',
-    grade: GRADE.public,
+    grade: GRADE.internal,
     system: 's',
     input: '문장 Z-CANARY',
     schema: z.object({ id: z.string() }),
