@@ -199,11 +199,11 @@ export function scheduleDates(period: HomePeriod, now: number, window: { from: n
 }
 
 /** 근태 조회를 한꺼번에 부르는 수 상한(사람이 많아도 근태 시스템을 몰아 부르지 않게) */
-const LEAVE_CONCURRENCY = 6;
+export const LEAVE_CONCURRENCY = 6;
 /** 한 번에 보는 같은 부서 사람 수 상한(접속기록 정보주체 표시 상한 100과 같아요) */
-const TEAM_MAX = 100;
+export const TEAM_MAX = 100;
 
-async function mapLimited<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+export async function mapLimited<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out = new Array<R>(items.length);
   let next = 0;
   const worker = async () => {

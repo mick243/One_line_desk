@@ -16,8 +16,10 @@ import {
   type InquiryReplyRequest,
   type InquiryRequest,
   inquiryFaqReply,
+  isWorkday,
   isWorkWeekday,
   kstDate,
+  kstTime,
   LEAVE_REJECT_REASON_MAX,
   LEAVE_REQUEST_MAX_DAYS,
   LEAVE_TYPE_LABEL,
@@ -254,6 +256,11 @@ function overlapping(record: LeaveRecord | null, days: readonly LeaveDay[]): str
   return days.filter((d) => leaveDayHalves(d).some((h) => taken.get(d.date)?.has(h))).map((d) => `${dayLabel(d.date)} ${leaveDayWord(d)}`);
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** 미처리 문의 다시 알림은 근무 시간(한국 시각 9시 이상 18시 미만)에만 보내요. */
+const REMIND_FROM_HOUR = 9;
+const REMIND_UNTIL_HOUR = 18;
+
 export function createInquiryService(ctx: AppContext) {
   const purge = () => ctx.db.tx((q) => repo.purgeInquiries(q, recordCutoff(ctx.now()), ctx.now()));
   /** 보관 기간 시작(지금 - 7일). 읽고 바꾸는 쿼리는 이 뒤에 보낸 문의만 봐요(11/3). */
@@ -297,6 +304,33 @@ export function createInquiryService(ctx: AppContext) {
      * 11/3(ADR-21 개정): 목록을 열 때 지우던 것을 뺐어요. 읽기는 created_at으로 걸러서 7일 지난 문의가 보이지 않아요.
      */
     purge,
+
+    /**
+     * 받은 팀에 미처리 문의를 다시 알려요(11/25 자동화 후보 1). 한 시간 보관 회차(모듈 retention)가 지운 뒤에 불러요.
+     * - 보낸 지 하루가 지났는데 아직 "새 문의"인 것: "아직 확인하지 않은 문의가 N건 있어요"
+     * - 보낸 지 6일이 지났는데 아직 끝나지 않은 것(새 문의·확인함): "곧 지워져요"
+     * 문의마다 종류별로 한 번만 세고(표시 칸), 부서마다 수만 보내요. 글·업무 이름·보낸 사람은 넣지 않아요(ADR-16).
+     * 회사 근무일 9~18시에만 보내요. 밤·주말에 걸린 것은 다음 근무 시간 첫 회차에 같이 가요. 7일 보관은 그대로예요(ADR-21).
+     */
+    async remind(): Promise<void> {
+      if (ctx.ops.get().modules.navi === 'off') return;
+      const now = ctx.now();
+      const hour = Number(kstTime(now).slice(0, 2));
+      if (hour < REMIND_FROM_HOUR || hour >= REMIND_UNTIL_HOUR || !isWorkday(kstDate(now), leavePolicy(ctx).calendar)) return;
+      await ctx.db.tx(async (q) => {
+        const keepFrom = recordCutoff(now);
+        for (const { department, n } of await repo.markInquiryReminders(q, 'expiry', now - (INQUIRY_KEEP_DAYS - 1) * DAY_MS, keepFrom, now)) {
+          await ctx.notify.toDepartment(q, department, {
+            module: 'navi',
+            title: `처리하지 않은 문의 ${n}건이 곧 지워져요(보관 ${INQUIRY_KEEP_DAYS}일)`,
+            page: 'navi',
+          });
+        }
+        for (const { department, n } of await repo.markInquiryReminders(q, 'unseen', now - DAY_MS, keepFrom, now)) {
+          await ctx.notify.toDepartment(q, department, { module: 'navi', title: `아직 확인하지 않은 문의가 ${n}건 있어요`, page: 'navi' });
+        }
+      });
+    },
 
     /**
      * 문의 보내기. 화면은 확인 시트를 먼저 띄우고, 같은 requestId로 두 번 와도 한 번만 들어가요.

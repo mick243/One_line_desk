@@ -76,4 +76,6 @@ export interface DeskModule {
   adapters?(): AdapterCapabilities[];
   /** 보관 기간이 지난 자기 표의 행을 지워요. 서버가 정해진 시각마다 불러요(L-33). */
   retention?(): Promise<void>;
+  /** 분 단위로 할 일(11/25 회의 시작 전 알림). 서버가 1분마다 불러요. 실패해도 다음 분에 다시 돌아요. 오래 걸리는 일은 넣지 않아요. */
+  minute?(): Promise<void>;
 }

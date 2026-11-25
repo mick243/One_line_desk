@@ -1,5 +1,7 @@
+import { recordCutoff } from '@one-line-desk/shared';
 import type { AppContext } from '../../context';
 import type { DeskModule } from '../../core/module';
+import { pendingCount } from './audience-repo';
 import { audienceEdits, createAudienceService } from './audience-service';
 import { ALLOWED_BOARDS } from './fixtures';
 import { registerNoticeRoutes } from './routes';
@@ -28,6 +30,12 @@ export function createNoticesModule(ctx: AppContext): DeskModule {
     // 실사용 신호(11/17): 총무가 정한 수·고친 수만(운영 표).
     audienceEdits: () => audienceEdits(ctx),
   };
+  // 총무 아침 요약(11/25): 확인을 기다리는 새 공지 알림 대상 수만 내놓아요.
+  (ctx.services.facilitiesPending ??= []).push({
+    label: '공지 알림 대상',
+    page: 'notices',
+    count: () => pendingCount(ctx.db, recordCutoff(ctx.now())),
+  });
 
   return {
     kind: 'notices',

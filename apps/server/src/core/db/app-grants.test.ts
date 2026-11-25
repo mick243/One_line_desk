@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { GRANT_CHECK_SQL, type GrantCheckRow, grantProblems, grantsSql } from '../../../scripts/tenant-lib';
 import { applyMigrations } from './migrate';
 import { createPgliteDb } from './pglite';
 
@@ -39,5 +40,34 @@ describe('앱 계정 권한(db/roles/app-grants.sql)', () => {
     } finally {
       await db.close();
     }
+  });
+
+  it('[11/25 tenant 배포 전 확인] 권한 SQL을 돌린 앱 계정은 문제 0건이고, 권한 전·소유자 계정·표 없음은 각각 멈출 까닭이 나와요', async () => {
+    const db = await createPgliteDb();
+    const check = async () => grantProblems((await db.query<GrantCheckRow>(GRANT_CHECK_SQL)).rows[0]!);
+    try {
+      expect(await check()).toEqual(['표가 없어요. db-init(마이그레이션 → 권한)을 먼저 돌려 주세요']);
+      await applyMigrations(db);
+      // 시험 DB의 기본 계정은 표 주인이에요(소유자 주소를 DATABASE_URL에 잘못 넣은 경우).
+      expect((await check()).join('\n')).toContain('표 주인');
+      await db.exec('create role desk_app_check nologin');
+      await db.exec('set role desk_app_check');
+      expect((await check()).join('\n')).toContain('넣지 못해요');
+      await db.exec('reset role');
+      await db.exec(grantsSql(readFileSync(GRANTS, 'utf8'), 'desk_app_check'));
+      await db.exec('set role desk_app_check');
+      expect(await check()).toEqual([]);
+      await db.exec('reset role');
+      await db.exec('grant truncate on access_log to desk_app_check');
+      await db.exec('set role desk_app_check');
+      expect(await check()).toEqual(['앱 계정에 TRUNCATE 권한이 있어요(없어야 해요)']);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it('앱 계정 이름은 SQL에 그대로 들어가서 영문 소문자·숫자·밑줄만 받아요', () => {
+    expect(grantsSql(':"app_role"', 'desk_app')).toBe('"desk_app"');
+    expect(() => grantsSql(':"app_role"', 'x"; drop table access_log; --')).toThrow();
   });
 });

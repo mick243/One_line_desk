@@ -106,6 +106,11 @@ export function MyReservations({ compact }: { compact?: boolean }) {
                   <button type='button' className='secondary small' onClick={() => void run(r.invite)}>
                     {r.invite.text}
                   </button>
+                  {r.remind && (
+                    <button type='button' className='secondary small' onClick={() => void run(r.remind!)}>
+                      {r.remind.text}
+                    </button>
+                  )}
                   <a className='neutral small' href={r.icsPath} download>
                     캘린더 파일
                   </a>

@@ -1,5 +1,6 @@
 import type { AppContext } from '../../context';
 import type { DeskModule, PlanHandler } from '../../core/module';
+import * as repo from './repo';
 import { registerCafeRoutes } from './routes';
 import { CafeDesk } from './service';
 
@@ -15,6 +16,11 @@ export function createCafeModule(ctx: AppContext): DeskModule {
     orderCards: (user, text) => desk.orderCards(user, text),
     spendCard: (user) => desk.billing.spend(user),
   };
+  // 총무 아침 요약(11/25): 처리 전 한도 요청·[못 받았어요] 수만 내놓아요.
+  (ctx.services.facilitiesPending ??= []).push(
+    { label: '카페 한도 요청', page: 'cafe-settle', count: async () => (await repo.facilitiesPending(ctx.db)).limitRequests },
+    { label: '카페 못 받았어요', page: 'cafe-settle', count: async () => (await repo.facilitiesPending(ctx.db)).missed },
+  );
   return {
     kind: 'cafeteria',
     planHandlers: [desk.orderHandler() as PlanHandler<unknown>],

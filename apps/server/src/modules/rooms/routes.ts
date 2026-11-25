@@ -225,6 +225,12 @@ export function registerRoomRoutes(app: FastifyInstance, ctx: AppContext, desk: 
     async (req) => desk.invites.send(req.deskUser!, req.params.id, req.body),
   );
 
+  app.post<{ Params: { id: string } }>(
+    '/api/rooms/reservations/:id/invites/remind',
+    { preHandler: ctx.guards.user, schema: { params: ID_PARAMS } },
+    async (req) => desk.invites.remind(req.deskUser!, req.params.id),
+  );
+
   app.get('/api/rooms/invites', { preHandler: ctx.guards.user }, async (req) => desk.invites.invited(req.deskUser!));
 
   // [참석할게요]만 받아요. [못 가요]는 사유를 꼭 적는 decline이에요(11/4).

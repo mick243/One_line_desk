@@ -16,6 +16,8 @@ import { type OpsFlag, OPS_VALUE_RANGE, type OpsValues } from '../core/ops-setti
 import { listMcpTools, MCP_TOOLS } from '../core/tool-registry';
 
 const READY_DB_TIMEOUT_MS = 1000;
+/** 다 지운 마지막 시각이 이보다 오래되면 retentionStale이에요(한 시간 회차가 두 번 넘게 못 지움). */
+const RETENTION_STALE_MS = 3 * 60 * 60_000;
 
 /**
  * 건강 확인(L-17, 10/29 배포 준비 회의 A5). 관문 밖에는 열지 않아요(부하 분산기만).
@@ -23,8 +25,9 @@ const READY_DB_TIMEOUT_MS = 1000;
  * - /health/ready(= /health): 받을 준비. DB(1초)와 첫 보관 회차를 봐요. 닫는 중에는 Fastify가 503으로 답해요.
  * 안쪽 정보(AI 공급자 이름 등)는 내보내지 않고, 떠 있는 판(build)과 보관 지우기가 마지막으로 다 된 시각만 알려요.
  * 마지막 성공이 오래돼도 503으로 바꾸지 않아요(재시작이 이어지면 메모리 세션을 잃어요). 감시가 시각을 보고 알려요.
+ * 11/25: 감시가 시각을 계산하지 않아도 되게 retentionStale(3시간 넘게 못 다 지움)과 지금 실패 중인 단계 이름(retentionFailing)을 같이 실어요.
  */
-export function registerHealthRoutes(app: FastifyInstance, ctx: AppContext, retentionState: () => { done: boolean; lastOk: number | null }) {
+export function registerHealthRoutes(app: FastifyInstance, ctx: AppContext, retentionState: () => { done: boolean; lastOk: number | null; failing: string[] }) {
   app.get('/health/live', async () => ({ ok: true }));
 
   const ready = async (_req: FastifyRequest, reply: FastifyReply) => {
@@ -43,6 +46,8 @@ export function registerHealthRoutes(app: FastifyInstance, ctx: AppContext, rete
       db: `${ctx.db.kind}-${dbOk ? 'connected' : 'error'}`,
       retention: retention.done ? 'done' : 'pending',
       retentionLastOk: retention.lastOk === null ? null : new Date(retention.lastOk).toISOString(),
+      retentionStale: retention.lastOk !== null && ctx.now() - retention.lastOk > RETENTION_STALE_MS,
+      retentionFailing: retention.failing,
       build: ctx.config.build,
       rulesVersion: RULES_VERSION,
     };

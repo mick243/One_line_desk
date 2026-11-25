@@ -155,7 +155,7 @@ function mark(c: AudienceCheck | 'error' | undefined): string {
   return `✗ ${audienceLabel(c.audience)} (${people})`;
 }
 
-/** 마크다운 표의 "공지 알림 대상" 칸(docs/AI정답률.md) */
+/** 마크다운 표의 "공지 알림 대상" 칸(npm run eval:ai 출력) */
 export function renderNoticeSection(results: readonly NoticeCaseResult[], people: number): string[] {
   const s = scoreNotices(results);
   const row = (name: string, x: NoticeEvalSide | null) =>

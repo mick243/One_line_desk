@@ -57,6 +57,8 @@ export function createRoomsModule(ctx: AppContext): DeskModule {
     adapters: () => [ledger.capabilities],
     // 보관 기간(7일, 10/28): 끝난 예약·대여, 취소 이력
     // 여러 팀 회의 고르기 요청(ADR-28): 시간이 지난 요청은 닫고 알리고, 회의가 끝나고 7일 지난 요청은 예약과 함께 지워요(11/11 QA S1).
+    // 회의 시작 10분 전 알림(11/25): 예약한 사람과 참석한다고 한 사람에게 한 번씩만 가요.
+    minute: () => desk.invites.startSoon(),
     retention: async () => {
       await repo.purgeRecords(ctx.db, recordCutoff(ctx.now()));
       await desk.joint.sweep(ctx.now());

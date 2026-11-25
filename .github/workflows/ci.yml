@@ -58,6 +58,16 @@ jobs:
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # 두 계정 DB 연습(11/25)에 쓰는 시험 전용 PostgreSQL. 운영과 같은 17이에요. 잡이 끝나면 사라져요.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -96,6 +106,38 @@ jobs:
       - name: 서버 로그에 쿼리가 남지 않아요(404 카나리)
         run: |
           if docker logs desk 2>&1 | grep -q SMOKE_CANARY; then echo '서버 로그에 쿼리가 남았어요'; exit 1; fi
+      # 두 계정 DB 연습(11/25): 회사 첫 배포 순서(회사추가절차 2번)를 실제 PostgreSQL에서 그대로 해 봐요.
+      # 소유자 계정으로 마이그레이션 → 권한 SQL(psql) → 앱 계정으로 권한 확인 → 앱 계정으로 띄워 연기 시험(첫 보관 회차까지).
+      # 값은 모두 여기서 만든 시험 값이에요. 로그인은 시연(모의)이라 IdP 없이 떠요.
+      - name: 두 계정 DB 만들기(소유자·앱)
+        env:
+          PGPASSWORD: ci
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1             -c "create role desk_owner login password 'owner_ci'"             -c "create role desk_app login password 'app_ci'"             -c "create database desk owner desk_owner"
+      - name: 마이그레이션(소유자) → 권한 SQL → 권한 확인(앱 계정)
+        run: |
+          secret() { openssl rand -hex 24; }
+          run() {
+            docker run --rm --network host -e DESK_MOCK_LOGIN=true -e DESK_DEMO_DATABASE=true -e PUBLIC_BASE_URL=https://desk.example.test               -e SESSION_SECRET="$(secret)" -e PSEUDONYM_SECRET="$(secret)" -e PROPOSAL_SECRET="$(secret)" -e MCP_TOKEN_SECRET="$(secret)"               -e DATABASE_URL=postgres://desk_app:app_ci@localhost:5432/desk -e DESK_MIGRATE_DATABASE_URL=postgres://desk_owner:owner_ci@localhost:5432/desk               one-line-desk:ci node --import tsx "$@"
+          }
+          run apps/server/scripts/migrate.ts
+          # btree_gist 확장 함수(확장 주인이 달라요)마다 나오는 "no privileges were granted" 경고는 숨겨요. 오류는 그대로 멈춰요.
+          PGPASSWORD=owner_ci PGOPTIONS='-c client_min_messages=error' psql -h localhost -U desk_owner -d desk -v ON_ERROR_STOP=1 -v app_role=desk_app -f db/roles/app-grants.sql
+          run apps/server/scripts/grant-check.ts
+          # 다시 돌려도 할 일이 없어요(배포 release_command가 이미 적용된 DB에서 돌아도 그대로).
+          run apps/server/scripts/migrate.ts | tee migrate-again.log
+          grep -q '새로 적용할 마이그레이션이 없어요' migrate-again.log
+      # 시연 설정은 뜰 때 마이그레이션을 적용하는데(DESK_MIGRATE_ON_START 기본 켬), 운영은 적용하지 않아요. 운영과 같게 꺼요.
+      # 앱 계정은 표를 만들 권한이 없어서 켜 두면 schema_migrations를 만들다 멈춰요(11/25 로컬 연습에서 확인).
+      - name: 앱 계정으로 띄워 연기 시험
+        run: |
+          secret() { openssl rand -hex 24; }
+          docker run -d --name desk-pg --network host --read-only --tmpfs /tmp --tmpfs /app/.data:uid=1000,gid=1000             -e DESK_MOCK_LOGIN=true -e DESK_DEMO_DATABASE=true -e PUBLIC_BASE_URL=https://desk.example.test             -e SESSION_SECRET="$(secret)" -e PSEUDONYM_SECRET="$(secret)" -e PROPOSAL_SECRET="$(secret)" -e MCP_TOKEN_SECRET="$(secret)"             -e DESK_MIGRATE_ON_START=false -e DATABASE_URL=postgres://desk_app:app_ci@localhost:5432/desk             one-line-desk:ci
+          node scripts/smoke.mjs http://localhost:3190
+        env:
+          SMOKE_BUILD: ${{ github.sha }}
       - name: 실패하면 서버 로그
         if: failure()
-        run: docker logs desk
+        run: |
+          docker logs desk || true
+          docker logs desk-pg || true

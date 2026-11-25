@@ -30,7 +30,8 @@
     "mcp:spec": "node --import tsx apps/server/scripts/mcp-spec.ts",
     "mcp:clients": "node --import tsx apps/server/scripts/mcp-clients.ts",
     "ops:data": "node --import tsx apps/server/scripts/ops-data.ts",
-    "eval:ai": "node --import tsx apps/server/scripts/eval-ai.ts"
+    "eval:ai": "node --import tsx apps/server/scripts/eval-ai.ts",
+    "holidays:check": "node --import tsx apps/server/scripts/check-holidays.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

@@ -67,6 +67,8 @@ export function createNaviModule(ctx: AppContext): DeskModule {
       await repo.purgeFeedback(ctx.db, recordCutoff(ctx.now()));
       // 자리비움(11/3): 정한 지 7일 지났거나 끝난 지 7일 지난 줄
       await repo.purgeAway(ctx.db, recordCutoff(ctx.now()));
+      // 미처리 문의 다시 알림(11/25): 지운 뒤에 남은 문의만 세요. 근무 시간이 아니면 아무것도 하지 않아요.
+      await inquiries.remind();
     },
   };
 }

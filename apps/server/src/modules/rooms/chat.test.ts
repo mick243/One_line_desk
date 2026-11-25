@@ -791,6 +791,17 @@ describe('11/5 처음 쓰는 직원 점검: 후보 바꾸기·길이 안내·매
     if (done.status !== 'done') return;
     expect(done.card.headline).toBe('매주 3번 예약했어요');
     expect(done.card.fields.find((f) => f.name === '반복')?.value).toBe('10월 27일(화) · 11월 3일(화) · 11월 17일(화) · 이미 예약돼 있어 뺀 날: 11월 10일(화)');
+    // 뺀 주(11/25): 같은 시간에 빈 다른 회의실로 [그날 ○○ 잡기] 버튼이 붙고, 누르면 확인 시트로 그 주 하나만 잡아요.
+    const again = done.card.actions.secondary.find(
+      (x): x is Extract<CardAction, { type: 'propose' }> => x.type === 'propose' && x.text.startsWith('11월 10일(화) '),
+    );
+    expect(again?.text).toMatch(/^11월 10일\(화\) .+ 잡기$/);
+    expect(again!.text).not.toContain((await listRooms(t.db)).find((r) => r.id === roomId)!.name);
+    const sheet2 = (await me.call('POST', '/api/plans', { proposalToken: again!.proposalToken })).body as PlanCreateResponse;
+    if (sheet2.status !== 'sheet') throw new Error('확인 시트가 아니에요');
+    const done2 = (await me.call('POST', `/api/plans/${sheet2.planId}/confirm`)).body as PlanConfirmResponse;
+    expect(done2.status).toBe('done');
+    expect((await t.db.query('select 1 from room_reservations where plan_id = $1', [sheet2.planId])).rows).toHaveLength(1);
     const mine = (
       await t.db.query<{ series_no: number }>('select series_no from room_reservations where plan_id = $1 order by series_no', [sheet.planId])
     ).rows.map((r) => r.series_no);

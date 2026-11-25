@@ -447,3 +447,89 @@ describe('못 가요 사유·대신 부탁(11/4)', () => {
     expect(await attendees()).toEqual(['seojun@corp.example']);
   });
 });
+
+describe('[11/25] 답 안 한 사람에게 다시 알리기', () => {
+  const myRes = async (me: Session, id: string) =>
+    ((await me.call('GET', '/api/rooms/my-reservations')).body as MyReservationsResponse).items.find((r) => r.id === id)!;
+  const titles = async (t: TestApp, subject: string) =>
+    ((await (await t.loginAs(subject)).call('GET', '/api/notifications')).body as NotificationsResponse).items.map((i) => i.title);
+
+  it('예약한 사람만 누를 수 있고, 아직 답하지 않은 사람에게만 한 번 앱 알림이 가요. 답한 사람·다시 누름에는 안 가요', async () => {
+    const { t, doyun, reservationId } = await setup();
+    expect((await myRes(doyun, reservationId)).remind).toBeUndefined();
+    const people = [...(await refsOf(doyun, '서준')), ...(await refsOf(doyun, '하은'))].map((p) => p.ref);
+    await doyun.call('POST', `/api/rooms/reservations/${reservationId}/invites`, { people, calendar: false, slack: false, requestId: requestId() });
+    expect((await (await t.loginAs(SEOJUN)).call('POST', `/api/rooms/invites/${reservationId}/response`, { response: 'accepted' })).status).toBe(200);
+
+    const remind = (await myRes(doyun, reservationId)).remind;
+    expect(remind).toMatchObject({ type: 'fixed', text: '답 안 한 1명에게 다시 알리기', method: 'POST', confirm: { confirmLabel: '다시 알리기' } });
+
+    // 남의 회의는 다시 알릴 수 없어요.
+    expect((await (await t.loginAs(MOCK.staff)).call('POST', `/api/rooms/reservations/${reservationId}/invites/remind`)).status).toBe(404);
+
+    const res = await doyun.call('POST', `/api/rooms/reservations/${reservationId}/invites/remind`);
+    expect(res.status).toBe(200);
+    expect(res.body.card.headline).toBe('답하지 않은 1명에게 다시 알렸어요');
+    const reminded = (await titles(t, HAEUN)).filter((x) => x.includes('아직 답하지 않았어요'));
+    expect(reminded).toHaveLength(1);
+    expect(reminded[0]).toContain('도윤님 회의 초대에 아직 답하지 않았어요');
+    expect((await titles(t, SEOJUN)).some((x) => x.includes('아직 답하지 않았어요'))).toBe(false);
+
+    // 한 번 보낸 사람에게는 다시 보내지 않고, 버튼도 사라져요.
+    expect((await myRes(doyun, reservationId)).remind).toBeUndefined();
+    const again = await doyun.call('POST', `/api/rooms/reservations/${reservationId}/invites/remind`);
+    expect(again.body.card.headline).toBe('다시 알릴 사람이 없어요');
+    expect((await titles(t, HAEUN)).filter((x) => x.includes('아직 답하지 않았어요'))).toHaveLength(1);
+
+    // 감사 로그에는 수만 남아요.
+    const { rows } = await t.db.query<{ result: string }>("select result from audit_log where action = 'invite.remind' order by id");
+    expect(rows.map((r) => r.result)).toEqual(['sent:1', 'sent:0']);
+  });
+});
+
+describe('[11/25] 회의 시작 10분 전 알림', () => {
+  const soon = async (t: TestApp, subject: string) =>
+    ((await (await t.loginAs(subject)).call('GET', '/api/notifications')).body as NotificationsResponse).items
+      .map((i) => i.title)
+      .filter((x) => x.startsWith('곧 회의가 있어요'));
+
+  it('시작 10분 전 안으로 들어오면 예약한 사람과 참석한다고 한 사람에게만 한 번 가요. 답 안 한 사람·못 간다고 한 사람에게는 안 가요', async () => {
+    const { t, doyun, reservationId } = await setup(); // 월 9시에 "내일 3시" 예약
+    const people = [...(await refsOf(doyun, '서준')), ...(await refsOf(doyun, '하은'))].map((p) => p.ref);
+    await doyun.call('POST', `/api/rooms/reservations/${reservationId}/invites`, { people, calendar: false, slack: false, requestId: requestId() });
+    expect((await (await t.loginAs(SEOJUN)).call('POST', `/api/rooms/invites/${reservationId}/response`, { response: 'accepted' })).status).toBe(200);
+
+    const start = Date.parse('2026-10-27T15:00:00+09:00');
+    t.advance(start - 11 * 60_000 - t.now());
+    await t.runMinute();
+    expect(await soon(t, MOCK.dev)).toEqual([]);
+
+    t.advance(2 * 60_000); // 14:51
+    await t.runMinute();
+    await t.runMinute();
+    const mine = await soon(t, MOCK.dev);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatch(/^곧 회의가 있어요 · 15:00 · .+ · 안 쓰면 내 예약에서 취소해 주세요$/);
+    expect(await soon(t, SEOJUN)).toEqual([mine[0]!.replace(' · 안 쓰면 내 예약에서 취소해 주세요', '')]);
+    expect(await soon(t, HAEUN)).toEqual([]);
+  });
+
+  it('취소한 예약은 보내지 않아요', async () => {
+    const { t, doyun, reservationId } = await setup();
+    expect((await doyun.call('DELETE', `/api/rooms/reservations/${reservationId}`)).status).toBe(200);
+    t.advance(Date.parse('2026-10-27T14:55:00+09:00') - t.now());
+    await t.runMinute();
+    expect(await soon(t, MOCK.dev)).toEqual([]);
+  });
+});
+
+describe('[11/25] 회의 시작 10분 전 알림: 회의실 끔', () => {
+  it('회의실 기능이 꺼져 있으면 보내지 않아요', async () => {
+    const { t } = await setup();
+    await t.ctx.ops.setModule('ops-test', 'rooms', 'off');
+    t.advance(Date.parse('2026-10-27T14:55:00+09:00') - t.now());
+    await t.runMinute();
+    const { rows } = await t.db.query<{ n: number }>("select count(*)::int as n from notifications where title like '곧 회의가%'");
+    expect(rows[0]!.n).toBe(0);
+  });
+});

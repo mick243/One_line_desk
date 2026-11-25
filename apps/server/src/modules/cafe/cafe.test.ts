@@ -241,6 +241,27 @@ describe('[F4] 확인 시트로만 들어가는 주문', () => {
   });
 });
 
+describe('[11/25] 지난번처럼 담기', () => {
+  it('내 마지막 주문(취소 뺌)의 메뉴·잔 수·옵션만 오고, 남의 주문은 안 보여요. 금액은 없고 주문은 그대로 확인 시트예요', async () => {
+    const { t, staff, barista } = await setup();
+    await openCafe(barista);
+    expect((await view(staff)).lastOrder).toBeNull();
+
+    const two: CafeOrderLineInput[] = [AMERICANO, { menuId: 'latte', qty: 2, options: [] }];
+    idOf(await order(staff, two));
+    expect((await view(staff)).lastOrder).toEqual(two);
+    expect(JSON.stringify((await view(staff)).lastOrder)).not.toMatch(/won|price/i);
+
+    // 그 뒤 주문을 취소하면 앞 주문이 "지난번"이에요.
+    const later = idOf(await order(staff, [{ menuId: 'latte', qty: 1, options: [] }]));
+    expect((await staff.call('POST', `/api/cafe/orders/${later}/cancel`)).status).toBe(200);
+    expect((await view(staff)).lastOrder).toEqual(two);
+
+    // 다른 사람에게는 내 주문이 보이지 않아요.
+    expect((await view(await t.loginAs(MOCK.dev))).lastOrder).toBeNull();
+  });
+});
+
 describe('[F4-3] 품절과 픽업 칸 상한', () => {
   it('품절이면 새 제안이 막히고, 확인 시트를 연 뒤 품절이 되면 실행도 막혀요', async () => {
     const { t, staff, barista } = await setup();

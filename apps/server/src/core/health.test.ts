@@ -20,6 +20,8 @@ describe('건강 확인: 살아 있음과 받을 준비(배포 준비 회의 A5)
         db: `${t.db.kind}-connected`,
         retention: 'done',
         retentionLastOk: null,
+        retentionStale: false,
+        retentionFailing: [],
         build: 'dev',
         rulesVersion: expect.any(Number),
       });
@@ -79,6 +81,49 @@ describe('건강 확인: 살아 있음과 받을 준비(배포 준비 회의 A5)
       vi.spyOn(t.ctx.audit, 'purge').mockRejectedValueOnce(new Error('boom'));
       expect(await t.runRetention()).toEqual(['audit']);
       expect(await lastOk()).toBe(okAt);
+    } finally {
+      await t.close();
+    }
+  });
+
+  it('[11/25 보관 감시] 같은 단계가 3번 연달아 실패하면 운영자에게 한 번 알리고, ready에 실패 중인 단계와 오래 못 지움이 보여요. 503으로는 바꾸지 않아요', async () => {
+    const t = await createTestApp();
+    const ready = async () => t.app.inject({ method: 'GET', url: '/health/ready' });
+    const roleAlerts = async () =>
+      (await t.db.query<{ n: number }>("select count(*)::int as n from notifications where audience_role = 'operator'")).rows[0]!.n;
+    try {
+      expect(await t.runRetention()).toEqual([]);
+      const fail = vi.spyOn(t.ctx.audit, 'purge').mockRejectedValue(new Error('boom'));
+      for (let i = 1; i <= 2; i += 1) {
+        t.advance(60 * 60 * 1000);
+        expect(await t.runRetention()).toEqual(['audit']);
+      }
+      expect(await roleAlerts()).toBe(0);
+      expect((await ready()).json()).toMatchObject({ ok: true, retentionFailing: ['audit'], retentionStale: false });
+
+      t.advance(60 * 60 * 1000 + 1);
+      await t.runRetention();
+      expect(await roleAlerts()).toBe(1);
+      // 네 번째부터는 다시 알리지 않아요(같은 실패가 이어지는 동안 한 번).
+      await t.runRetention();
+      expect(await roleAlerts()).toBe(1);
+      const r = await ready();
+      expect(r.statusCode).toBe(200);
+      expect(r.json()).toMatchObject({ ok: true, retentionFailing: ['audit'], retentionStale: true });
+
+      // 알림은 운영자에게만 보이고, 글에 단계 이름이 없어요.
+      const ops = await t.loginAs(MOCK.operator);
+      const list = (await ops.call('GET', '/api/notifications')).body;
+      expect(list.items[0]).toMatchObject({ title: expect.stringContaining('계속 실패'), page: 'ops' });
+      expect(list.items[0].title).not.toContain('audit');
+      const staff = await t.loginAs(MOCK.staff);
+      const other = (await staff.call('GET', '/api/notifications')).body;
+      expect(other.items.some((i: { page: string }) => i.page === 'ops')).toBe(false);
+
+      // 다시 지우면 실패 목록이 비고, 다음에 또 3번 실패하면 다시 알려요.
+      fail.mockRestore();
+      expect(await t.runRetention()).toEqual([]);
+      expect((await ready()).json()).toMatchObject({ retentionFailing: [], retentionStale: false });
     } finally {
       await t.close();
     }
