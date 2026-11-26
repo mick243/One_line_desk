@@ -264,6 +264,31 @@ export async function purgeInquiries(q: Queryable, before: number, now: number):
   );
 }
 
+/**
+ * 다시 알릴 문의를 부서별로 세고, 센 문의에 표시를 해요(11/25). 종류마다 한 문의에 한 번만 세져요.
+ * - unseen: 아직 "새 문의"이고 olderThan보다 먼저 보낸 것
+ * - expiry: 아직 끝나지 않았고(새 문의·확인함) olderThan보다 먼저 보낸 것
+ * 보관 기간 안(keepFrom 뒤)에 보낸 문의만 봐요. 내용은 읽지 않고 부서와 수만 돌려줘요.
+ */
+export async function markInquiryReminders(
+  q: Queryable,
+  kind: 'unseen' | 'expiry',
+  olderThan: number,
+  keepFrom: number,
+  now: number,
+): Promise<{ department: string; n: number }[]> {
+  const [column, states] = kind === 'unseen' ? ['unseen_reminded_at', `('new')`] : ['expiry_warned_at', `('new', 'seen')`];
+  const { rows } = await q.query<{ department: string; n: number }>(
+    `with marked as (
+       update navi_inquiries set ${column} = $3
+        where ${column} is null and state in ${states} and created_at < $1 and created_at >= $2
+       returning department)
+     select department, count(*)::int as n from marked group by department order by department`,
+    [new Date(olderThan).toISOString(), new Date(keepFrom).toISOString(), new Date(now).toISOString()],
+  );
+  return rows;
+}
+
 interface InquiryWeekRow {
   week: string;
   sent: number;

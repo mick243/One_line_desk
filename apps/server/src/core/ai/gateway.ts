@@ -75,6 +75,20 @@ export interface AgreementStat {
   differed?: number;
 }
 
+/**
+ * 등급 0(공개)으로 보내도 되는 목적(11/23 보안 검토). 지금은 없어요.
+ * 게이트웨이는 부르는 쪽이 적은 등급을 믿어서, 사람이 쓴 글을 등급 0으로 잘못 적으면 무보관 계약 전에도 바깥으로 나가요.
+ * 그래서 이 목록에 없는 목적은 등급 1 아래로 적으면 보내지 않고 막아요. 정말 공개 자료만 보내는 목적이 생기면 여기에 적어요.
+ */
+export const PUBLIC_GRADE_PURPOSES: ReadonlySet<string> = new Set<string>();
+
+/** 목적에 맞지 않게 낮은 등급을 적었어요. 부르는 쪽 코드 잘못이라 사람에게 보이는 문구는 일반 실패예요. */
+export class GatewayGradeTooLow extends DeskError {
+  constructor() {
+    super('grade-too-low', 500, '지금 답을 만들지 못했어요');
+  }
+}
+
 export class GatewayRefused extends DeskError {
   constructor(grade: Grade) {
     super('grade-refused', 422, `등급 ${grade} 자료는 AI로 보내지 않아요`);
@@ -115,6 +129,7 @@ export class AiGateway {
   }
 
   async structured<T>(req: StructuredRequest<T>): Promise<T> {
+    if (req.grade < GRADE.internal && !PUBLIC_GRADE_PURPOSES.has(req.purpose)) throw new GatewayGradeTooLow();
     if (!gatewayAllows(req.grade, this.contractConfirmed)) throw new GatewayRefused(req.grade);
     if (this.dailyCalls && this.modelBacked && (await this.callsToday()) >= this.dailyCalls()) {
       await this.recordUsage(req, 0, 0, false, 'daily-limit');

@@ -1,6 +1,15 @@
 import type { CafeMissedStatus, CafeOrderStatus } from '@one-line-desk/shared';
 import type { Queryable } from '../../core/db';
 
+/** 총무가 확인할 일의 수(11/25 아침 요약): 처리 전 한도 요청과 처리 전 [못 받았어요]. 수만이에요. */
+export async function facilitiesPending(q: Queryable): Promise<{ limitRequests: number; missed: number }> {
+  const { rows } = await q.query<{ limit_requests: number; missed: number }>(
+    `select (select count(*)::int from cafe_limit_requests where status = 'pending') as limit_requests,
+            (select count(*)::int from cafe_orders where missed_status = 'reported') as missed`,
+  );
+  return { limitRequests: rows[0]!.limit_requests, missed: rows[0]!.missed };
+}
+
 // 사내 카페 SQL은 여기에만 둬요. 값은 늘 매개변수로 넘겨요.
 // 시각은 UTC 밀리초로 주고받고, DB에는 ISO 문자열로 넘겨요. order_day는 한국 날짜 'YYYY-MM-DD'예요.
 
@@ -172,6 +181,15 @@ export async function myOrdersOn(q: Queryable, pseudonymId: string, day: string)
     [pseudonymId, day],
   );
   return rows;
+}
+
+/** 내 마지막 주문(취소 뺌)의 줄. [지난번처럼 담기](11/25)가 써요. 보관 중인 주문만 남아 있어요. */
+export async function lastOrderItems(q: Queryable, pseudonymId: string): Promise<OrderItem[] | null> {
+  const { rows } = await q.query<{ items: OrderItem[] }>(
+    "select items from cafe_orders where pseudonym_id = $1 and status <> 'cancelled' order by created_at desc, id desc limit 1",
+    [pseudonymId],
+  );
+  return rows[0]?.items ?? null;
 }
 
 /** 그달(한국 날짜 monthStart부터 한 달) 내 주문 합계. 취소한 주문과 청구에서 뺀 주문은 빼요. 주문 행에서 바로 세요. */

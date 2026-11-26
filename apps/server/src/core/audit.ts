@@ -16,6 +16,13 @@ export interface AuditEntry {
 }
 
 const ALLOWED_KEYS = new Set(['pseudonymId', 'channel', 'module', 'action', 'tool', 'clientId', 'planId', 'result']);
+const CHANNELS = new Set<AuditChannel>(['ask', 'write', 'mcp', 'auth', 'ops']);
+/**
+ * 칸 값은 코드 모양만 받아요(11/23 보안 검토). 영문·숫자와 `:._@/+,=-`, 120자까지예요.
+ * 검색어·문장·이름처럼 띄어쓰기나 한글이 든 값은 칸 이름이 맞아도 거절해요. 셈은 `rows:3`처럼 코드에 붙여요.
+ */
+const CODE = /^[A-Za-z0-9:._@/+,=-]{1,120}$/;
+const PSEUDONYM = /^[A-Za-z0-9:_-]{1,128}$/;
 
 export class AuditLog {
   constructor(private readonly db: Queryable) {}
@@ -24,6 +31,13 @@ export class AuditLog {
   async record(entry: AuditEntry, q: Queryable = this.db): Promise<void> {
     for (const key of Object.keys(entry)) {
       if (!ALLOWED_KEYS.has(key)) throw new Error(`감사 로그에 없는 칸이에요: ${key}`);
+    }
+    // 값이 틀리면 칸 이름만 알려요. 값은 오류 글에도 넣지 않아요.
+    if (!CHANNELS.has(entry.channel)) throw new Error('감사 로그 channel 값이 틀렸어요');
+    if (!PSEUDONYM.test(entry.pseudonymId)) throw new Error('감사 로그 pseudonymId 모양이 틀렸어요');
+    for (const key of ['module', 'action', 'tool', 'clientId', 'planId', 'result'] as const) {
+      const value = entry[key];
+      if (value !== undefined && !CODE.test(value)) throw new Error(`감사 로그 ${key} 값은 코드 모양이어야 해요`);
     }
     await q.query('insert into audit_log (pseudonym_id, channel, module, action, tool, client_id, plan_id, result) values ($1, $2, $3, $4, $5, $6, $7, $8)', [
       entry.pseudonymId,

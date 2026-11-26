@@ -37,6 +37,7 @@ import {
   roomTakenCard,
   icsPath,
   inviteAction,
+  remindOf,
   roomLine,
   roomTimeCard,
   slotCard,
@@ -84,6 +85,8 @@ import {
 // 쓰기는 'rooms:reserve' plan(확인 시트 한 번)과 [취소] 고정 버튼뿐이에요.
 
 type Owner = Pick<DeskUser, 'pseudonymId'>;
+/** 매주 반복에서 뺀 주에 붙이는 [그날 ○○ 잡기] 버튼 수 상한(11/25) */
+const MISSED_WEEK_ACTIONS = 4;
 /** 찾는 사람: 내 층에서 가까운 회의실부터 보여 주고(home), 겹치는 내 예약을 알려 줘요(10/28). */
 type Seeker = Pick<DeskUser, 'pseudonymId' | 'floor'>;
 
@@ -266,6 +269,29 @@ export class RoomDesk {
   private async load(q: Queryable, date: string): Promise<{ rooms: RoomRow[]; busy: Awaited<ReturnType<typeof busyBetween>> }> {
     const { from, to } = dayBounds(date);
     return { rooms: await listRooms(q), busy: await busyBetween(q, from, to) };
+  }
+
+  /**
+   * 매주 반복에서 이미 예약돼 있어 뺀 주마다 같은 시간에 빈 다른 회의실 1순위를 찾아 [그날 ○○ 잡기] 제안 버튼으로 돌려줘요(11/25).
+   * 조건(인원·장비·층)은 처음 찾을 때와 같아요. 빈 곳이 없는 주는 버튼이 없어요. 버튼은 많아야 MISSED_WEEK_ACTIONS개예요.
+   */
+  private async missedWeekActions(
+    q: Queryable,
+    user: Pick<DeskUser, 'pseudonymId' | 'floor'>,
+    query: RoomQuery,
+    weeks: { start: number; end: number }[],
+    now: number,
+  ): Promise<CardAction[]> {
+    if (!this.ctx.ops.get().roomsWrite) return [];
+    const out: CardAction[] = [];
+    for (const w of weeks.slice(0, MISSED_WEEK_ACTIONS)) {
+      const date = kstDate(w.start);
+      const weekQuery = { ...query, date };
+      const { rooms, busy } = await this.load(q, date);
+      const best = searchSlots({ rooms, busy, query: weekQuery, start: w.start, end: w.end, now, home: user.floor }).candidates[0];
+      if (best) out.push(this.primaryFor(user, best, weekQuery, `${dayLabel(date)} ${best.room.name} 잡기`));
+    }
+    return out;
   }
 
   /** 카드 주 버튼. 쓰기가 꺼졌으면 그룹웨어 링크예요. 제안 토큰은 서명만 하고 DB에 쓰지 않아요. */
@@ -660,6 +686,7 @@ export class RoomDesk {
           if (p.repeatWeeks) {
             const booked = [dayLabel(kstDate(start))];
             const skipped: string[] = [];
+            const missedWeeks: { start: number; end: number }[] = [];
             for (let w = 1; w < p.repeatWeeks; w += 1) {
               const s = start + w * WEEK;
               const e = end + w * WEEK;
@@ -672,10 +699,13 @@ export class RoomDesk {
                 seriesNo: w,
               });
               (got ? booked : skipped).push(dayLabel(kstDate(s)));
+              if (!got) missedWeeks.push({ start: s, end: e });
             }
             card.headline = `매주 ${booked.length}번 예약했어요`;
             card.fields.push({ name: '반복', value: `${booked.join(' · ')}${skipped.length ? ` · 이미 예약돼 있어 뺀 날: ${skipped.join(' · ')}` : ''}` });
             card.tail = `${card.tail} · 한 번씩 따로 취소해요`;
+            // 뺀 주(11/25): 같은 시간에 비어 있는 다른 회의실 하나씩을 [그날 ○○ 잡기] 버튼으로 붙여요. 누르면 확인 시트로 한 번씩 잡아요(ADR-19 11/5 보강).
+            card.actions.secondary.push(...(await this.missedWeekActions(ex.q, ex.user, p.query, missedWeeks, ex.now)));
           }
           return { status: 'done', card };
         }
@@ -735,6 +765,7 @@ export class RoomDesk {
         cancel: cancelAction(r),
         invite: inviteAction(r),
         attendees: await this.invites.attendees(r.id),
+        ...(r.start > this.ctx.now() ? remindOf(r, await this.invites.remindable(r.id)) : {}),
         icsPath: icsPath(r.id),
         loans: loans.get(r.id) ?? [],
         ...(await this.resizeOf(r)),

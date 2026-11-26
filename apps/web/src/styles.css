@@ -2844,3 +2844,17 @@ select:focus-visible {
 .audience-done small {
   color: var(--color-muted);
 }
+
+/* 오늘 우리 팀 한 줄(11/25) */
+.team-today .team-today-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.team-today .team-today-head p {
+  margin: 0;
+}
+.team-today-people {
+  margin: 8px 0 0;
+}

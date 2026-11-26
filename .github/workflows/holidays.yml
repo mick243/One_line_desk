@@ -1,0 +1,23 @@
+# 다음 해 공휴일 표 확인(11/25). 매년 7월 1일(한국 시각 9시)과 손으로 누를 때만 돌아요.
+# 표가 없으면 실패로 표시만 하고, 이슈를 만들거나 저장소에 쓰지 않아요(권한은 읽기만).
+name: holidays
+
+on:
+  schedule:
+    - cron: '0 0 1 7 *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  next-year:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run holidays:check

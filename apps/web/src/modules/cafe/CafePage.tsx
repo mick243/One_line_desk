@@ -10,6 +10,7 @@ import {
   type CafeMenuItem,
   type CafeMyBilling,
   type CafeMyOrder,
+  type CafeOrderLineInput,
   type CafeProposeResponse,
   type CafeResponse,
   wonText,
@@ -138,6 +139,12 @@ export function CafePage() {
     });
   }
 
+  /** 마지막 주문의 메뉴·옵션·잔 수로 미리 채워요. 픽업 칸은 다시 골라요. 주문은 [주문하기] 확인 시트로만 들어가요. */
+  function repeatLast(lines: CafeOrderLineInput[]) {
+    setError(null);
+    setPicks(Object.fromEntries(lines.map((l) => [l.menuId, { qty: l.qty, options: l.options }])));
+  }
+
   async function order() {
     if (!canOrder || !slot) return;
     setBusy(true);
@@ -165,6 +172,11 @@ export function CafePage() {
 
       <section className='card cafe-menu' aria-label='메뉴'>
         <h2>메뉴</h2>
+        {data.lastOrder && lineCount === 0 && (
+          <button type='button' className='secondary small cafe-again' onClick={() => repeatLast(data.lastOrder!)}>
+            지난번처럼 담기
+          </button>
+        )}
         <ul className='cafe-menu-list'>
           {data.menu.map((m) => {
             const p = picks[m.id];

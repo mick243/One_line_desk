@@ -206,7 +206,12 @@ function productionProblems(env: NodeJS.ProcessEnv, config: ServerConfig, runtim
     if (env.DESK_SEED_DEMO === 'true') problems.push('운영에는 가상 자료를 넣지 않아요. DESK_SEED_DEMO를 지워 주세요');
     if (env.DESK_DEMO_PASSWORD) problems.push('DESK_DEMO_PASSWORD는 시연 배포에만 넣어요. 운영 배포에서는 지워 주세요');
     if (env.DESK_DEMO_WIDE) problems.push('DESK_DEMO_WIDE는 시연 배포에만 넣어요. 운영 배포에서는 지워 주세요');
+    // 운영은 시작할 때 마이그레이션을 적용하지 않아요. 앱 계정에는 표를 만들 권한이 없고, release_command(db:migrate)가 소유자 계정으로 해요(11/23 운영 검토).
+    if (config.migrateOnStart)
+      problems.push('운영은 시작할 때 마이그레이션을 적용하지 않아요. DESK_MIGRATE_ON_START를 지우고 npm run db:migrate를 먼저 돌려 주세요');
   }
+  // 숫자가 아니면 listen이 엉뚱한 포트(0 = 아무 포트)로 떠요(11/23 운영 검토).
+  if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) problems.push('SERVER_PORT는 1~65535 숫자여야 해요');
   return problems;
 }
 

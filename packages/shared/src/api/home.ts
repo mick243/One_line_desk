@@ -221,6 +221,42 @@ export interface HomeTeamSchedule {
   link: string | null;
 }
 
+/**
+ * 오늘 우리 팀 한 줄(11/25 회의 결정). 홈에 수만 보여요. 이름은 [누구인지 보기]를 눌러야 보이고, 그때 접속기록이 남아요.
+ * 같은 팀 일정 스위치(teamSchedule, 출시 기본 끔) 아래에 있어요. 회의는 넣지 않아요(일정 감시에 가까워져요).
+ */
+export interface TeamTodayResponse {
+  enabled: boolean;
+  /** 내 부서 이름(본인 부서) */
+  team: string;
+  /** 오늘 휴가(하루·오전·오후)가 있는 같은 팀 사람 수(나 빼고) */
+  leave: number;
+  /** 오늘 외근·출장·재택·자리비움을 알린 같은 팀 사람 수(나 빼고) */
+  away: number;
+  /** 팀이 작아(나 포함 TEAM_TODAY_SMALL명 이하) 수도 이름도 보여 주지 않아요(enabled 거짓). 2명 팀은 수만으로도 누구인지 드러나서예요. */
+  small: boolean;
+  /** 근태 기록을 읽었는지. 거짓이면 휴가 수가 빠졌다고 알려요. */
+  leaveConnected: boolean;
+}
+
+/** [누구인지 보기]: 오늘 하루치 휴가(하루/오전/오후)·자리비움만. 회의·종류·사유는 없어요. */
+export interface TeamTodayPeopleResponse {
+  entries: Extract<TeamEntry, { what: 'leave' | 'away' }>[];
+  leaveConnected: boolean;
+}
+
+/** 나 포함 이 수 이하인 팀은 오늘 우리 팀 한 줄을 보여 주지 않아요(11/25 법무 의견 + 화면 확인: 수만으로도 누구인지 드러나요). */
+export const TEAM_TODAY_SMALL = 3;
+
+export const TEAM_TODAY_TEXT = {
+  title: '오늘 우리 팀',
+  none: '오늘 빠지는 사람이 없어요',
+  open: '누구인지 보기',
+  close: '접기',
+  notConnected: '근태 기록이 연결되지 않아 휴가는 세지 않았어요',
+  tail: '같은 팀에게만 보여요. 휴가 종류·사유는 보이지 않고, 누구인지 볼 때 기록이 남아요',
+} as const;
+
 export const ABSENCE_PART_LABEL: Record<AbsencePart, string> = { full: '하루', am: '오전', pm: '오후', half: '반나절' };
 
 /** 같은 팀 일정 문구(화면설계 "보안이 보이는 문구"에 올릴 후보, 11/3) */

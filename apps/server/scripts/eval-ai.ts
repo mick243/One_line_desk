@@ -1,6 +1,4 @@
 import '../src/config';
-import { writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { kstDate } from '@one-line-desk/shared';
 import { AnthropicProvider } from '../src/core/ai/anthropic-provider';
 import { AiGateway, type LlmProvider } from '../src/core/ai/gateway';
@@ -12,8 +10,8 @@ import { evalRoster, runNoticeGolden, scoreNotices } from '../src/eval/notice-ev
 // 정답률 표(11/5 시험, AI 보완 1번). 정답 단 가상 문장(src/eval/ai-golden.ts)을 낱말 규칙과 AI로 각각 나눠 보고 표로 보여 줘요.
 // 11/6부터 가상 공지(src/eval/notice-golden.ts)의 알림 대상 제안도 같이 재요(놓친 사람·더 받은 사람, ADR-09).
 //
-//   npm run eval:ai                 표를 화면에 보여 줘요
-//   npm run eval:ai -- --write      docs/AI정답률.md를 고쳐 써요
+//   npm run eval:ai                 표를 화면에 보여 줘요(마크다운)
+// 11/25 사용자 결정: 표를 문서(docs/AI정답률.md)로 남기지 않아요. 운영자 화면 [운영자 · AI 정답률]과 이 명령으로만 봐요.
 //
 // - AI 쪽은 서버와 같은 설정일 때만 돌아요: DESK_AI_PROVIDER(anthropic|gemini) + 키 + NO_RETENTION_CONTRACT_CONFIRMED=true.
 //   게이트웨이 등급 규칙을 그대로 지켜요(사람 글과 같은 등급 1로 보내요). 없으면 낱말 규칙만 재고 AI 칸은 "안 잼"이에요.
@@ -21,7 +19,6 @@ import { evalRoster, runNoticeGolden, scoreNotices } from '../src/eval/notice-ev
 // 되돌릴 기준: #30 머지 상태(이 파일째 지워요).
 
 const env = process.env;
-const write = process.argv.includes('--write');
 
 function providerFromEnv(): { provider: LlmProvider; model: string } | null {
   if (env.DESK_AI_PROVIDER === 'anthropic' && env.ANTHROPIC_API_KEY) {
@@ -57,13 +54,7 @@ async function main() {
   console.error(`공지 알림 대상: 낱말 규칙 ${side(n.rule)} · AI ${n.ai === null ? '안 잼' : side(n.ai)}`);
   const people = (await evalRoster()).length;
   const report = renderReport(results, { model: gateway ? picked!.model : null, date: kstDate(Date.now()), notices: { results: notices, people } });
-  if (write) {
-    const path = resolve(process.cwd(), 'docs', 'AI정답률.md');
-    writeFileSync(path, report, 'utf8');
-    console.error(`썼어요: ${path}`);
-  } else {
-    console.log(report);
-  }
+  console.log(report);
 }
 
 main().catch((e) => {

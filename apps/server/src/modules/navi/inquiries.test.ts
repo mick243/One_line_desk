@@ -280,3 +280,68 @@ describe('담당 팀에 문의 보내기(ADR-16)', () => {
     expect((await doyun.call('POST', '/api/navi/inquiries', { rowId: 'HR-01', question: QUESTION, reason: REASON, requestId: requestId() })).status).toBe(409);
   });
 });
+
+describe('[11/25 자동화 후보 1] 미처리 문의 다시 알림', () => {
+  const HOUR = 60 * 60 * 1000;
+  // 시계를 며칠씩 넘기면 세션이 쉬는 시간으로 끊겨서, 볼 때마다 다시 로그인해요.
+  type T = Awaited<ReturnType<typeof setup>>;
+  const titlesOf = async (t: T, subject: string) =>
+    ((await (await t.loginAs(subject)).call('GET', '/api/notifications')).body as NotificationsResponse).items.map((i) => i.title);
+
+  it('하루 넘게 새 문의면 받은 부서에 수만 한 번, 6일이 지나도 안 끝났으면 "곧 지워져요"를 한 번 알려요. 글·업무 이름은 없어요', async () => {
+    const t = await setup(); // 월요일 9시
+    const doyun = await t.loginAs(MOCK.dev);
+    for (let i = 0; i < 2; i += 1) {
+      await doyun.call('POST', '/api/navi/inquiries', { rowId: 'HR-01', question: QUESTION, reason: REASON, requestId: requestId() });
+    }
+    const base = (await titlesOf(t, MOCK.hr)).length;
+
+    // 하루가 안 지났으면 알리지 않아요.
+    t.advance(23 * HOUR);
+    await t.runRetention();
+    expect((await titlesOf(t, MOCK.hr)).length).toBe(base);
+
+    // 화요일 10시: 둘 다 하루가 지났어요 → 한 번(부서에 수만)
+    t.advance(2 * HOUR);
+    await t.runRetention();
+    const after = await titlesOf(t, MOCK.hr);
+    expect(after.length).toBe(base + 1);
+    expect(after[0]).toBe('아직 확인하지 않은 문의가 2건 있어요');
+    // 다음 회차에는 다시 알리지 않아요.
+    t.advance(HOUR);
+    await t.runRetention();
+    expect((await titlesOf(t, MOCK.hr)).length).toBe(base + 1);
+
+    // 하나는 확인함으로, 하나는 처리 완료로 바꿔요. 6일 넘게 안 끝난 확인함만 "곧 지워져요"예요.
+    const jihu = await t.loginAs(MOCK.hr);
+    const items = ((await jihu.call('GET', '/api/navi/inquiries/inbox')).body as InquiryListResponse).items;
+    await jihu.call('POST', `/api/navi/inquiries/${items[0]!.id}/state`, { state: 'seen' });
+    await jihu.call('POST', `/api/navi/inquiries/${items[1]!.id}/state`, { state: 'done' });
+    t.advance(5 * 24 * HOUR - 2 * HOUR); // 일요일 9시: 근무일이 아니라 보내지 않아요
+    await t.runRetention();
+    expect((await titlesOf(t, MOCK.hr)).length).toBe(base + 1);
+    t.advance(24 * HOUR); // 월요일 9시(6일 지남, 아직 7일 전)
+    await t.runRetention();
+    const warned = await titlesOf(t, MOCK.hr);
+    expect(warned[0]).toBe('처리하지 않은 문의 1건이 곧 지워져요(보관 7일)');
+    for (const title of warned.filter((x) => x.includes('곧 지워져요') || x.includes('확인하지 않은'))) {
+      expect(title).not.toContain('INQCANARY7');
+      expect(title).not.toContain('재직증명서');
+    }
+    // 보낸 사람에게는 가지 않아요.
+    expect((await titlesOf(t, MOCK.dev)).some((x) => x.includes('곧 지워져요') || x.includes('확인하지 않은'))).toBe(false);
+  });
+
+  it('근무 시간(9~18시) 밖에는 보내지 않고, 다음 근무 시간 첫 회차에 같이 보내요', async () => {
+    const t = await setup();
+    const doyun = await t.loginAs(MOCK.dev);
+    await doyun.call('POST', '/api/navi/inquiries', { rowId: 'HR-01', question: QUESTION, reason: REASON, requestId: requestId() });
+    const base = (await titlesOf(t, MOCK.hr)).length;
+    t.advance(24 * HOUR + 10 * HOUR); // 화요일 19시
+    await t.runRetention();
+    expect((await titlesOf(t, MOCK.hr)).length).toBe(base);
+    t.advance(14 * HOUR); // 수요일 9시
+    await t.runRetention();
+    expect((await titlesOf(t, MOCK.hr))[0]).toBe('아직 확인하지 않은 문의가 1건 있어요');
+  });
+});

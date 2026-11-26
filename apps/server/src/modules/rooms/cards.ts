@@ -140,6 +140,25 @@ export function cancelAction(r: ReservationRow): CardAction {
   };
 }
 
+/** [답 안 한 n명에게 다시 알리기](11/25): 아직 답하지 않았고 다시 알림을 받지 않은 사람이 있을 때만 붙어요. 확인 한 번 뒤 보내요. */
+export function remindOf(r: { id: string; roomName: string; floor: string; start: number; end: number }, pending: number): { remind?: CardAction } {
+  if (pending <= 0) return {};
+  return {
+    remind: {
+      type: 'fixed',
+      text: `답 안 한 ${pending}명에게 다시 알리기`,
+      method: 'POST',
+      path: `/api/rooms/reservations/${r.id}/invites/remind`,
+      confirm: {
+        title: `답하지 않은 ${pending}명에게 다시 알릴까요?`,
+        lines: [roomLine({ name: r.roomName, floor: r.floor }), whenText(r.start, r.end)],
+        confirmLabel: '다시 알리기',
+        note: '앱 알림만 한 번 더 가요. 한 사람에게 한 번만 보낼 수 있어요',
+      },
+    },
+  };
+}
+
 /** 캘린더 파일 받기 주소(ADR-17) */
 export const icsPath = (reservationId: string) => `/api/rooms/reservations/${reservationId}/ics`;
 

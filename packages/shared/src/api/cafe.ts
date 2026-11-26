@@ -190,6 +190,11 @@ export type CafeResponse =
       slots: CafeSlot[];
       /** 오늘 내 주문 */
       orders: CafeMyOrder[];
+      /**
+       * [지난번처럼 담기](11/25): 내 마지막 주문(취소 뺌, 보관 중인 것)의 메뉴 ID·잔 수·옵션 이름.
+       * 지금 메뉴에 없거나 품절인 줄·없어진 옵션은 빼요. 남는 게 없으면 null이에요. 미리 채우기만 하고 주문은 확인 시트로 해요.
+       */
+      lastOrder: CafeOrderLineInput[] | null;
       /** 이번 달(한국 날짜) 지금까지 내 주문 합계. 취소한 주문은 빼요. 서버가 주문 행으로 셌어요. */
       monthTotalWon: number;
       /** 내 청구(본인만): 이번 달 한도·남은 한도·지난 청구서·회사 계좌 안내·내 한도 요청 */

@@ -46,6 +46,7 @@ import { registerAiEvalRoutes } from './routes/ai-eval';
 import { registerConfigRoutes, registerHealthRoutes } from './routes/config';
 import { registerNotificationRoutes } from './routes/notifications';
 import { registerPlanRoutes } from './routes/plans';
+import { createFacilitiesDigest } from './core/facilities-digest';
 
 export interface BuildOptions {
   config: ServerConfig;
@@ -65,6 +66,10 @@ export interface BuildOptions {
 
 const RETENTION_EVERY_MS = 60 * 60_000;
 const RETENTION_RETRY_MS = 5 * 60_000;
+/** 같은 보관 단계가 이만큼 연달아 실패하면 운영자에게 알려요(11/25 자동화 후보 2). 5분 재시도라 대개 15분 안이에요. */
+const RETENTION_ALERT_AFTER = 3;
+/** 분 단위 일(모듈 minute, 11/25 회의 시작 전 알림)을 도는 간격 */
+const MINUTE_MS = 60_000;
 
 export async function buildApp(opts: BuildOptions) {
   const { config } = opts;
@@ -227,7 +232,10 @@ export async function buildApp(opts: BuildOptions) {
   // 보관 기간 지우기(L-33): 화면을 열지 않아도 지워요. 듣기 시작한 뒤 한 번, 그 뒤 한 시간마다예요.
   // 10/28 사용자 결정: 접속기록(법정 1년) 말고는 모두 7일(RECORD_KEEP_DAYS)이에요. 모듈 기록은 각 모듈 retention이 지워요.
   // 단계마다 따로 잡아서 한 단계가 실패해도 나머지는 지워요. 실패한 단계 이름을 돌려주고 retention-failed를 남겨요(배포 준비 회의 A5).
+  const facilitiesDigest = createFacilitiesDigest(ctx);
   let retentionLastOk: number | null = null;
+  // 단계마다 연달아 실패한 횟수예요. 성공하면 지워요. 단계 이름만 들고 내용은 없어요.
+  const retentionStreak = new Map<string, number>();
   const runRetention = async (): Promise<string[]> => {
     const before = recordCutoff(ctx.now());
     const steps: [string, () => Promise<unknown>][] = [
@@ -241,6 +249,8 @@ export async function buildApp(opts: BuildOptions) {
       // 가상 그룹웨어 게시 글(서버 메모리, 시연만): 만든 지 7일 지난 것
       ['demo-board', async () => demoBoard?.purge()],
       ['access-log', () => ctx.access.purge()],
+      // 총무 확인 대기 아침 요약(11/25): 근무일 9시대 첫 회차에만 보내고, 나머지 회차는 아무것도 하지 않아요.
+      ['facilities-digest', () => facilitiesDigest()],
       // 메모리 정리: 8시간 최대 수명이 지난 세션과 지난 횟수 창이에요.
       [
         'memory',
@@ -256,9 +266,19 @@ export async function buildApp(opts: BuildOptions) {
     for (const [step, run] of steps) {
       try {
         await run();
+        retentionStreak.delete(step);
       } catch (err) {
         failed.push(step);
-        app.log.error({ msg: 'retention-failed', step, err: errorSummary(err) });
+        const times = (retentionStreak.get(step) ?? 0) + 1;
+        retentionStreak.set(step, times);
+        app.log.error({ msg: 'retention-failed', step, times, err: errorSummary(err) });
+        // 연달아 실패가 기준에 닿은 회차에 한 번만 알려요. 알림 글에는 단계 이름도 넣지 않아요(어느 단계인지는 로그·ready에 있어요).
+        if (times === RETENTION_ALERT_AFTER) {
+          app.log.error({ msg: 'retention-stuck', step, times });
+          await ctx.notify
+            .toRole(ctx.db, 'operator', { module: 'core', title: '보관 기록 지우기가 계속 실패하고 있어요. 장애런북을 봐 주세요', page: 'ops' })
+            .catch((e: unknown) => app.log.error({ msg: 'retention-alert-failed', err: errorSummary(e) }));
+        }
       }
     }
     // 모든 단계가 지운 마지막 시각이에요. /health/ready에 실어서 감시가 "오래 못 지움"을 알아채요(앞선 회의 A6).
@@ -293,15 +313,39 @@ export async function buildApp(opts: BuildOptions) {
     retentionTimer = setInterval(scheduledRetention, RETENTION_EVERY_MS);
     retentionTimer.unref();
   }
-  registerHealthRoutes(app, ctx, () => ({ done: firstRetentionDone, lastOk: retentionLastOk }));
+  // 분 단위 일(11/25): 모듈 minute(회의 시작 10분 전 알림 등)을 1분마다 불러요. 앞 회차가 아직 돌면 건너뛰고, 실패는 로그만 남겨요.
+  let minuteRunning = false;
+  const runMinute = async (): Promise<void> => {
+    if (minuteRunning) return;
+    minuteRunning = true;
+    try {
+      for (const m of modules) {
+        try {
+          await m.minute?.();
+        } catch (err) {
+          app.log.error({ msg: 'minute-failed', step: `module:${m.kind}`, err: errorSummary(err) });
+        }
+      }
+    } finally {
+      minuteRunning = false;
+    }
+  };
+  let minuteTimer: NodeJS.Timeout | undefined;
+  if (retentionOn) {
+    minuteTimer = setInterval(() => void runMinute(), MINUTE_MS);
+    minuteTimer.unref();
+  }
+
+  registerHealthRoutes(app, ctx, () => ({ done: firstRetentionDone, lastOk: retentionLastOk, failing: [...retentionStreak.keys()].sort() }));
 
   // 닫을 때(SIGTERM): 돌던 보관 회차가 끝나기를 기다린 뒤 DB를 닫아요(배포 준비 회의 A5).
   app.addHook('onClose', async () => {
     clearInterval(retentionTimer);
+    clearInterval(minuteTimer);
     clearTimeout(retryTimer);
     await running;
     if (!opts.db) await db.close();
   });
 
-  return { app, ctx, modules, runRetention };
+  return { app, ctx, modules, runRetention, runMinute };
 }
