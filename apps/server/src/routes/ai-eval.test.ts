@@ -57,7 +57,8 @@ describe('관리자 AI 정답률(11/5 시험)', () => {
     const res = (await op.call('GET', '/api/ops/ai-eval')).body as AiEvalResponse;
     expect(res.scores.map((s) => [s.label, s.total, s.ai])).toEqual([
       // 11/17: IT 오류·첫 2주·같은 팀 일정 종류(홈 +4), 고장 문장(회의실 채팅 +2) 정답 문장을 더했어요.
-      ['홈 채팅(무엇을 하려는지)', 33, null],
+      // 11/26: "늘 먹던 걸로"·"지난번처럼 회의실"(홈 +2)을 더했어요.
+      ['홈 채팅(무엇을 하려는지)', 35, null],
       ['회의실 채팅(할 일·장비)', 16, null],
       ['기능 나누기(/ask)', 13, null],
     ]);

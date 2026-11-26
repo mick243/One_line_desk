@@ -38,6 +38,7 @@ import {
   TEAM_SCHEDULE_TEXT,
   TEAM_WHATS,
   type TeamWhat,
+  isCafeReorder,
 } from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { AppContext } from '../context';
@@ -97,7 +98,8 @@ teamWhat(team-schedule일 때만, 아니면 빈 배열): 물은 것. leave(휴�
 const SYSTEM_CAFE = `
 사내 카페(직원이 직접 음료를 주문해 픽업하는 곳)도 있어요.
 - 사내 카페에 음료를 주문하는 문장("2시에 아아 하나 연하게", "라떼 두 잔 주문할게")은 move이고 moveTo는 cafe예요. 탕비실에 간식·음료를 채워 달라는 말은 board예요. 커피머신 고장은 navi예요.
-- 이번 달 카페·커피 값, 카페 청구서, 카페 남은 한도를 묻는 문장("이번 달 커피값 얼마야?")은 mine이고 kinds는 cafe예요.`;
+- 이번 달 카페·커피 값, 카페 청구서, 카페 남은 한도를 묻는 문장("이번 달 커피값 얼마야?")은 mine이고 kinds는 cafe예요.
+- 메뉴 이름 없이 지난번에 주문한 음료를 다시 시키는 문장("늘 먹던 걸로", "지난번처럼 하나")도 move이고 moveTo는 cafe예요.`;
 
 /** 홈 지시문. 카페가 꺼져 있으면 예전 지시문 그대로예요. */
 const systemFor = (cafe: boolean) => (cafe ? `${SYSTEM}${SYSTEM_CAFE}` : SYSTEM);
@@ -191,6 +193,8 @@ export function interpretByRules(text: string, names: string[] = [], cafe: reado
   if (cafe) {
     if (CAFE_SPEND.test(text)) return { intent: 'mine', period, kinds: ['cafe'], moveTo: null };
     if (mentionsCafeMenu(text, cafe) && CAFE_ORDER_HINT.test(text) && !CAFE_NOT_ORDER.test(text)) return move('cafe');
+    // "늘 먹던 걸로"(11/26): 메뉴 이름 없이 다시 주문하는 말도 카페로 옮겨요. 카페가 내 마지막 주문으로 카드를 채워요.
+    if (isCafeReorder(text) && !CAFE_NOT_ORDER.test(text)) return move('cafe');
   }
   if (WRITE_VERB.test(text)) return move(moveTargetOf(text));
   if (LEAVE_USE.test(text)) return move('navi');

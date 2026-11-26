@@ -52,6 +52,9 @@ export const GOLDEN: readonly GoldenCase[] = [
   { task: 'home', text: '라떼 두 잔 30분 뒤에 받을게', expect: 'move:cafe' },
   { task: 'home', text: '이번 달 커피값 얼마야?', expect: 'mine', why: '내 카페 값을 묻는 말이에요. 숫자는 서버가 계산해요' },
   { task: 'home', text: '탕비실에 믹스커피 좀 채워 줘', expect: 'move:board', why: '카페 주문이 아니라 탕비실 요청이에요' },
+  // 11/26 "늘 먹던 걸로": 메뉴 없이 다시 주문하는 말도 카페예요. 다른 기능을 말하면 그 기능이에요
+  { task: 'home', text: '늘 먹던 걸로 하나 부탁해', expect: 'move:cafe', why: '지난 주문을 다시 하는 말이에요. 무엇을 마셨는지는 서버가 채워요' },
+  { task: 'home', text: '지난번처럼 회의실 잡아 줘', expect: 'move:rooms', why: '"지난번처럼"이 있어도 회의실 일이에요' },
   // 11/17 홈 해석 넓히기: IT 오류·첫 2주 화면으로 바로 잇기, 같은 팀 일정은 물은 것만
   { task: 'home', text: '와이파이가 안 잡혀요', expect: 'move:it-help', why: 'IT 오류라 오류 화면으로 바로 가요' },
   { task: 'home', text: 'VPN 접속하면 오류 809가 떠요', expect: 'move:it-help', why: '오류 창 글이에요' },

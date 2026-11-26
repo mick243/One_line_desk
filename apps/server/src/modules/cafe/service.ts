@@ -14,6 +14,7 @@ import {
   kstTime,
   type PlanSheet,
   wonText,
+  type CafeOrderLineInput,
 } from '@one-line-desk/shared';
 import { z } from 'zod';
 import type { AppContext } from '../../context';
@@ -199,10 +200,7 @@ export class CafeDesk {
     }));
     const monthTotalWon = await repo.monthTotal(db, user.pseudonymId, monthStart(now));
     // [지난번처럼 담기](11/25): 지금 메뉴로 다시 고를 수 있는 줄만 남겨요. 금액은 넣지 않아요(서버가 주문할 때 다시 계산해요).
-    const byId = new Map(menu.map((m) => [m.id, m]));
-    const lastOrder = ((await repo.lastOrderItems(db, user.pseudonymId)) ?? [])
-      .filter((i) => byId.has(i.menuId) && !byId.get(i.menuId)!.soldOut)
-      .map((i) => ({ menuId: i.menuId, qty: i.qty, options: i.options.filter((o) => byId.get(i.menuId)!.options.includes(o)) }));
+    const { lines: lastOrder } = await this.repeatable(user, menu);
     return {
       status: 'on',
       open: acceptingOrders(duty, now),
@@ -262,6 +260,22 @@ export class CafeDesk {
    * 메뉴·옵션·잔 수·픽업 시각은 chat.ts가 나누고(모델에는 질문 글과 메뉴 이름·옵션 이름만), 픽업 칸은 그 시각 칸 또는 가장 가까운 다음 칸이에요.
    * 값은 카페 페이지 [주문하기]와 같은 검사(prepare)가 메뉴 직원가로 매겨요. 카드의 [확인하고 주문하기]는 그 제안 토큰으로 기존 확인 시트를 열어요.
    */
+  /**
+   * 내 마지막 주문(취소 뺌, 보관 중인 것)을 지금 메뉴로 다시 고를 수 있는 줄로 바꿔요(11/25 [지난번처럼 담기], 11/26 "늘 먹던 걸로").
+   * 없어졌거나 품절인 메뉴, 없어진 옵션은 빼고, 뺀 것이 있었는지(dropped)도 알려요. 본인 주문만 읽고 금액은 넣지 않아요.
+   */
+  private async repeatable(
+    user: DeskUser,
+    menu: Awaited<ReturnType<typeof repo.listMenu>>,
+  ): Promise<{ lines: CafeOrderLineInput[]; had: boolean; dropped: boolean }> {
+    const byId = new Map(menu.map((m) => [m.id, m]));
+    const items = (await repo.lastOrderItems(this.ctx.db, user.pseudonymId)) ?? [];
+    const kept = items.filter((i) => byId.has(i.menuId) && !byId.get(i.menuId)!.soldOut);
+    const lines = kept.map((i) => ({ menuId: i.menuId, qty: i.qty, options: i.options.filter((o) => byId.get(i.menuId)!.options.includes(o)) }));
+    const dropped = kept.length < items.length || lines.some((l, n) => l.options.length < kept[n]!.options.length);
+    return { lines, had: items.length > 0, dropped };
+  }
+
   async orderCards(user: DeskUser, text: string): Promise<Card[]> {
     const s = this.ctx.ops.get();
     if (s.modules.cafeteria === 'link') return [cafeLinkCard(s.links.cafeteria)];
@@ -275,6 +289,17 @@ export class CafeDesk {
       text,
       menu.map((m) => ({ id: m.id, name: m.name, options: m.options, aliases: m.aliases })),
     );
+    // "늘 먹던 걸로"(11/26): 메뉴 없이 다시 주문 말이면 서버가 내 마지막 주문으로 줄을 채워요. 이력은 모델에 가지 않았어요.
+    const reorderNotes: string[] = [];
+    if (read.reorder && !read.lines.length) {
+      const last = await this.repeatable(user, menu);
+      if (!last.lines.length)
+        return [
+          chatInfoCard('reorder', last.had ? '지난번 메뉴가 지금은 없거나 품절이에요. 카페에서 골라 주세요' : '지난 주문이 없어요. 카페에서 골라 주세요'),
+        ];
+      read.lines = last.lines;
+      reorderNotes.push(last.dropped ? '지난번 주문으로 채웠어요. 지금 없거나 품절인 메뉴·옵션은 뺐어요' : '지난번 주문과 같은 메뉴로 채웠어요');
+    }
     // 못 찾은 메뉴(11/17): 말없이 빼지 않고 수와 메뉴 표의 가까운 이름만 알려요. 사람이 쓴 낱말은 되적지 않아요(R13).
     const missedNote = read.missed > 0 ? missedText(read.missed, read.near) : null;
     if (!read.lines.length)
@@ -299,7 +324,7 @@ export class CafeDesk {
           slot: prepared.slot,
           proposalToken: prepared.proposalToken,
           byModel: read.byModel,
-          notes: [missedNote, picked.note].filter((n): n is string => n !== null),
+          notes: [...reorderNotes, missedNote, picked.note].filter((n): n is string => n !== null),
         }),
       ];
     } catch (e) {
