@@ -34,10 +34,10 @@
     "holidays:check": "node --import tsx apps/server/scripts/check-holidays.ts"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
-    "concurrently": "^10.0.6",
-    "prettier": "^3.9.10",
+    "@types/node": "^26.6.6",
+    "concurrently": "^10.0.7",
+    "prettier": "^3.10.1",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.1"
   }
 }
