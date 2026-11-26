@@ -46,7 +46,10 @@ describe('규칙 시험', () => {
   });
 
   it('[R13] 웹 코드는 브라우저 저장소에 아무것도 넣지 않아요', () => {
-    const bad = files(WEB).filter((f) => /\b(localStorage|sessionStorage|indexedDB)\b/.test(readFileSync(f, 'utf8')));
+    // 시험 파일은 저장소가 비어 있는지 확인하려고 이름을 불러요(screens/HomeAsk.test.tsx).
+    const bad = files(WEB)
+      .filter((f) => !isTest(f))
+      .filter((f) => /\b(localStorage|sessionStorage|indexedDB)\b/.test(readFileSync(f, 'utf8')));
     expect(bad.map(rel)).toEqual([]);
   });
 

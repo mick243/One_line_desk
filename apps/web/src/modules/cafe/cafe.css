@@ -171,6 +171,18 @@
   width: auto;
   min-height: 48px;
 }
+/* 상태 버튼을 누른 뒤 보내기 전까지 [되돌리기](11/23) */
+.cafe-undo {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-xs);
+}
+.cafe-undo button {
+  width: auto;
+  min-height: 48px;
+}
 .cafe-soldout-list {
   display: flex;
   flex-direction: column;

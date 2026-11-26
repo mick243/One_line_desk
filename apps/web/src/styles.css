@@ -702,6 +702,21 @@ div.mine > .screen-head {
   word-break: keep-all;
   overflow-wrap: anywhere;
 }
+/* 짧은 이름은 모바일 아래 탭이 붐빌 때만 보여요(11/23). 넓은 화면(왼쪽 메뉴)은 늘 원래 이름이에요. */
+.tab-short {
+  display: none;
+}
+@media (max-width: 1023.98px) {
+  .tabbar.crowded .tab-full {
+    display: none;
+  }
+  .tabbar.crowded .tab-short {
+    display: inline;
+  }
+  .tabbar.crowded .tab {
+    white-space: nowrap;
+  }
+}
 .tab .icon {
   box-sizing: content-box;
   padding: var(--space-3xs) var(--space-sm);

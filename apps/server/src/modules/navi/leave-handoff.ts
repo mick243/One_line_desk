@@ -445,7 +445,7 @@ export async function leaveCheckCard(ctx: AppContext, user: DeskUser, input: Lea
             : '인사 근태 기록'
         : numbers.basis?.source === 'hr'
           ? `인사 근태 기록 기준(근태 시스템이 준 숫자) · 나에게만 보여요 · ${today} 기준`
-          : `인사 근태 기록으로 서버가 계산 · 나에게만 보여요 · ${today} 기준`,
+          : `인사 근태 기록으로 앱이 계산 · 나에게만 보여요 · ${today} 기준`,
       ...(rule ? { href: rule.url } : {}),
       aiSummarized: input.viaAi && used > 0,
     },

@@ -661,7 +661,7 @@ function sickLeaveCard(
       { name: '유급·무급', value: '회사 규정에 따라 인사팀이 처리해요' },
       ...(canRequest ? [{ name: '받는 곳', value: `${request.team}(${request.task})` }] : [{ name: '신청하는 곳', value: LEAVE_DESK }]),
     ],
-    evidence: { text: sick ? `인사 근태 기록으로 서버가 계산 · ${today} 기준` : '회사 병가 규정은 인사팀에 확인해 주세요', aiSummarized: false },
+    evidence: { text: sick ? `인사 근태 기록으로 앱이 계산 · ${today} 기준` : '회사 병가 규정은 인사팀에 확인해 주세요', aiSummarized: false },
     ...(canRequest
       ? {
           secondary: [
@@ -804,7 +804,7 @@ export function leaveCard(
       text:
         balance.source === 'hr'
           ? `인사 근태 기록 기준(근태 시스템이 준 숫자) · ${today} 기준`
-          : `인사 근태 기록으로 서버가 계산 · 근로기준법(입사일 기준·개근 가정) · ${today} 기준`,
+          : `인사 근태 기록으로 앱이 계산 · 근로기준법(입사일 기준·개근 가정) · ${today} 기준`,
       aiSummarized: q.viaAi && plan > 0,
     },
     ...(opts.request ? { secondary: [leaveRequestAction(opts.request, q, balance, opts.sick ?? null, cal)] } : opts.apply ? { secondary: [opts.apply] } : {}),

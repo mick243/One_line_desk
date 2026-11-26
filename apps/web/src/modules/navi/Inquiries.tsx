@@ -167,14 +167,14 @@ function LeaveBlock({ item }: { item: InquiryItem }) {
         </p>
       )}
       {leave.type === 'sick' && <p className='hint'>병가라서 연차에서 빠지지 않아요. 유급·무급은 회사 규정에 따라 인사팀이 처리해요.</p>}
-      {leave.sickNote && <p className='hint'>{SICK_NOTE_TEXT}(요청이 운영 설정 일수를 넘어요)</p>}
+      {leave.sickNote && <p className='hint'>{SICK_NOTE_TEXT}(회사가 정한 일수를 넘어요)</p>}
       {leave.sick && (
         <p className={leave.sick.limit && leave.sick.used + leave.total > leave.sick.limit ? 'leave-after short' : 'leave-after'}>
           {sickUsageText(leave.sick)} → 승인하면 {fmt(leave.sick.used + leave.total)}
           {leave.sick.limit ? ` (한도 ${fmt(leave.sick.limit)})` : ''}
         </p>
       )}
-      {leave.sick && <p className='hint'>근태 기록으로 서버가 계산 · 이 요청 처리에만 보여요</p>}
+      {leave.sick && <p className='hint'>근태 기록으로 앱이 계산 · 이 요청 처리에만 보여요</p>}
       {leave.sick === null && <p className='hint'>근태 기록에서 올해 병가를 찾지 못했어요. 그룹웨어 근태에서 확인해 주세요.</p>}
       {b &&
         balanceLines(b, today).map((line, i) => (
@@ -182,7 +182,7 @@ function LeaveBlock({ item }: { item: InquiryItem }) {
             {line.text}
           </p>
         ))}
-      {b && <p className='hint'>근태 기록으로 서버가 계산 · 이 요청 처리에만 보여요</p>}
+      {b && <p className='hint'>근태 기록으로 앱이 계산 · 이 요청 처리에만 보여요</p>}
       {b === null && (
         <p className='hint'>
           {leave.smallWorkplace ? LEAVE_SMALL_WORKPLACE_TEXT : '근태 기록에서 남은 연차를 찾지 못했어요. 그룹웨어 근태에서 확인해 주세요.'}
@@ -215,8 +215,11 @@ function InboxItem({ item }: { item: InquiryItem }) {
   const [mode, setMode] = useState<'none' | 'reply' | 'reject'>('none');
   const [text, setText] = useState('');
   const requestId = useMemo(() => newRequestId(), [mode]);
-  // 내 쓰기가 끝나면(목록이 새로 오면) 양식을 닫아요.
+  // 이 줄에서 한 쓰기가 끝나면 양식을 닫아요. 다른 줄에서 처리했을 때는 쓰던 답장·반려 사유를 그대로 둬요(11/23 사용성 검토).
+  const from = `inquiry:${item.id}`;
+  const run = (action: Parameters<typeof actions.run>[0]) => void actions.run(action, undefined, undefined, { from });
   useEffect(() => {
+    if (actions.writeFrom !== from) return;
     setMode('none');
     setText('');
   }, [actions.writes]);
@@ -227,7 +230,7 @@ function InboxItem({ item }: { item: InquiryItem }) {
 
   function approve() {
     const b = item.leave?.balance;
-    void actions.run({
+    run({
       type: 'fixed',
       text: '승인',
       method: 'POST',
@@ -253,7 +256,7 @@ function InboxItem({ item }: { item: InquiryItem }) {
 
   function reject() {
     if (!ready) return;
-    void actions.run({
+    run({
       type: 'fixed',
       text: '반려',
       method: 'POST',
@@ -269,7 +272,7 @@ function InboxItem({ item }: { item: InquiryItem }) {
 
   function reply() {
     if (!ready) return;
-    void actions.run({
+    run({
       type: 'fixed',
       text: '답장 보내기',
       method: 'POST',
@@ -338,7 +341,7 @@ function InboxItem({ item }: { item: InquiryItem }) {
               </>
             )}
             {item.actions.map((a) => (
-              <button key={a.text} type='button' className='secondary small' onClick={() => void actions.run(a)}>
+              <button key={a.text} type='button' className='secondary small' onClick={() => run(a)}>
                 {a.text}
               </button>
             ))}

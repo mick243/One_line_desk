@@ -37,12 +37,12 @@ export async function loadPart<P>(load: () => Promise<ComponentType<P>>): Promis
   }
 }
 
-/** 필요할 때 불러오는 화면 부품. 불러오는 동안은 첫 화면과 같은 "불러오는 중…"을 보여요. */
+/** 필요할 때 불러오는 화면 부품. 불러오는 동안은 첫 화면과 같은 "불러오는 중이에요"을 보여요. */
 export function lazyPart<P extends object>(load: () => Promise<ComponentType<P>>): ComponentType<P> {
   const Lazy = lazy(() => loadPart(load)) as unknown as ComponentType<P>;
   function Part(props: P) {
     return (
-      <Suspense fallback={<div className='loading'>불러오는 중…</div>}>
+      <Suspense fallback={<div className='loading'>불러오는 중이에요</div>}>
         <Lazy {...props} />
       </Suspense>
     );

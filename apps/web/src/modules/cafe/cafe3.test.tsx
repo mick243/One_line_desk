@@ -162,7 +162,7 @@ describe('[F4-13] 홈 채팅 "이번 달 커피값"', () => {
           label: '안내',
           headline: '이번 달 카페 값은 지금까지 5,000원이에요',
           fields: [],
-          evidence: { text: '내 주문 기록과 청구서로 서버가 계산했어요', aiSummarized: false },
+          evidence: { text: '내 주문 기록과 청구서로 앱이 계산했어요', aiSummarized: false },
           actions: { secondary: [] },
           tail: CAFE_TEXT.spendTail,
         },

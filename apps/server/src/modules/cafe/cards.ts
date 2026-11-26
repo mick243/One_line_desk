@@ -18,7 +18,7 @@ export function lineText(l: Pick<CafeLine, 'name' | 'options' | 'qty'>): string 
 
 export const linesOf = (items: OrderItem[]): CafeLine[] => items.map((i) => ({ name: i.name, options: i.options, qty: i.qty }));
 
-const EVIDENCE = { text: '메뉴 직원가 × 수량으로 서버가 계산했어요', aiSummarized: false };
+const EVIDENCE = { text: '메뉴 직원가 × 수량으로 앱이 계산했어요', aiSummarized: false };
 
 /** 주문이 들어갔어요(확인 시트 [주문하기] 결과). */
 export function orderedCard(o: { id: string; pickupNo: number; items: OrderItem[]; totalWon: number; slot: number }): Card {
@@ -114,8 +114,8 @@ export function chatOrderCard(o: { items: OrderItem[]; totalWon: number; slot: n
     ],
     evidence: {
       text: o.byModel
-        ? 'AI가 주문 문장을 메뉴로 나눴어요. 값은 서버가 메뉴 직원가로 계산했어요'
-        : '쓴 낱말로 메뉴를 골랐어요. 값은 서버가 메뉴 직원가로 계산했어요',
+        ? 'AI가 주문 문장을 메뉴로 나눴어요. 값은 앱이 메뉴 직원가로 계산했어요'
+        : '쓴 낱말로 메뉴를 골랐어요. 값은 앱이 메뉴 직원가로 계산했어요',
       aiSummarized: o.byModel,
     },
     primary: { type: 'propose', text: '확인하고 주문하기', proposalToken: o.proposalToken },
@@ -158,7 +158,7 @@ export function spendCard(s: {
         value: `${wonText(b.totalWon)} · ${b.dueLabel}까지${b.overdue ? '(기한 지남)' : ''} · 입금 코드 ${b.code}`,
       })),
     ],
-    evidence: { text: '내 주문 기록과 청구서로 서버가 계산했어요', aiSummarized: false },
+    evidence: { text: '내 주문 기록과 청구서로 앱이 계산했어요', aiSummarized: false },
     primary: { type: 'navigate', text: '카페에서 내 청구 보기', to: 'cafe' },
     tail: CAFE_TEXT.spendTail,
   });

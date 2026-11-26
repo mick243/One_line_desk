@@ -5,14 +5,16 @@ export type Tab = 'home' | 'navi' | 'rooms' | 'notices' | 'board' | 'cafe' | 'mi
 
 // 기능마다 페이지가 따로 있어요. 꺼진 모듈의 탭은 숨겨요(ADR-12, R4).
 // 카페(11/6, ADR-29): 같이 채워요 뒤·마이 페이지 앞이에요. 카페가 꺼져 있으면 숨어요.
-const TABS: { id: Tab; label: string; icon: IconName; module?: ModuleKind }[] = [
+// short: 모바일 아래 탭이 6칸 이상일 때 쓰는 짧은 이름(11/23 사용성 검토). 375px 폭 7칸이면 칸이 53px쯤이라 긴 이름이 두 줄로 꺾여요.
+// PC 왼쪽 메뉴와 화면 읽기 프로그램은 늘 원래 이름이에요.
+const TABS: { id: Tab; label: string; short?: string; icon: IconName; module?: ModuleKind }[] = [
   { id: 'home', label: '홈', icon: 'home' },
   { id: 'navi', label: '문의함', icon: 'navi', module: 'navi' },
   { id: 'rooms', label: '회의실', icon: 'rooms', module: 'rooms' },
   { id: 'notices', label: '공지', icon: 'notices', module: 'notices' },
-  { id: 'board', label: '같이 채워요', icon: 'pantry', module: 'pantry' },
+  { id: 'board', label: '같이 채워요', short: '채워요', icon: 'pantry', module: 'pantry' },
   { id: 'cafe', label: '카페', icon: 'cafe', module: 'cafeteria' },
-  { id: 'mine', label: '마이 페이지', icon: 'mine' },
+  { id: 'mine', label: '마이 페이지', short: '마이', icon: 'mine' },
 ];
 
 /**
@@ -37,6 +39,9 @@ export function visibleTabs(modules: Record<ModuleKind, ModuleSwitch>, roles: re
   return TABS.filter((t) => (!barista || BARISTA_TABS.includes(t.id)) && (!t.module || modules[t.module] !== 'off')).map((t) => t.id);
 }
 
+/** 아래 탭이 이 칸 수 이상이면 모바일에서 짧은 이름을 써요. */
+const CROWDED = 6;
+
 export function TabBar({
   current,
   onChange,
@@ -50,17 +55,27 @@ export function TabBar({
 }) {
   const visible = visibleTabs(modules, roles);
   return (
-    <nav className='tabbar' aria-label='아래 탭'>
+    <nav className={visible.length >= CROWDED ? 'tabbar crowded' : 'tabbar'} aria-label='아래 탭'>
       {TABS.filter((t) => visible.includes(t.id)).map((t) => (
         <button
           key={t.id}
           type='button'
           className={t.id === current ? 'tab active' : 'tab'}
           aria-current={t.id === current ? 'page' : undefined}
+          aria-label={t.short ? t.label : undefined}
           onClick={() => onChange(t.id)}
         >
           <Icon name={t.icon} />
-          {t.label}
+          {t.short ? (
+            <>
+              <span className='tab-full'>{t.label}</span>
+              <span className='tab-short' aria-hidden='true'>
+                {t.short}
+              </span>
+            </>
+          ) : (
+            t.label
+          )}
         </button>
       ))}
     </nav>
