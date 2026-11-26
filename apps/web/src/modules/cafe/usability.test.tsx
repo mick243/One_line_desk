@@ -14,6 +14,7 @@ const page: CafeResponse = {
   menu: [{ id: 'americano', name: '아메리카노', priceWon: 1500, options: [], soldOut: false }],
   slots: [{ start: '2026-11-23T14:10:00+09:00', label: '14:10', left: 5, full: false }],
   orders: [],
+  lastOrder: null,
   monthTotalWon: 0,
   billing: { limitWon: 500000, leftWon: 500000, blocked: false, bills: [], account: '', dueDays: 7, request: null },
 };
