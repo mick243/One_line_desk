@@ -430,3 +430,76 @@ describe('[후보1] 못 찾은 메뉴를 말없이 빼지 않고 알려 줘요(1
     expect(input).toBe('메뉴:\n- 카페라테 (옵션: 아이스)\n문장: 라떼 하나');
   });
 });
+
+describe('[11/26] "늘 먹던 걸로": 메뉴 없이 다시 주문', () => {
+  const PREV = [
+    { menuId: 'americano', qty: 1, options: ['아이스'] },
+    { menuId: 'latte', qty: 2, options: ['핫'] },
+  ];
+
+  it('낱말 규칙: 다시 주문 말은 카페로 옮기고, 다른 기능 낱말이 같이 있거나 메뉴를 말했으면 다시 주문으로 보지 않아요', () => {
+    for (const text of ['늘 먹던 걸로', '늘 마시던 거 하나', '지난번처럼 부탁해', '저번이랑 똑같이', '아까 그거 다시 줘'])
+      expect(interpretByRules(text, [], WORDS), text).toMatchObject({ intent: 'move', moveTo: 'cafe' });
+    for (const text of ['지난번처럼 회의실 잡아 줘', '늘 먹던 걸로 탕비실 채워 줘', '저번처럼 휴가 쓸래'])
+      expect(interpretByRules(text, [], WORDS).moveTo, text).not.toBe('cafe');
+    // 카페가 꺼져 있으면(메뉴 낱말 null) 카페로 보지 않아요.
+    expect(interpretByRules('늘 먹던 걸로', [], null).moveTo).not.toBe('cafe');
+  });
+
+  it('[ADR-29 시험] 규칙 길: 내 마지막 주문으로 [확인하고 주문하기] 카드를 채워요. 주문은 들어가지 않고, "AI 정리"는 붙지 않아요', async () => {
+    const { t, staff } = await setup();
+    await order(staff, PREV);
+    const before = await counts(t);
+    const card = (await home(staff, '늘 먹던 걸로')).cards[0]!;
+    expect(card.fields).toEqual(
+      expect.arrayContaining([
+        { name: '메뉴', value: '아메리카노(아이스) × 1 · 카페라테(핫) × 2' },
+        { name: '알아 둘 것', value: '지난번 주문과 같은 메뉴로 채웠어요' },
+      ]),
+    );
+    expect(card.evidence.aiSummarized).toBe(false);
+    expect(proposeOf(card).text).toBe('확인하고 주문하기');
+    expect(await counts(t)).toEqual(before);
+
+    // 남의 마지막 주문은 쓰지 않아요: 주문한 적 없는 사람에게는 안내만 가요.
+    const dev = await t.loginAs(MOCK.dev);
+    const none = (await home(dev, '늘 먹던 걸로')).cards[0]!;
+    expect(none.headline).toBe('지난 주문이 없어요. 카페에서 골라 주세요');
+    expect(none.actions.primary?.type).not.toBe('propose');
+  });
+
+  it('지금 품절인 메뉴는 빼고 채우고, 그렇다고 알려요. 다 품절이면 안내만 해요', async () => {
+    const { t, staff } = await setup();
+    await order(staff, PREV);
+    await t.db.query("update cafe_menu set sold_out = true where id = 'latte'");
+    const card = (await home(staff, '지난번처럼 하나')).cards[0]!;
+    expect(card.fields).toEqual(
+      expect.arrayContaining([
+        { name: '메뉴', value: '아메리카노(아이스) × 1' },
+        { name: '알아 둘 것', value: '지난번 주문으로 채웠어요. 지금 없거나 품절인 메뉴·옵션은 뺐어요' },
+      ]),
+    );
+    await t.db.query("update cafe_menu set sold_out = true where id = 'americano'");
+    const gone = (await home(staff, '지난번처럼 하나')).cards[0]!;
+    expect(gone.headline).toBe('지난번 메뉴가 지금은 없거나 품절이에요. 카페에서 골라 주세요');
+    expect(gone.actions.primary?.type).not.toBe('propose');
+  });
+
+  it('[ADR-10 시험] 모델 길: 낱말 규칙이 못 알아들은 말도 모델이 다시 주문으로 보면 채우고 "AI 정리"가 붙어요. 모델에는 질문 글과 메뉴 이름·옵션 이름만 가고 지난 주문은 0건이에요', async () => {
+    const provider = new RecordingProvider('anthropic', {
+      'home-ask': { intent: 'move', period: 'recent', kinds: [], moveTo: 'cafe' },
+      'chat-order': { items: [], pickup: null, missed: 0, near: [], reorder: true },
+    });
+    const { staff } = await setup({ contract: true, provider });
+    await order(staff, PREV);
+    provider.inputs.length = 0;
+    const text = '그거 또 한 번 부탁해요';
+    const card = (await home(staff, text)).cards[0]!;
+    expect(card.fields).toEqual(expect.arrayContaining([{ name: '메뉴', value: '아메리카노(아이스) × 1 · 카페라테(핫) × 2' }]));
+    expect(card.evidence.aiSummarized).toBe(true);
+    const sent = provider.inputs.find((i) => i.purpose === 'chat-order')!;
+    expect(sent.input).toBe(modelInput(text, MENU));
+    for (const secret of ['× 2', '× 1', '지난', '주문 기록', '원']) expect(sent.input, secret).not.toContain(secret);
+    expect(sent.system).toContain('reorder');
+  });
+});
